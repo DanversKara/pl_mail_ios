@@ -37,8 +37,10 @@ public struct ThreadListView: View {
     public var body: some View {
         List {
             ForEach(rows, id: \.entry.uid) { row in
-                ThreadRowView(thread: row.thread, accountLabel: accountLabel(for: row.entry))
-                    .task { await loadMoreIfNeeded(at: row.entry) }
+                NavigationLink(value: ThreadRef(thread: row.thread)) {
+                    ThreadRowView(thread: row.thread, accountLabel: accountLabel(for: row.entry))
+                }
+                .task { await loadMoreIfNeeded(at: row.entry) }
             }
 
             if degraded.isEmpty == false {
@@ -105,7 +107,7 @@ public struct ThreadListView: View {
     /// let someone believe they had seen everything.
     @ViewBuilder
     private var offlineBanner: some View {
-        if case .failed(let message) = sync.status, entries.isEmpty == false {
+        if let message = sync.bannerMessage, entries.isEmpty == false {
             HStack(spacing: 8) {
                 Image(systemName: "wifi.slash")
                 Text(message)

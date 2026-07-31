@@ -270,6 +270,159 @@ public actor SyncStore {
         thread.participantsSummary = email.fromName ?? email.fromAddress ?? ""
     }
 
+    /// Writes the parts of an Email that only the reader needs.
+    ///
+    /// Kept separate from the list-row upsert so that syncing a list never
+    /// faults a body into memory: a page of fifty messages with their HTML is
+    /// megabytes, and none of it is on screen.
+    public func storeReaderContent(_ emails: [Email], accountKey: String) throws {
+        for email in emails {
+            let uid = StoreKey.object(accountKey: accountKey, id: email.id.rawValue)
+
+            guard let stored = try existing(StoredEmail.self, uid: uid) else { continue }
+
+            if let text = email.textBodyValue ?? email.htmlBodyValue {
+                let body = stored.body ?? StoredEmailBody(uid: uid)
+                body.textBody = email.textBodyValue
+                body.htmlBody = email.htmlBodyValue
+                body.fetchedAt = .now
+                stored.body = body
+                // Not inserted separately: assigning through the relationship
+                // is what makes the cascade delete rule apply.
+                _ = text
+            }
+
+            if let attachments = email.attachments {
+                for existing in stored.attachments {
+                    modelContext.delete(existing)
+                }
+
+                stored.attachments = attachments.compactMap { part in
+                    guard let blobID = part.blobID, let partID = part.partID else { return nil }
+
+                    let attachment = StoredAttachment(
+                        uid: "\(uid)/\(partID)",
+                        accountKey: accountKey,
+                        partID: partID,
+                        blobID: blobID.rawValue
+                    )
+                    attachment.name = part.name
+                    attachment.type = part.type ?? "application/octet-stream"
+                    attachment.size = part.size ?? 0
+                    attachment.cid = part.cid
+                    attachment.isInline = part.isInline
+
+                    return attachment
+                }
+            }
+        }
+
+        try modelContext.save()
+    }
+
+    /// Marks emails read or unread locally.
+    ///
+    /// Applied before the server is told, so the row updates the moment the
+    /// thread opens; the write follows and reconciles.
+    public func setSeen(_ isSeen: Bool, emailIDs: [String], accountKey: String) throws {
+        var touchedThreads: Set<String> = []
+
+        for emailID in emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid) else { continue }
+
+            email.isSeen = isSeen
+
+            if let threadID = email.threadID { touchedThreads.insert(threadID) }
+        }
+
+        for threadID in touchedThreads {
+            try recomputeUnread(threadID: threadID, accountKey: accountKey)
+        }
+
+        try modelContext.save()
+    }
+
+    /// A thread is unread when any message in it is.
+    private func recomputeUnread(threadID: String, accountKey: String) throws {
+        let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+        guard let thread = try existing(StoredThread.self, uid: uid) else { return }
+
+        let emails = try thread.emailIDs.compactMap { emailID in
+            try existing(
+                StoredEmail.self,
+                uid: StoreKey.object(accountKey: accountKey, id: emailID))
+        }
+
+        // Only recomputed from messages actually cached: a thread whose older
+        // messages have not been fetched should not flip to read because they
+        // are absent.
+        guard emails.isEmpty == false else { return }
+
+        thread.isUnread = emails.contains { $0.isSeen == false }
+    }
+
+    /// Every message in a thread, oldest first, as values.
+    public func messages(threadID: String, accountKey: String) throws -> [MessageSnapshot] {
+        let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+        guard let thread = try existing(StoredThread.self, uid: uid) else { return [] }
+
+        let emails = try thread.emailIDs.compactMap { emailID in
+            try existing(
+                StoredEmail.self,
+                uid: StoreKey.object(accountKey: accountKey, id: emailID))
+        }
+
+        return
+            emails
+            .sorted { ($0.receivedAt ?? .distantPast) < ($1.receivedAt ?? .distantPast) }
+            .map(snapshot(of:))
+    }
+
+    private func snapshot(of email: StoredEmail) -> MessageSnapshot {
+        let decoder = JSONDecoder()
+
+        return MessageSnapshot(
+            emailID: email.emailID,
+            accountKey: email.accountKey,
+            blobID: email.blobID,
+            subject: email.subject,
+            fromName: email.fromName,
+            fromAddress: email.fromAddress,
+            to: (email.toJSON.flatMap { try? decoder.decode([EmailAddress].self, from: $0) }) ?? [],
+            cc: (email.ccJSON.flatMap { try? decoder.decode([EmailAddress].self, from: $0) }) ?? [],
+            receivedAt: email.receivedAt,
+            preview: email.preview,
+            isSeen: email.isSeen,
+            isFlagged: email.isFlagged,
+            isDraft: email.isDraft,
+            htmlBody: email.body?.htmlBody,
+            textBody: email.body?.textBody,
+            hasBody: email.body != nil,
+            attachments: email.attachments
+                .filter { $0.isInline == false }
+                .map(snapshot(of:)),
+            inlineParts: email.attachments
+                .filter(\.isInline)
+                .map(snapshot(of:))
+        )
+    }
+
+    private func snapshot(of attachment: StoredAttachment) -> AttachmentSnapshot {
+        AttachmentSnapshot(
+            partID: attachment.partID,
+            blobID: attachment.blobID,
+            name: attachment.name,
+            type: attachment.type,
+            size: attachment.size,
+            cid: attachment.cid,
+            isInline: attachment.isInline
+        )
+    }
+
     // MARK: - Feed
 
     /// Replaces one account's slice of a feed with a freshly-paged prefix.

@@ -55,6 +55,12 @@ public final class MailSyncService {
 
     public var serverID: String { connection.host }
 
+    /// Shared with the reader so both go through one cached session and one
+    /// concurrency gate. A second client would mean a second session fetch and
+    /// a gate that does not know about the other's in-flight requests.
+    public var jmapClient: JMAPClient { client }
+    public var serverConnection: ServerConnection { connection }
+
     /// Called when the stored credential is no longer accepted, so the app can
     /// return to onboarding. Set by whoever owns the sign-out path.
     public var onReauthenticationNeeded: (() -> Void)?

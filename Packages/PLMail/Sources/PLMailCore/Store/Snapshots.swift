@@ -30,6 +30,59 @@ public struct MailboxSnapshot: Hashable, Sendable, Identifiable {
     public var id: String { "\(accountKey)#\(mailboxID.rawValue)" }
 }
 
+/// One message, as the reader needs it.
+public struct MessageSnapshot: Hashable, Sendable, Identifiable {
+    public var emailID: String
+    public var accountKey: String
+    public var blobID: String?
+    public var subject: String?
+    public var fromName: String?
+    public var fromAddress: String?
+    public var to: [EmailAddress]
+    public var cc: [EmailAddress]
+    public var receivedAt: Date?
+    public var preview: String
+    public var isSeen: Bool
+    public var isFlagged: Bool
+    public var isDraft: Bool
+
+    /// Always the server's sanitised HTML. Render on a permanently light
+    /// background regardless of theme.
+    public var htmlBody: String?
+    public var textBody: String?
+    /// Whether the body has been fetched at all, as distinct from a message
+    /// that genuinely has none.
+    public var hasBody: Bool
+
+    public var attachments: [AttachmentSnapshot]
+    /// Referenced from the HTML by `cid:` rather than listed to the user.
+    public var inlineParts: [AttachmentSnapshot]
+
+    public var id: String { "\(accountKey)#\(emailID)" }
+
+    public var displayName: String {
+        if let fromName, fromName.isEmpty == false { return fromName }
+        return fromAddress ?? "(unknown sender)"
+    }
+}
+
+public struct AttachmentSnapshot: Hashable, Sendable, Identifiable {
+    public var partID: String
+    public var blobID: String
+    public var name: String?
+    public var type: String
+    public var size: Int
+    public var cid: String?
+    public var isInline: Bool
+
+    public var id: String { partID }
+
+    public var displayName: String {
+        guard let name, name.isEmpty == false else { return "Attachment" }
+        return name
+    }
+}
+
 /// One row of a materialised feed.
 public struct FeedEntrySnapshot: Hashable, Sendable {
     public var accountKey: String

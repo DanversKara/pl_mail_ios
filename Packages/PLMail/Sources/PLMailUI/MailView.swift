@@ -17,6 +17,8 @@ public struct MailView: View {
     @State private var isShowingDiagnostics = false
 
     private let connection: ServerConnection
+    private let store: SyncStore
+    private let blobs: BlobCache
     private let onSignOut: () -> Void
 
     public init(
@@ -25,9 +27,40 @@ public struct MailView: View {
         onSignOut: @escaping () -> Void
     ) {
         self.connection = connection
+        self.store = store
         self.onSignOut = onSignOut
+        // Scoped to the server, so signing into another one cannot serve the
+        // previous server's attachments out of a shared directory.
+        blobs = BlobCache(serverID: connection.host)
         _sync = State(wrappedValue: MailSyncService(connection: connection, store: store))
         _selectedFeed = State(wrappedValue: .unified(.inbox))
+    }
+
+    /// The reader for one thread.
+    ///
+    /// Built here rather than in the row so it gets the sync service's own
+    /// client: one cached session, one concurrency gate.
+    @ViewBuilder
+    private func reader(for ref: ThreadRef) -> some View {
+        if let account = sync.accounts.first(where: { $0.accountKey == ref.accountKey }) {
+            ThreadReaderView(
+                threadID: ref.threadID,
+                accountKey: ref.accountKey,
+                accountID: account.accountID,
+                subject: ref.subject,
+                client: sync.jmapClient,
+                store: store,
+                blobs: blobs,
+                credential: connection.credential
+            )
+        } else {
+            // The account went away between the row rendering and the push —
+            // a disconnected mailbox, or a sign-out mid-navigation.
+            ContentUnavailableView(
+                "This mailbox is no longer connected",
+                systemImage: "tray.slash"
+            )
+        }
     }
 
     public var body: some View {
@@ -42,21 +75,25 @@ public struct MailView: View {
                     }
                 }
         } detail: {
-            // No NavigationStack here. The split view already provides one
-            // for the detail column, and nesting a second means the visible
-            // bar belongs to the outer stack while the title is set on the
-            // inner one — which shows up as a titleless list whenever the
-            // detail is restored rather than pushed. The thread reader
-            // pushes onto this column with `navigationDestination`.
-            if let selectedFeed {
-                ThreadListView(feed: selectedFeed, sync: sync)
-            } else {
-                ContentUnavailableView(
-                    "Pick a mailbox", systemImage: "tray.2",
-                    description: Text("Choose a list from the sidebar."))
+            // The detail column needs its own stack for the list-to-reader
+            // push. Note the list titles itself `.inline`: a *large* title
+            // silently fails to render when this column is restored rather
+            // than pushed, which is exactly the cold-launch path.
+            NavigationStack {
+                if let selectedFeed {
+                    ThreadListView(feed: selectedFeed, sync: sync)
+                        .navigationDestination(for: ThreadRef.self, destination: reader(for:))
+                } else {
+                    ContentUnavailableView(
+                        "Pick a mailbox", systemImage: "tray.2",
+                        description: Text("Choose a list from the sidebar."))
+                }
             }
         }
         .task(id: selectedFeed) {
+            // A rejected credential means onboarding, not a retry loop.
+            sync.onReauthenticationNeeded = onSignOut
+
             guard let selectedFeed else { return }
             await sync.start(feed: selectedFeed)
         }
