@@ -403,7 +403,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AA0000000000000000000302 /* Debug.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = Widget/PLMailWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(PLMAIL_WIDGET_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Widget/Info.plist;
@@ -420,7 +420,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AA0000000000000000000303 /* Release.xcconfig */;
 			buildSettings = {
-				CODE_SIGN_ENTITLEMENTS = Widget/PLMailWidget.entitlements;
+				CODE_SIGN_ENTITLEMENTS = "$(PLMAIL_WIDGET_ENTITLEMENTS)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Widget/Info.plist;

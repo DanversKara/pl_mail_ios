@@ -65,15 +65,9 @@ struct MailWidgetView: View {
                 // Said outright rather than implied. A widget is refreshed on
                 // the system's schedule, not the app's, so a count with no age
                 // on it will eventually be wrong with total confidence.
-                if let state = entry.state {
-                    Text(state.updatedAt, format: .relative(presentation: .named))
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                } else {
-                    Text("Open plMail to sign in")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                }
+                Text(footnote)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -81,12 +75,30 @@ struct MailWidgetView: View {
 
     private var count: Int { entry.state?.unreadCount ?? 0 }
 
+    /// Three genuinely different situations, and the widget must not render
+    /// them all as "0".
+    ///
+    /// Without an App Group — every build signed by a free Apple ID — this
+    /// extension cannot see the app's numbers at all. Showing a confident
+    /// zero there would be a lie: the mail may well be piling up.
+    private var footnote: String {
+        if SharedMailStore.isShared == false {
+            return "Needs a paid developer account"
+        }
+
+        guard let state = entry.state else { return "Open plMail to sign in" }
+
+        return state.updatedAt.formatted(.relative(presentation: .named))
+    }
+
     private var unreadLabel: String {
         count == 1 ? "unread message" : "unread messages"
     }
 
     private var summary: String {
-        count == 0 ? "No unread mail" : "\(count) unread"
+        guard SharedMailStore.isShared, entry.state != nil else { return "plMail" }
+
+        return count == 0 ? "No unread mail" : "\(count) unread"
     }
 }
 

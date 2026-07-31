@@ -34,4 +34,8 @@ CODE_SIGN_STYLE = Automatic
 // Push. The simulator accepts silent pushes via `xcrun simctl push` without
 // any of this, but a device build needs the entitlement and a matching APNs
 // key on the server side — see docs/PUSH.md.
-CODE_SIGN_ENTITLEMENTS = App/plMail.entitlements
+// Overridden by Signing.xcconfig — see the note there. Defaults to the free
+// tier so a fresh clone builds onto a device without a paid account.
+PLMAIL_ENTITLEMENTS = App/plMail-free.entitlements
+CODE_SIGN_ENTITLEMENTS = $(PLMAIL_ENTITLEMENTS)
+PLMAIL_WIDGET_ENTITLEMENTS = Widget/PLMailWidget-free.entitlements

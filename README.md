@@ -72,9 +72,9 @@ No App Store release. Build it yourself:
 git clone https://github.com/karatektus/pl_mail_ios.git
 ```
 
-Open `plMail.xcodeproj`, pick a simulator or your own device, and press Run.
+Open `plMail.xcodeproj`, pick a simulator, and press Run. Simulator builds need no Apple account at all.
 
-A device build needs your Apple Developer team id: copy `App/Config/Signing.xcconfig.dist` to `Signing.xcconfig` and fill it in. Simulator builds need no account at all.
+**To put it on your own iPhone or iPad**, follow [docs/INSTALL-ON-DEVICE.md](docs/INSTALL-ON-DEVICE.md). A free Apple ID is enough — no developer programme, no fee. The app is signed for seven days at a time and re-running Xcode renews it.
 
 ---
 
@@ -89,7 +89,8 @@ A device build needs your Apple Developer team id: copy `App/Config/Signing.xcco
 
 ## What isn't there yet
 
-- **No push notifications.** New mail arrives when the app checks — on opening, and periodically in the background. The interface says "last checked N minutes ago" rather than implying it's live, because it isn't. Real push needs an arrangement between app and server that doesn't exist yet.
+- **No push notifications.** New mail arrives when the app checks — on opening, and periodically in the background. The interface says "last checked N minutes ago" rather than implying it's live, because it isn't. The client side is built ([docs/PUSH.md](docs/PUSH.md)); what's missing is an APNs key, which needs a paid Apple developer account, and a sender on the plMail side.
+- **The widget needs a paid account too.** It runs in its own process and reads the app's numbers through an App Group, which a free Apple ID cannot grant. It says so rather than showing a zero it can't justify.
 - **A few error messages are English-only** even with the app in German. The interface is translated; some failure messages from the networking layer aren't yet.
 - **The attachment picker is lightly tested** — it works, but it hasn't been put through every document provider.
 - **This is a plMail client, not a general JMAP one.** Snooze, cross-account labels and search lean on plMail's own extensions. It won't work against Fastmail or a stock Cyrus server.
