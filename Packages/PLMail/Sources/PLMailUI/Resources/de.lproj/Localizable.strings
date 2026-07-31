@@ -132,3 +132,13 @@
 "File" = "Datei";
 "That photo couldn't be loaded." = "Dieses Foto ließ sich nicht laden.";
 "Actions for this message" = "Aktionen für diese Nachricht";
+"Sending addresses" = "Absenderadressen";
+"No sending addresses" = "Keine Absenderadressen";
+"The addresses you can send from appear here once your accounts have synced." = "Sobald deine Konten synchronisiert sind, erscheinen hier die Adressen, von denen du senden kannst.";
+"Name" = "Name";
+"The name recipients see beside your address." = "Der Name, den Empfänger neben deiner Adresse sehen.";
+"Signature" = "Signatur";
+"No signature" = "Keine Signatur";
+"plMail keeps no signature for an address, so this cannot be changed here or in the web interface. If your server ever does send one, it is added below what you write." = "plMail speichert zu einer Adresse keine Signatur; sie lässt sich weder hier noch in der Weboberfläche ändern. Sollte dein Server doch eine liefern, wird sie unter deinen Text gesetzt.";
+"Save" = "Sichern";
+"Not saved" = "Nicht gesichert";

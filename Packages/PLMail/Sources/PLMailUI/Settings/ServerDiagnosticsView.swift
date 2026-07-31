@@ -14,6 +14,7 @@ import SwiftUI
 public struct ServerDiagnosticsView: View {
     let connection: ServerConnection
     let sync: MailSyncService
+    let store: SyncStore
     let onSignOut: () -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -21,10 +22,12 @@ public struct ServerDiagnosticsView: View {
     public init(
         connection: ServerConnection,
         sync: MailSyncService,
+        store: SyncStore,
         onSignOut: @escaping () -> Void
     ) {
         self.connection = connection
         self.sync = sync
+        self.store = store
         self.onSignOut = onSignOut
     }
 
@@ -48,10 +51,18 @@ public struct ServerDiagnosticsView: View {
                     }
                 }
 
+                Section {
+                    NavigationLink {
+                        IdentitiesView(sync: sync, store: store)
+                    } label: {
+                        Label(.ui("Sending addresses"), systemImage: "at")
+                    }
+                }
+
                 Section(.ui("Mail accounts")) {
                     ForEach(sync.accounts) { account in
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(account.name)
+                            Text(account.displayName)
 
                             if let failure = sync.degradedAccounts[account.accountKey] {
                                 Text(failure)

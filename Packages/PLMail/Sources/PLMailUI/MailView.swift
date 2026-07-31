@@ -375,6 +375,7 @@ public struct MailView: View {
             ServerDiagnosticsView(
                 connection: connection,
                 sync: sync,
+                store: store,
                 onSignOut: onSignOut
             )
         }

@@ -47,3 +47,10 @@
 "Enter your server's address." = "Gib die Adresse deines Servers ein.";
 "That address is missing a hostname." = "Dieser Adresse fehlt ein Hostname.";
 "That address couldn't be read." = "Diese Adresse ließ sich nicht lesen.";
+
+/* Absenderadressen */
+"Couldn't reach the server. Showing the addresses last synced." = "Server nicht erreichbar. Angezeigt werden die zuletzt synchronisierten Adressen.";
+"The server wouldn't save that name." = "Der Server hat diesen Namen nicht gespeichert.";
+"Couldn't reach the server. The name wasn't saved." = "Server nicht erreichbar. Der Name wurde nicht gespeichert.";
+"This address isn't set up as an alias on the server, so its name comes from the account and can't be changed here." = "Diese Adresse ist auf dem Server nicht als Alias angelegt; ihr Name stammt vom Konto und lässt sich hier nicht ändern.";
+"This account is read-only." = "Dieses Konto ist schreibgeschützt.";

@@ -195,4 +195,24 @@ struct RequestEncodingTests {
             )
         )
     }
+
+    /// plMail's `Identity/set` rejects the whole update if it carries any
+    /// property beyond `name` — `textSignature`, `replyTo` and `bcc` all come
+    /// back as `invalidProperties` rather than being quietly dropped. So the
+    /// patch has to contain exactly one key, and a rename that accidentally
+    /// serialised a nil signature alongside it would fail every time.
+    @Test("renaming an identity sends only the name")
+    func identityRenameSendsOnlyName() throws {
+        var builder = RequestBuilder()
+        builder.add(
+            IdentitySet.rename(IdentityID("4"), to: "Paul", accountID: AccountID("7")))
+
+        #expect(
+            try String(decoding: builder.encoded(), as: UTF8.self) == """
+                {"methodCalls":[["Identity/set",{"accountId":"7",\
+                "update":{"4":{"name":"Paul"}}},"c0"]],\
+                "using":["urn:ietf:params:jmap:core","urn:ietf:params:jmap:submission"]}
+                """
+        )
+    }
 }

@@ -127,3 +127,13 @@
 "File" = "File";
 "That photo couldn't be loaded." = "That photo couldn't be loaded.";
 "Actions for this message" = "Actions for this message";
+"Sending addresses" = "Sending addresses";
+"No sending addresses" = "No sending addresses";
+"The addresses you can send from appear here once your accounts have synced." = "The addresses you can send from appear here once your accounts have synced.";
+"Name" = "Name";
+"The name recipients see beside your address." = "The name recipients see beside your address.";
+"Signature" = "Signature";
+"No signature" = "No signature";
+"plMail keeps no signature for an address, so this cannot be changed here or in the web interface. If your server ever does send one, it is added below what you write." = "plMail keeps no signature for an address, so this cannot be changed here or in the web interface. If your server ever does send one, it is added below what you write.";
+"Save" = "Save";
+"Not saved" = "Not saved";

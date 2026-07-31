@@ -40,9 +40,34 @@ public final class FakeMailServer: Sendable {
         }
     }
 
+    /// A sendable address, as plMail models one: an address and a display
+    /// name, and nothing else. There is deliberately no signature field —
+    /// plMail's `Identity/set` refuses one, and a fake that accepted it would
+    /// let a test pass against behaviour the real server does not have.
+    public struct Identity: Sendable, Hashable {
+        public var id: String
+        public var name: String
+        public var email: String
+        /// The stand-in plMail invents for an account with no alias rows. It
+        /// appears in `Identity/get` like any other, but its id is the
+        /// *account's* id, so `Identity/set` looks it up among the aliases,
+        /// misses, and answers `notFound`. Reproduced because it is the
+        /// default state of a fresh account and a client has to survive it.
+        public var isSynthetic: Bool
+
+        public init(id: String, name: String = "", email: String, isSynthetic: Bool = false) {
+            self.id = id
+            self.name = name
+            self.email = email
+            self.isSynthetic = isSynthetic
+        }
+    }
+
     private struct State {
         var accounts: [String: [Message]] = [:]
+        var identities: [String: [Identity]] = [:]
         var failing: Set<String> = []
+        var refusesRenames = false
         var queryCount = 0
     }
 
@@ -74,6 +99,20 @@ public final class FakeMailServer: Sendable {
                 $0.failing.remove(accountID)
             }
         }
+    }
+
+    public func setIdentities(_ identities: [Identity], accountID: String) {
+        state.withLock { $0.identities[accountID] = identities }
+    }
+
+    public func identities(accountID: String) -> [Identity] {
+        state.withLock { $0.identities[accountID] ?? [] }
+    }
+
+    /// Makes `Identity/set` answer 200 with the rename in `notUpdated` — the
+    /// shape a client is most likely to mistake for success.
+    public func setRefusesRenames(_ refuses: Bool) {
+        state.withLock { $0.refusesRenames = refuses }
     }
 
     public var queryCount: Int { state.withLock(\.queryCount) }
@@ -178,6 +217,8 @@ public final class FakeMailServer: Sendable {
             case "Email/get": result = emailGet(arguments, accountID: accountID, prior: byCallID)
             case "Thread/get": result = threadGet(arguments, accountID: accountID, prior: byCallID)
             case "Mailbox/get": result = mailboxGet(accountID: accountID)
+            case "Identity/get": result = identityGet(accountID: accountID)
+            case "Identity/set": result = identitySet(arguments, accountID: accountID)
             default:
                 responses.append(["error", ["type": "unknownMethod"], callID])
                 continue
@@ -189,6 +230,75 @@ public final class FakeMailServer: Sendable {
 
         return try JSONSerialization.data(
             withJSONObject: ["methodResponses": responses, "sessionState": "1"])
+    }
+
+    private func identityGet(accountID: String) -> [String: Any] {
+        let list = identities(accountID: accountID).map { identity -> [String: Any] in
+            [
+                "id": identity.id,
+                "name": identity.name,
+                "email": identity.email,
+                // Always empty, always present: that is what plMail answers,
+                // and a client must not read it as "not supported".
+                "textSignature": "",
+                "htmlSignature": "",
+                "mayDelete": false,
+            ]
+        }
+
+        return ["accountId": accountID, "state": "1", "list": list, "notFound": []]
+    }
+
+    private func identitySet(_ arguments: [String: Any], accountID: String) -> [String: Any] {
+        let update = arguments["update"] as? [String: Any] ?? [:]
+        var updated: [String: Any] = [:]
+        var notUpdated: [String: Any] = [:]
+
+        for (id, patch) in update {
+            let patch = patch as? [String: Any] ?? [:]
+
+            // Exactly plMail's rule: anything but "name" is refused outright,
+            // rather than accepted and dropped.
+            let unsupported = patch.keys.filter { $0 != "name" }
+
+            guard unsupported.isEmpty else {
+                notUpdated[id] = [
+                    "type": "invalidProperties",
+                    "description": "plMail stores no signature, replyTo or bcc.",
+                ]
+                continue
+            }
+
+            guard state.withLock({ $0.refusesRenames }) == false else {
+                notUpdated[id] = ["type": "forbidden", "description": "Refused."]
+                continue
+            }
+
+            let isSynthetic = state.withLock {
+                $0.identities[accountID]?.first { $0.id == id }?.isSynthetic ?? true
+            }
+
+            guard isSynthetic == false else {
+                notUpdated[id] = [
+                    "type": "notFound", "description": "No such Identity in this account.",
+                ]
+                continue
+            }
+
+            state.withLock {
+                guard let index = $0.identities[accountID]?.firstIndex(where: { $0.id == id })
+                else { return }
+
+                $0.identities[accountID]?[index].name = patch["name"] as? String ?? ""
+            }
+
+            updated[id] = NSNull()
+        }
+
+        return [
+            "accountId": accountID, "oldState": "1", "newState": "2",
+            "updated": updated, "notUpdated": notUpdated,
+        ]
     }
 
     private func emailQuery(_ arguments: [String: Any], accountID: String) -> [String: Any] {
