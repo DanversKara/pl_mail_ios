@@ -36,6 +36,25 @@ enum PanelStyle {
 }
 
 extension View {
+    /// One message in a conversation, as its own card.
+    ///
+    /// A thread used to be one continuous column with hairlines between
+    /// messages, which made a five-message conversation read as one very long
+    /// message with odd rules through it. Cards say "these are separate things"
+    /// without a single divider, and give the collapsed rows an obvious edge to
+    /// be tappable within.
+    ///
+    /// The radius is the pane radius, not the control one: a message is a
+    /// surface, and matching the panes it sits inside is what keeps the reader
+    /// from looking like a list of buttons.
+    func messageCard() -> some View {
+        clipShape(.rect(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                    .fill(PanelStyle.surface)
+            }
+    }
+
     /// Makes this pane a distinct surface on a wide layout, and leaves it
     /// alone on a narrow one.
     ///

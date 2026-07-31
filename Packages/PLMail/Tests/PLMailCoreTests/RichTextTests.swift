@@ -246,4 +246,100 @@ struct RichTextTests {
         #expect(split.body == "<div>mine</div>")
         #expect(split.quote == nil)
     }
+
+    // MARK: - Trimming quoted history
+
+    /// The failure that matters is hiding something a person wrote. Every
+    /// test here is really asking "did we keep too much" or "did we hide too
+    /// much", and the second is the one that loses information.
+
+    @Test("A reply hides the quote and keeps what was written")
+    func trimsAQuote() {
+        let html = """
+            <div>Sounds good, see you then.</div>\
+            <blockquote><div>Can you make Tuesday?</div></blockquote>
+            """
+
+        let split = MailHTML.trimQuotedHistory(html)
+
+        #expect(split.visible == "<div>Sounds good, see you then.</div>")
+        #expect(split.quoted == "<blockquote><div>Can you make Tuesday?</div></blockquote>")
+    }
+
+    /// Gmail hides the attribution with the quote. Leaving it behind strands
+    /// "On Tuesday, Ada wrote:" pointing at nothing.
+    @Test("The attribution line goes with the quote")
+    func attributionGoesWithTheQuote() {
+        let html = """
+            <div>Yes, that works.</div>\
+            <div>On 3 March, Ada wrote:</div>\
+            <blockquote><div>Tuesday?</div></blockquote>
+            """
+
+        let split = MailHTML.trimQuotedHistory(html)
+
+        #expect(split.visible == "<div>Yes, that works.</div>")
+        #expect(split.quoted?.hasPrefix("<div>On 3 March, Ada wrote:</div>") == true)
+    }
+
+    /// A message that is *only* a quote — a bare forward — would otherwise
+    /// collapse to nothing but a button, which reads as a broken message.
+    @Test("A message that is all quote is left alone")
+    func doesNotTrimABareForward() {
+        let html = "<div>FYI</div><blockquote><div>The whole original.</div></blockquote>"
+
+        #expect(MailHTML.trimQuotedHistory(html).quoted == nil)
+    }
+
+    @Test("A message with no quote is untouched")
+    func noQuote() {
+        let html = "<div>Just a note.</div>"
+        let split = MailHTML.trimQuotedHistory(html)
+
+        #expect(split.visible == html)
+        #expect(split.quoted == nil)
+    }
+
+    /// Clients that predate blockquote, which are still out there.
+    @Test(
+        "Plain-text separators are recognised",
+        arguments: ["-----Original Message-----", "-------- Forwarded Message --------"])
+    func plainTextSeparators(marker: String) {
+        let html = "<div>Passing this on, looks relevant.</div><div>\(marker)</div><div>x</div>"
+
+        let split = MailHTML.trimQuotedHistory(html)
+
+        #expect(split.visible == "<div>Passing this on, looks relevant.</div>")
+        #expect(split.quoted?.contains(marker) == true)
+    }
+
+    /// The last line of a message is not an attribution just because it sits
+    /// above the quote. Swallowing it would hide a sentence.
+    @Test("An ordinary last line is not mistaken for an attribution")
+    func lastLineIsKept() {
+        let html = """
+            <div>Here are the numbers you asked for.</div>\
+            <div>Let me know if anything looks off.</div>\
+            <blockquote><div>Can you send the numbers?</div></blockquote>
+            """
+
+        let split = MailHTML.trimQuotedHistory(html)
+
+        #expect(split.visible.contains("Let me know if anything looks off."))
+    }
+
+    /// German clients write "schrieb:" where English ones write "wrote:".
+    @Test("A German attribution is recognised")
+    func germanAttribution() {
+        let html = """
+            <div>Passt, bis dann.</div>\
+            <div>Am 3. März schrieb Ada:</div>\
+            <blockquote><div>Dienstag?</div></blockquote>
+            """
+
+        let split = MailHTML.trimQuotedHistory(html)
+
+        #expect(split.visible == "<div>Passt, bis dann.</div>")
+        #expect(split.quoted?.contains("schrieb") == true)
+    }
 }

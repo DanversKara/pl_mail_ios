@@ -21,6 +21,7 @@ struct MessageView: View {
     /// being the one screen that stays white at night.
     @Environment(\.colorScheme) private var colorScheme
     @State private var prefersOriginalColors = false
+    @State private var showsQuotedHistory = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -33,6 +34,10 @@ struct MessageView: View {
 
                 body(for: message)
 
+                if trimmed.quoted != nil {
+                    quotedHistoryToggle
+                }
+
                 if renderStyle(for: message).isTransformed || prefersOriginalColors {
                     originalColorsToggle
                 }
@@ -42,7 +47,7 @@ struct MessageView: View {
                 }
             }
         }
-        .padding(.vertical, 12)
+        .padding(.vertical, isExpanded ? 12 : 8)
     }
 
     // MARK: - Header
@@ -76,7 +81,10 @@ struct MessageView: View {
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                    } else {
+                    } else if message.preview.isEmpty == false {
+                        // Only when there is one. An empty line still takes a
+                        // line's height, and a column of collapsed rows with
+                        // phantom second lines reads as broken spacing.
                         Text(message.preview)
                             .font(.caption)
                             .foregroundStyle(.secondary)
@@ -122,11 +130,21 @@ struct MessageView: View {
 
     // MARK: - Body
 
+    /// What was written, and the history under it.
+    ///
+    /// Computed once here rather than inside the body builder so the toggle and
+    /// the renderer cannot disagree about whether there is anything to hide.
+    private var trimmed: (visible: String, quoted: String?) {
+        guard let html = message.htmlBody, html.isEmpty == false else { return ("", nil) }
+
+        return MailHTML.trimQuotedHistory(html)
+    }
+
     @ViewBuilder
     private func body(for message: MessageSnapshot) -> some View {
         if let html = message.htmlBody, html.isEmpty == false {
             MessageBodyView(
-                html: html,
+                html: showsQuotedHistory ? html : trimmed.visible,
                 inlineParts: message.inlineParts,
                 accountKey: message.accountKey,
                 loadRemoteContent: isRemoteContentAllowed,
@@ -170,6 +188,33 @@ struct MessageView: View {
             isDark: colorScheme == .dark,
             prefersOriginal: prefersOriginalColors
         )
+    }
+
+    /// The `•••` chip, which is what every mail client uses for this and
+    /// therefore what people already know how to read.
+    ///
+    /// Left-aligned and small on purpose: it is a seam in the message, not an
+    /// action anyone came here to take.
+    private var quotedHistoryToggle: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.2)) { showsQuotedHistory.toggle() }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 3)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(.quaternary))
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .accessibilityLabel(
+            Text(
+                showsQuotedHistory
+                    ? .ui("Hide quoted history") : .ui("Show quoted history")))
     }
 
     /// The escape hatch.

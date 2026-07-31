@@ -14,6 +14,7 @@ import SwiftUI
 public struct ThreadReaderView: View {
     @State private var loader: ThreadLoader
     @State private var expanded: Set<String> = []
+    @State private var showsEarlierMessages = false
     /// Persisted rather than view state: this is a decision the user made,
     /// and as `@State` it did not survive walking back to the list.
     private let remoteContent = RemoteContentPolicy()
@@ -80,35 +81,40 @@ public struct ThreadReaderView: View {
 
     public var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 0) {
+            LazyVStack(alignment: .leading, spacing: 10) {
                 header
 
                 ForEach(Array(loader.messages.enumerated()), id: \.element.id) { index, message in
-                    MessageView(
-                        message: message,
-                        isExpanded: isExpanded(message),
-                        isRemoteContentAllowed: isRemoteContentAllowed(message),
-                        wasRemoteContentBlocked: blockedRemoteContent.contains(message.id),
-                        blobs: blobs,
-                        downloadContext: downloadContext,
-                        onToggle: { toggle(message) },
-                        onAllowRemoteContent: { allowRemoteContent(from: message) },
-                        onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
-                        onPreview: { previewedAttachment = $0 }
-                    )
-                    // The policy lives outside SwiftUI's observation, so
-                    // trusting a sender has to invalidate the message that was
-                    // showing the blocked notice.
-                    .id("\(message.id)-\(remoteContentRevision)")
+                    // The middle of a long thread, behind one bar. Rendered at
+                    // the first hidden position so it keeps its place in the
+                    // chronology instead of floating to the top.
+                    if index == collapsedRange?.lowerBound {
+                        earlierMessagesBar
+                    }
 
-                    // Between messages only. A rule under the last one is a
-                    // line across empty space, which reads as content that
-                    // failed to load.
-                    if index < loader.messages.count - 1 {
-                        Divider()
+                    if collapsedRange?.contains(index) != true {
+                        MessageView(
+                            message: message,
+                            isExpanded: isExpanded(message),
+                            isRemoteContentAllowed: isRemoteContentAllowed(message),
+                            wasRemoteContentBlocked: blockedRemoteContent.contains(message.id),
+                            blobs: blobs,
+                            downloadContext: downloadContext,
+                            onToggle: { toggle(message) },
+                            onAllowRemoteContent: { allowRemoteContent(from: message) },
+                            onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
+                            onPreview: { previewedAttachment = $0 }
+                        )
+                        // The policy lives outside SwiftUI's observation, so
+                        // trusting a sender has to invalidate the message that
+                        // was showing the blocked notice.
+                        .id("\(message.id)-\(remoteContentRevision)")
+                        .messageCard()
                     }
                 }
             }
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
 
             // A line of text is readable up to roughly 75 characters and
             // painful past it. On a 13" iPad the detail column is wide enough
@@ -118,6 +124,12 @@ public struct ThreadReaderView: View {
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
+        // Cards need something to be cards *on*. Without this the surface
+        // colour and the scroll view's own background are the same white and
+        // the separation does not exist — which is how the first version of
+        // this looked, and it looked like nothing had changed.
+        .scrollContentBackground(.hidden)
+        .background(PanelStyle.window)
         // Empty on purpose: the subject is the headline at the top of the
         // content, at the size a subject deserves. Repeating it in the bar,
         // truncated to a column's width, says the same thing twice and worse.
@@ -379,6 +391,40 @@ public struct ThreadReaderView: View {
     }
 
     // MARK: - State
+
+    /// Which messages are folded away.
+    ///
+    /// The first is kept because a thread's opening message is what the rest is
+    /// answering, and the last two because that is the conversation as it
+    /// stands. Everything between is history — the part people scroll past.
+    ///
+    /// Only past four: below that the bar costs a tap and saves nothing.
+    private var collapsedRange: Range<Int>? {
+        guard showsEarlierMessages == false, loader.messages.count > 4 else { return nil }
+
+        return 1..<(loader.messages.count - 2)
+    }
+
+    private var earlierMessagesBar: some View {
+        Button {
+            withAnimation(.snappy(duration: 0.25)) { showsEarlierMessages = true }
+        } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "ellipsis.circle.fill")
+                    .foregroundStyle(.secondary)
+
+                Text(.ui("\(collapsedRange?.count ?? 0) earlier messages"))
+                    .font(.subheadline)
+
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .messageCard()
+    }
 
     private func isExpanded(_ message: MessageSnapshot) -> Bool {
         expanded.contains(message.id)

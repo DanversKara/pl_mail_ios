@@ -179,6 +179,138 @@ public enum MailHTML {
         return (String(html[html.startIndex..<range.lowerBound]), String(html[range.lowerBound...]))
     }
 
+    /// Splits a received message into what was written and the history under
+    /// it, so a reply five deep does not open as five screens of scrollback.
+    ///
+    /// Deliberately conservative. Getting this wrong hides something somebody
+    /// wrote, which is far worse than showing a quote they could have skipped,
+    /// so it only trims on markers that actually mean "quoted", and only when
+    /// there is something left to show.
+    ///
+    /// `class` is not among the signals, though every mail client marks quotes
+    /// with one — `gmail_quote` and friends. plMail's sanitiser strips `class`
+    /// and `id` outright, so by the time a message reaches this app those are
+    /// gone. What survives is `<blockquote>`, the attribution line above it,
+    /// and the plain-text separators older clients emit.
+    public static func trimQuotedHistory(_ html: String) -> (visible: String, quoted: String?) {
+        guard let cut = quoteStart(in: html) else { return (html, nil) }
+
+        let visible = String(html[html.startIndex..<cut])
+        let quoted = String(html[cut...])
+
+        // A forward is almost entirely quote. Hiding all of it would leave an
+        // empty message and a button, which reads as a bug.
+        guard textLength(of: visible) >= 8 else { return (html, nil) }
+
+        return (visible, quoted)
+    }
+
+    /// Where the history begins, including the "On … wrote:" line that
+    /// introduces it — Gmail hides the attribution with the quote, and leaving
+    /// it behind strands a sentence pointing at nothing.
+    private static func quoteStart(in html: String) -> String.Index? {
+        var candidates: [String.Index] = []
+
+        if let blockquote = html.range(of: "<blockquote", options: .caseInsensitive) {
+            var start = blockquote.lowerBound
+
+            if let attribution = attributionStart(in: html, before: start) {
+                start = attribution
+            }
+
+            candidates.append(start)
+        }
+
+        // What clients emitted before blockquote was universal. Matched on the
+        // text, then backed up to the block that contains it — cutting at the
+        // text itself leaves the opening `<div>` stranded above the fold.
+        for marker in ["-----Original Message-----", "-------- Forwarded Message --------"] {
+            if let found = html.range(of: marker, options: .caseInsensitive) {
+                candidates.append(blockStart(in: html, containing: found.lowerBound))
+            }
+        }
+
+        return candidates.min()
+    }
+
+    /// Finds the start of the block holding the attribution line, searching
+    /// only the short stretch just above the quote.
+    private static func attributionStart(
+        in html: String, before index: String.Index
+    ) -> String.Index? {
+        let head = html[html.startIndex..<index]
+
+        // The last block that opens before the quote. Anything earlier is the
+        // message proper.
+        guard let open = head.range(of: "<div", options: [.caseInsensitive, .backwards])
+        else { return nil }
+
+        let candidate = String(head[open.lowerBound...])
+
+        guard candidate.count < 400 else { return nil }
+
+        // Must actually look like an attribution: a short line that ends in a
+        // colon and names the act of writing. Testing for "wrote:" alone is not
+        // enough — German puts the name after the verb ("Am 3. März schrieb
+        // Ada:"), so the colon and the verb are in different places.
+        let text = stripTags(candidate).trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard text.hasSuffix(":") else { return nil }
+
+        let verbs = ["wrote", "schrieb", "a écrit", "escribió", "ha scritto"]
+
+        guard verbs.contains(where: { text.lowercased().contains($0) }) else { return nil }
+
+        return open.lowerBound
+    }
+
+    /// Backs up to the opening tag of the block a position sits inside.
+    private static func blockStart(in html: String, containing index: String.Index) -> String.Index
+    {
+        let head = html[html.startIndex..<index]
+
+        let opens = ["<div", "<p", "<hr", "<blockquote"]
+            .compactMap { head.range(of: $0, options: [.caseInsensitive, .backwards])?.lowerBound }
+
+        return opens.max() ?? index
+    }
+
+    private static func stripTags(_ html: String) -> String {
+        var output = ""
+        var depth = 0
+
+        for character in html {
+            if character == "<" {
+                depth += 1
+            } else if character == ">" {
+                depth = max(0, depth - 1)
+            } else if depth == 0 {
+                output.append(character)
+            }
+        }
+
+        return output
+    }
+
+    /// Rough text length, ignoring tags — enough to tell "there is a message
+    /// here" from "this is only a quote".
+    private static func textLength(of html: String) -> Int {
+        var depth = 0
+        var count = 0
+
+        for character in html {
+            if character == "<" {
+                depth += 1
+            } else if character == ">" {
+                depth = max(0, depth - 1)
+            } else if depth == 0, character.isWhitespace == false {
+                count += 1
+            }
+        }
+
+        return count
+    }
+
     /// A quoted original, in the shape every mail client renders as a quote.
     ///
     /// The attribution line matches what the web UI writes, so a thread replied

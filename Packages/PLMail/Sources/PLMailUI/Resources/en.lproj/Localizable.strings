@@ -120,3 +120,6 @@
 "%@ couldn't be read." = "%@ couldn't be read.";
 "Couldn't download this attachment." = "Couldn't download this attachment.";
 "To: %@" = "To: %@";
+"Show quoted history" = "Show quoted history";
+"Hide quoted history" = "Hide quoted history";
+"%lld earlier messages" = "%lld earlier messages";

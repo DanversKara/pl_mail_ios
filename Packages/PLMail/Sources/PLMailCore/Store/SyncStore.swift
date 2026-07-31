@@ -544,7 +544,8 @@ public actor SyncStore {
         // is the thing people actually recognise, and by this point we have it.
         if let account = try account(accountKey),
             account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-            let email = identities.compactMap(\.email).first
+            let email = identities.compactMap(\.email)
+                .first(where: { $0.trimmingCharacters(in: .whitespaces).isEmpty == false })
         {
             account.name = email
         }

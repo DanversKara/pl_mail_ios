@@ -107,4 +107,21 @@ struct AccountNamingTests {
 
         #expect(try await store.accounts().first?.displayName == "work@example.test")
     }
+
+    /// A server can return an identity with an empty address — the second
+    /// account on my own test server does exactly that. Storing it would put
+    /// an empty name on the account, which falls back to the id anyway but
+    /// hides the fact that nothing was found.
+    @Test("A blank identity address is not used as a name")
+    func blankIdentityIsIgnored() async throws {
+        let store = makeStore()
+
+        let accounts = try await store.syncAccounts(
+            session: try session(accountName: ""), serverID: "srv")
+        let key = try #require(accounts.first?.accountKey)
+
+        try await store.replaceIdentities([identity(""), identity("  ")], accountKey: key)
+
+        #expect(try await store.accounts().first?.displayName == "Mailbox 1119")
+    }
 }

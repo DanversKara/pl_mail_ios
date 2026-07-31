@@ -125,3 +125,6 @@
 "%@ couldn't be read." = "%@ ließ sich nicht lesen.";
 "Couldn't download this attachment." = "Dieser Anhang ließ sich nicht laden.";
 "To: %@" = "An: %@";
+"Show quoted history" = "Zitierten Verlauf einblenden";
+"Hide quoted history" = "Zitierten Verlauf ausblenden";
+"%lld earlier messages" = "%lld ältere Nachrichten";

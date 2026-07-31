@@ -271,6 +271,14 @@ public final class MailSyncService {
         do {
             var builder = RequestBuilder(session: try await client.session())
             let get = builder.add(MailboxGet(accountID: account.accountID))
+            // Identities in the same round trip. They used to be fetched only
+            // when a composer opened, which had two consequences: the composer
+            // waited on a request before it could show who it was sending as,
+            // and an account with no name of its own stayed called "Mailbox
+            // 1119" in the list until you happened to write a message. Both
+            // are fixed by asking here, where the structure is already being
+            // read, for no extra round trip.
+            let identities = builder.add(IdentityGet(accountID: account.accountID))
             let results = try await client.send(builder)
             let result = try results.result(of: get)
 
@@ -279,6 +287,14 @@ public final class MailSyncService {
                 accountKey: account.accountKey,
                 state: result.state
             )
+
+            // Not fatal. A server that refuses `Identity/get` still has a
+            // perfectly usable mailbox, and failing the whole structure sync
+            // over the sender list would be out of proportion.
+            if let identities = try? results.result(of: identities).list {
+                try? await store.replaceIdentities(identities, accountKey: account.accountKey)
+            }
+
             try await store.recordSyncSuccess(accountKey: account.accountKey)
         } catch {
             await degrade(account, error: error)
