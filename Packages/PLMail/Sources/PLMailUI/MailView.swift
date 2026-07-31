@@ -22,6 +22,8 @@ public struct MailView: View {
     @State private var isShowingDiagnostics = false
     @State private var isSelectionActive = false
     @State private var composing: ComposeModel.Kind?
+    /// What an intent asked us to fill in, consumed when the composer opens.
+    @State private var prefilled: (recipient: String?, subject: String?)?
     @State private var searchText = ""
     /// Debounced separately from `searchText`, so a keystroke does not start a
     /// query against someone's home server.
@@ -97,6 +99,26 @@ public struct MailView: View {
 
     /// Which account a new message is sent from.
     ///
+    /// Acts on whatever Shortcuts or Siri asked for.
+    ///
+    /// Both cases open the UI rather than doing the thing silently. Sending
+    /// mail without showing someone what is about to go out, and to whom,
+    /// is not a favour — the recipient list is the one part of a message
+    /// that cannot be taken back.
+    private func performPendingIntent() {
+        guard let request = IntentRouter.shared.take() else { return }
+
+        switch request {
+        case .compose(let recipient, let subject):
+            composing = .new
+            prefilled = (recipient, subject)
+
+        case .search(let query):
+            searchText = query
+            settledSearch = query
+        }
+    }
+
     /// The account whose mailbox is on screen when there is one, so composing
     /// from a specific inbox sends from that address rather than whichever
     /// account happens to sort first.
@@ -290,6 +312,11 @@ public struct MailView: View {
                 composeButton
             }
         }
+        // Shortcuts and Siri. The router holds the request because an intent
+        // is built by the system and cannot be handed a reference to any of
+        // this; here is where it gets picked up.
+        .onChange(of: IntentRouter.shared.pending) { _, _ in performPendingIntent() }
+        .task { performPendingIntent() }
         .task(id: searchText) {
             // 350ms: long enough that typing a word is one query rather than
             // five, short enough not to feel laggy.
@@ -325,9 +352,15 @@ public struct MailView: View {
                     accountID: account.accountID,
                     client: sync.jmapClient,
                     store: store,
-                    outbox: outbox
+                    outbox: outbox,
+                    prefill: prefilled
                 )
             }
+        }
+        .onChange(of: composing) { _, kind in
+            // Consumed when the sheet closes, so opening the composer by hand
+            // afterwards does not resurrect a dictated recipient.
+            if kind == nil { prefilled = nil }
         }
         .sheet(isPresented: $isShowingDiagnostics) {
             ServerDiagnosticsView(

@@ -22,14 +22,20 @@ public struct ComposeView: View {
     @State private var isPickingFiles = false
     @State private var attachmentError: String?
 
+    /// Filled in by Shortcuts or Siri, applied once the model exists.
+    private let prefill: (recipient: String?, subject: String?)?
+
     public init(
         kind: ComposeModel.Kind,
         accountKey: String,
         accountID: AccountID,
         client: JMAPClient,
         store: SyncStore,
-        outbox: OutboxSender
+        outbox: OutboxSender,
+        prefill: (recipient: String?, subject: String?)? = nil
     ) {
+        self.prefill = prefill
+
         _model = State(
             wrappedValue: ComposeModel(
                 kind: kind, accountKey: accountKey, accountID: accountID,
@@ -92,7 +98,16 @@ public struct ComposeView: View {
             } message: {
                 Text(attachmentError ?? "")
             }
-            .task { await model.load() }
+            .task {
+                // Before `load`, which fills in identities and a signature —
+                // neither of which should overwrite what was dictated.
+                if let prefill {
+                    if let recipient = prefill.recipient { model.to = recipient }
+                    if let subject = prefill.subject { model.subject = subject }
+                }
+
+                await model.load()
+            }
             .onChange(of: model.status) { _, status in
                 if status == .sent { dismiss() }
             }

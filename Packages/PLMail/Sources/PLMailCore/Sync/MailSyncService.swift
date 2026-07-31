@@ -191,9 +191,32 @@ public final class MailSyncService {
         do {
             accounts = try await store.accounts()
             mailboxes = try await allMailboxes()
+            publishSharedState()
         } catch {
             logger.error("Could not read the cache: \(error, privacy: .public)")
         }
+    }
+
+    /// Hands the widget and the Shortcuts intents a few numbers.
+    ///
+    /// Written on every cache load rather than on a timer, so it is refreshed
+    /// by exactly the things that change it — a sync, a foreground, a delta
+    /// pull — and never by anything else.
+    private func publishSharedState() {
+        // Unread across every inbox, which is what the app's own badge means
+        // and therefore what a widget saying "unread" has to agree with.
+        let unread =
+            mailboxes
+            .filter { $0.role == .inbox }
+            .reduce(0) { $0 + $1.unreadThreads }
+
+        let total =
+            mailboxes
+            .filter { $0.role == .inbox }
+            .reduce(0) { $0 + $1.totalThreads }
+
+        SharedMailStore.write(
+            SharedMailState(unreadCount: unread, totalCount: total, updatedAt: .now))
     }
 
     /// Re-syncs structure and the first page of `feed`.

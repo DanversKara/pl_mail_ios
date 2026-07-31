@@ -12,7 +12,7 @@ import Observation
 @MainActor
 @Observable
 public final class ComposeModel {
-    public enum Kind: Sendable {
+    public enum Kind: Sendable, Equatable {
         case new
         case reply(to: MessageSnapshot, all: Bool)
         case forward(MessageSnapshot)

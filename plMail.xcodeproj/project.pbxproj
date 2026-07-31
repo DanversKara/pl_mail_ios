@@ -10,6 +10,8 @@
 		AA0000000000000000000101 /* JMAPKit in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000201 /* JMAPKit */; };
 		AA0000000000000000000102 /* PLMailCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000202 /* PLMailCore */; };
 		AA0000000000000000000103 /* PLMailUI in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000203 /* PLMailUI */; };
+		AA0000000000000000000104 /* PLMailCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA0000000000000000000204 /* PLMailCore */; };
+		AA0000000000000000000105 /* PLMailWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000305 /* PLMailWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -17,6 +19,7 @@
 		AA0000000000000000000302 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = App/Config/Debug.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000303 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = App/Config/Release.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000304 /* plMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = plMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		AA0000000000000000000305 /* PLMailWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PLMailWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -31,6 +34,14 @@
 		AA0000000000000000000402 /* UITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = UITests;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000403 /* Widget */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				AA0000000000000000000502 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
+			);
+			path = Widget;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -49,6 +60,14 @@
 			);
 			target = AA0000000000000000000601 /* plMail */;
 		};
+		AA0000000000000000000502 /* PBXFileSystemSynchronizedBuildFileExceptionSet */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+				PLMailWidget.entitlements,
+			);
+			target = AA0000000000000000000603 /* PLMailWidget */;
+		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -62,6 +81,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000703 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA0000000000000000000104 /* PLMailCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -70,6 +97,7 @@
 			children = (
 				AA0000000000000000000401 /* App */,
 				AA0000000000000000000402 /* UITests */,
+				AA0000000000000000000403 /* Widget */,
 				AA0000000000000000000804 /* Configurations */,
 				AA0000000000000000000802 /* Products */,
 			);
@@ -80,6 +108,7 @@
 			children = (
 				AA0000000000000000000301 /* plMail.app */,
 				AA0000000000000000000304 /* plMailUITests.xctest */,
+				AA0000000000000000000305 /* PLMailWidget.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -103,10 +132,12 @@
 				AA0000000000000000000B01 /* Sources */,
 				AA0000000000000000000701 /* Frameworks */,
 				AA0000000000000000000C01 /* Resources */,
+				AA0000000000000000000C04 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AA0000000000000000000F03 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				AA0000000000000000000401 /* App */,
@@ -141,6 +172,29 @@
 			productName = plMailUITests;
 			productReference = AA0000000000000000000304 /* plMailUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
+		};
+		AA0000000000000000000603 /* PLMailWidget */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000A04 /* Build configuration list for PBXNativeTarget "PLMailWidget" */;
+			buildPhases = (
+				AA0000000000000000000B03 /* Sources */,
+				AA0000000000000000000703 /* Frameworks */,
+				AA0000000000000000000C03 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000403 /* Widget */,
+			);
+			name = PLMailWidget;
+			packageProductDependencies = (
+				AA0000000000000000000204 /* PLMailCore */,
+			);
+			productName = PLMailWidget;
+			productReference = AA0000000000000000000305 /* PLMailWidget.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -180,12 +234,20 @@
 			targets = (
 				AA0000000000000000000601 /* plMail */,
 				AA0000000000000000000602 /* plMailUITests */,
+				AA0000000000000000000603 /* PLMailWidget */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		AA0000000000000000000C01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AA0000000000000000000C03 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -202,6 +264,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000B03 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		AA0000000000000000000B02 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -211,7 +280,26 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXCopyFilesBuildPhase section */
+		AA0000000000000000000C04 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				AA0000000000000000000105 /* PLMailWidget.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
 /* Begin PBXTargetDependency section */
+		AA0000000000000000000F03 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000603 /* PLMailWidget */;
+			targetProxy = AA0000000000000000000F04 /* PBXContainerItemProxy */;
+		};
 		AA0000000000000000000F01 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = AA0000000000000000000601 /* plMail */;
@@ -220,6 +308,13 @@
 /* End PBXTargetDependency section */
 
 /* Begin PBXContainerItemProxy section */
+		AA0000000000000000000F04 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000D01 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000603;
+			remoteInfo = PLMailWidget;
+		};
 		AA0000000000000000000F02 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = AA0000000000000000000D01 /* Project object */;
@@ -304,6 +399,40 @@
 			};
 			name = Release;
 		};
+		AA0000000000000000000E07 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000302 /* Debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widget/PLMailWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Widget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = plMail;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				PRODUCT_BUNDLE_IDENTIFIER = de.plmail.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000E08 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000303 /* Release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Widget/PLMailWidget.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Widget/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = plMail;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				PRODUCT_BUNDLE_IDENTIFIER = de.plmail.Widget;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -334,6 +463,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		AA0000000000000000000A04 /* Build configuration list for PBXNativeTarget "PLMailWidget" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000E07 /* Debug */,
+				AA0000000000000000000E08 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -355,6 +493,10 @@
 		AA0000000000000000000203 /* PLMailUI */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = PLMailUI;
+		};
+		AA0000000000000000000204 /* PLMailCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PLMailCore;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
