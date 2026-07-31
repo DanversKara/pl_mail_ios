@@ -17,6 +17,11 @@ struct MessageView: View {
     let onRemoteContentBlocked: () -> Void
     let onPreview: (URL) -> Void
 
+    /// Follows the system, so mail matches the rest of the phone rather than
+    /// being the one screen that stays white at night.
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var prefersOriginalColors = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -27,6 +32,10 @@ struct MessageView: View {
                 }
 
                 body(for: message)
+
+                if renderStyle(for: message).isTransformed || prefersOriginalColors {
+                    originalColorsToggle
+                }
 
                 if message.attachments.isEmpty == false {
                     attachments
@@ -112,6 +121,10 @@ struct MessageView: View {
                 inlineParts: message.inlineParts,
                 accountKey: message.accountKey,
                 loadRemoteContent: isRemoteContentAllowed,
+                renderStyle: renderStyle(for: message),
+                inlineProvider: { part, _ in
+                    await downloadContext.data(for: part, blobs: blobs)
+                },
                 onRemoteContentBlocked: onRemoteContentBlocked
             )
             .padding(.top, 8)
@@ -135,6 +148,40 @@ struct MessageView: View {
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
         }
+    }
+
+    /// Which dark-mode strategy this message gets.
+    ///
+    /// Per message, not per app: a plain reply and a marketing newsletter need
+    /// different treatment, and applying one of them to both is what makes
+    /// dark mail readers look broken.
+    private func renderStyle(for message: MessageSnapshot) -> MessageRenderStyle {
+        MessageRenderStyle.choose(
+            profile: MessageColorProfile.profile(of: message.htmlBody ?? ""),
+            isDark: colorScheme == .dark,
+            prefersOriginal: prefersOriginalColors
+        )
+    }
+
+    /// The escape hatch.
+    ///
+    /// Offered only where the rendering actually transformed something that
+    /// could be wrong. Inversion gets some messages wrong, and when it does
+    /// the reader needs to see what was sent rather than be told it is fine.
+    private var originalColorsToggle: some View {
+        Button {
+            prefersOriginalColors.toggle()
+        } label: {
+            Label(
+                prefersOriginalColors ? "Using original colours" : "Show original colours",
+                systemImage: prefersOriginalColors ? "sun.max" : "circle.lefthalf.filled"
+            )
+            .font(.caption)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
     }
 
     /// Shown only once something was actually blocked, so a message with no

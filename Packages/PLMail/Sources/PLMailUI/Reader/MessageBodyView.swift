@@ -12,10 +12,16 @@ import WebKit
 /// The single most failure-prone view in the app, and every rule here is
 /// load-bearing:
 ///
-/// - **Permanently light.** Mail is authored for a white background. Handing
-///   it the user's dark theme gives black text on black — which is why the
-///   web UI has a `mail-sheet` that redeclares the palette locally, and why
-///   this view must never read `\.theme`.
+/// - **Dark mode is chosen per message, never applied blindly.** Mail is
+///   authored for white, so one strategy cannot serve every message: a plain
+///   reply is restyled outright, a designed newsletter is inverted with its
+///   imagery inverted back so photos and logos stay right, and a message that
+///   already ships dark styles is simply told the scheme and left alone.
+///   Inverting everything is the one approach that reliably looks broken —
+///   photos come out as negatives and adaptive mail double-inverts. See
+///   ``PLMailCore/MessageRenderStyle``.
+/// - **A way back to the original.** Inversion gets some messages wrong, and
+///   when it does the reader needs to see what was actually sent.
 /// - **Remote content blocked** until asked for. A remote image in mail is a
 ///   tracking pixel far more often than it is a picture.
 /// - **`cid:` served from the local cache** through a scheme handler, so the
@@ -29,6 +35,10 @@ struct MessageBodyView: View {
     let inlineParts: [AttachmentSnapshot]
     let accountKey: String
     let loadRemoteContent: Bool
+    let renderStyle: MessageRenderStyle
+    /// Supplies bytes for a `cid:` part. Without this the inline image handler
+    /// has nothing to serve and every inline image renders broken.
+    let inlineProvider: @Sendable (AttachmentSnapshot, String) async -> Data?
     let onRemoteContentBlocked: () -> Void
 
     @State private var height: CGFloat = 1
@@ -39,6 +49,8 @@ struct MessageBodyView: View {
             inlineParts: inlineParts,
             accountKey: accountKey,
             loadRemoteContent: loadRemoteContent,
+            renderStyle: renderStyle,
+            inlineProvider: inlineProvider,
             height: $height,
             onRemoteContentBlocked: onRemoteContentBlocked
         )
@@ -51,6 +63,8 @@ private struct WebBody: UIViewRepresentable {
     let inlineParts: [AttachmentSnapshot]
     let accountKey: String
     let loadRemoteContent: Bool
+    let renderStyle: MessageRenderStyle
+    let inlineProvider: @Sendable (AttachmentSnapshot, String) async -> Data?
     @Binding var height: CGFloat
     let onRemoteContentBlocked: () -> Void
 
@@ -79,28 +93,33 @@ private struct WebBody: UIViewRepresentable {
         webView.scrollView.isScrollEnabled = false
         webView.scrollView.bounces = false
         webView.isOpaque = false
-        webView.backgroundColor = .white
-        webView.scrollView.backgroundColor = .white
-        // The renderer must not adapt to dark mode: this is the one
-        // surface where the app's theme deliberately stops.
-        webView.overrideUserInterfaceStyle = .light
 
         return webView
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {
-        let document = Self.document(html: html, inlineParts: inlineParts)
+        let document = Self.document(html: html, inlineParts: inlineParts, style: renderStyle)
+
+        // Set before the early return: the handler must be able to serve
+        // inline images even when the document itself has not changed.
+        context.coordinator.inlineHandler.parts = inlineParts
+        context.coordinator.inlineHandler.accountKey = accountKey
+        context.coordinator.inlineHandler.provider = inlineProvider
+        context.coordinator.blocksRemoteContent = loadRemoteContent == false
 
         guard
             context.coordinator.renderedDocument != document
                 || context.coordinator.renderedRemoteSetting != loadRemoteContent
         else { return }
 
+        // The web view's own scheme has to match the strategy, or the gap
+        // around a short message keeps the other appearance's colour.
+        webView.overrideUserInterfaceStyle = renderStyle == .original ? .light : .dark
+        webView.backgroundColor = UIColor(renderStyle.pageBackground)
+        webView.scrollView.backgroundColor = webView.backgroundColor
+
         context.coordinator.renderedDocument = document
         context.coordinator.renderedRemoteSetting = loadRemoteContent
-        context.coordinator.inlineHandler.parts = inlineParts
-        context.coordinator.inlineHandler.accountKey = accountKey
-        context.coordinator.blocksRemoteContent = loadRemoteContent == false
 
         // No base URL, so a relative reference in the message cannot
         // resolve to anything at all.
@@ -110,7 +129,9 @@ private struct WebBody: UIViewRepresentable {
     // MARK: - Document
 
     /// Wraps the server's already-sanitised HTML.
-    private static func document(html: String, inlineParts: [AttachmentSnapshot]) -> String {
+    private static func document(
+        html: String, inlineParts: [AttachmentSnapshot], style: MessageRenderStyle
+    ) -> String {
         var body = html
 
         // Rewrite cid: references onto the custom scheme, so they are
@@ -130,12 +151,11 @@ private struct WebBody: UIViewRepresentable {
             <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1">
-            <meta name="color-scheme" content="light">
+            <meta name="color-scheme" content="\(style.declaredScheme)">
             <style>
-              :root { color-scheme: light; }
+              :root { color-scheme: \(style.declaredScheme); }
               html, body {
                 margin: 0; padding: 0;
-                background: #ffffff; color: #1c1c1e;
                 font: -apple-system-body;
                 -webkit-text-size-adjust: 100%;
               }
@@ -143,12 +163,8 @@ private struct WebBody: UIViewRepresentable {
               img, video, table { max-width: 100% !important; height: auto; }
               /* Wide tables scroll themselves rather than widening the page. */
               table { display: block; overflow-x: auto; }
-              a { color: #0b57d0; }
-              blockquote {
-                margin: 8px 0; padding-left: 12px;
-                border-left: 2px solid #d1d1d6; color: #48484a;
-              }
               pre { overflow-x: auto; }
+              \(style.css)
             </style>
             </head>
             <body>\(body)</body>
