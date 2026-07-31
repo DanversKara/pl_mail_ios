@@ -42,15 +42,33 @@ public final class MailSyncService {
     /// rebuilt — an account added or removed changes what is being merged.
     private var mergedAccounts: [FeedID: Set<String>] = [:]
 
+    /// When the server was last successfully reached.
+    ///
+    /// Shown as "last checked" rather than implying live delivery. Without
+    /// APNs there is no true background push, and a client that suggests
+    /// otherwise is lying about mail the user has not been told about.
+    public private(set) var lastCheckedAt: Date?
+
     private let connection: ServerConnection
     private let client: JMAPClient
     private let store: SyncStore
+    private let delta: DeltaSync
+    private let breaker: CircuitBreaker
+    private let events: EventSourceClient
     private let logger = Logger(subsystem: "de.plmail", category: "sync")
+
+    /// Which feed is on screen, so a push refreshes that list and not every
+    /// list the app has ever built.
+    private var visibleFeed: FeedID?
 
     public init(connection: ServerConnection, store: SyncStore) {
         self.connection = connection
-        self.client = connection.makeClient()
+        let client = connection.makeClient()
+        self.client = client
         self.store = store
+        delta = DeltaSync(client: client, store: store)
+        breaker = CircuitBreaker()
+        events = EventSourceClient(client: client, credential: connection.credential)
     }
 
     public var serverID: String { connection.host }
@@ -79,6 +97,73 @@ public final class MailSyncService {
         case .unauthenticated: "\(serverID) rejected this app password."
         case .failed(let message): message
         }
+    }
+
+    // MARK: - Liveness
+
+    /// Starts listening for changes.
+    ///
+    /// Foreground only, and only while a list is actually on screen. Each
+    /// connection holds a PHP worker for its life, and on a home NAS the pool
+    /// is small enough that an idle app keeping one open is a real cost to
+    /// everyone else using the server.
+    public func beginLiveUpdates(feed: FeedID) async {
+        visibleFeed = feed
+
+        await events.start { [weak self] change in
+            await self?.handle(change)
+        }
+    }
+
+    /// Stops listening. Called the moment the app stops being frontmost.
+    public func endLiveUpdates() async {
+        await events.stop()
+    }
+
+    /// A push says only that a state token moved; this finds out what.
+    private func handle(_ change: StateChange) async {
+        let outcome = await delta.pull(accounts: accounts)
+
+        lastCheckedAt = .now
+
+        guard outcome.isEmpty == false, let visibleFeed else { return }
+
+        // New mail can change ordering, so the visible list gets a spliced
+        // head — never a full re-query, which is the aggressive polling the
+        // server cannot afford.
+        let merge = await merge(for: visibleFeed)
+        await merge.refreshHead()
+
+        for accountKey in outcome.resyncedAccounts {
+            logger.notice("\(accountKey, privacy: .public) was re-paged after a stale cursor.")
+        }
+    }
+
+    /// One delta pass, for a background refresh.
+    ///
+    /// No paging and no bodies: the point is to learn what changed cheaply,
+    /// matching the server's own fifteen-minute poll rather than trying to
+    /// beat it.
+    public func refreshInBackground() async {
+        guard await breaker.isOpen == false else { return }
+
+        do {
+            try await breaker.run(attempts: 2) { [self] in
+                _ = try await client.session()
+            }
+
+            await loadCached()
+            _ = await delta.pull(accounts: accounts)
+            lastCheckedAt = .now
+        } catch {
+            logger.error("Background refresh failed: \(error, privacy: .public)")
+        }
+    }
+
+    /// Called when the network path changes — the one signal worth reopening a
+    /// tripped circuit for, since time passing is not evidence of anything.
+    public func networkPathChanged() async {
+        await breaker.allowRetry()
     }
 
     /// Loads whatever is cached, then refreshes from the server.
@@ -116,9 +201,13 @@ public final class MailSyncService {
             return
         } catch {
             status = .failed(message: describe(error))
+            await breaker.recordFailure(error)
             logger.error("Session refresh failed: \(error, privacy: .public)")
             return
         }
+
+        lastCheckedAt = .now
+        await breaker.recordSuccess()
 
         degradedAccounts = [:]
         // Rebuilt on next use: the mailbox ids a role maps to may have moved,
@@ -133,6 +222,11 @@ public final class MailSyncService {
         }
 
         mailboxes = (try? await allMailboxes()) ?? mailboxes
+
+        // Objects before ordering: a message marked read elsewhere should be
+        // right in the list the moment the list is built, rather than one
+        // refresh later.
+        _ = await delta.pull(accounts: accounts)
 
         await loadFirstPage(of: feed)
     }

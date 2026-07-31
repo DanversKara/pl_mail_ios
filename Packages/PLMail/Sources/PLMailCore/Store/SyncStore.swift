@@ -423,6 +423,85 @@ public actor SyncStore {
         )
     }
 
+    // MARK: - Delta sync
+
+    public func setEmailState(_ state: StateToken, accountKey: String) throws {
+        guard let account = try account(accountKey) else { return }
+
+        account.emailState = state.rawValue
+        try modelContext.save()
+    }
+
+    /// Forgets where sync had reached, so the next pass pages from the top.
+    ///
+    /// Feed cursors go with it: a cursor that cannot be resumed leaves the
+    /// ordering it produced unverifiable, and keeping half of it would show a
+    /// list with an invisible hole in the middle.
+    public func clearCursors(accountKey: String) throws {
+        if let account = try account(accountKey) {
+            account.emailState = nil
+            account.threadState = nil
+        }
+
+        try modelContext.delete(
+            model: StoredFeedCursor.self,
+            where: #Predicate { $0.accountKey == accountKey })
+        try modelContext.delete(
+            model: StoredFeedEntry.self,
+            where: #Predicate { $0.accountKey == accountKey })
+
+        try modelContext.save()
+    }
+
+    /// Removes messages the server says are gone, and any list row pointing at
+    /// them.
+    ///
+    /// Note "destroyed" over JMAP is a move to Trash rather than a deletion —
+    /// the message still exists, in another mailbox — so the *thread* is only
+    /// removed once nothing is left of it here.
+    public func removeEmails(_ emailIDs: [String], accountKey: String) throws {
+        var affectedThreads: Set<String> = []
+
+        for emailID in emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid) else { continue }
+
+            if let threadID = email.threadID { affectedThreads.insert(threadID) }
+
+            modelContext.delete(email)
+        }
+
+        for threadID in affectedThreads {
+            let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+            guard let thread = try existing(StoredThread.self, uid: uid) else { continue }
+
+            thread.emailIDs.removeAll(where: emailIDs.contains)
+
+            guard thread.emailIDs.isEmpty else {
+                thread.messageCount = thread.emailIDs.count
+                continue
+            }
+
+            for entry in try feedEntries(threadID: threadID, accountKey: accountKey) {
+                modelContext.delete(entry)
+            }
+
+            modelContext.delete(thread)
+        }
+
+        try modelContext.save()
+    }
+
+    private func feedEntries(threadID: String, accountKey: String) throws -> [StoredFeedEntry] {
+        try modelContext.fetch(
+            FetchDescriptor<StoredFeedEntry>(
+                predicate: #Predicate { $0.threadID == threadID && $0.accountKey == accountKey }
+            )
+        )
+    }
+
     // MARK: - Feed
 
     /// Replaces one account's slice of a feed with a freshly-paged prefix.

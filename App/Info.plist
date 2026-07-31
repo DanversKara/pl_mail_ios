@@ -24,6 +24,20 @@
 	</dict>
 
 	<!-- Bonjour, so a server advertised on the LAN can be reached by name. -->
+	<!--
+	  Periodic background refresh, matching the server's own fifteen-minute
+	  poll. Not push: without APNs there is no true background delivery, and
+	  the UI says "last checked" rather than implying otherwise.
+	-->
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>de.plmail.refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
+
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>plMail needs to reach your mail server, which may be on your local network.</string>
 </dict>

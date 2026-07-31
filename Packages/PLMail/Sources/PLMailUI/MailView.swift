@@ -37,6 +37,7 @@ public struct MailView: View {
 
     public init(
         connection: ServerConnection,
+        sync: MailSyncService,
         store: SyncStore,
         onSignOut: @escaping () -> Void
     ) {
@@ -46,7 +47,9 @@ public struct MailView: View {
         // Scoped to the server, so signing into another one cannot serve the
         // previous server's attachments out of a shared directory.
         blobs = BlobCache(serverID: connection.host)
-        _sync = State(wrappedValue: MailSyncService(connection: connection, store: store))
+        // Owned by the app rather than this view: the live stream and the
+        // background refresh have to act on the same sync state the UI shows.
+        _sync = State(wrappedValue: sync)
         _selectedFeed = State(wrappedValue: .unified(.inbox))
     }
 
@@ -141,11 +144,13 @@ public struct MailView: View {
             }
         }
         .task(id: selectedFeed) {
-            // A rejected credential means onboarding, not a retry loop.
-            sync.onReauthenticationNeeded = onSignOut
-
             guard let selectedFeed else { return }
+
             await sync.start(feed: selectedFeed)
+
+            // Only once a list is actually on screen, and torn down as soon as
+            // it is not — each stream holds a server worker for its life.
+            await sync.beginLiveUpdates(feed: selectedFeed)
         }
         .sheet(isPresented: $isShowingDiagnostics) {
             ServerDiagnosticsView(
