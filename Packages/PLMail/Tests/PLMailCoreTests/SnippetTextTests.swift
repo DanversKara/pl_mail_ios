@@ -24,8 +24,9 @@ struct SnippetTextTests {
         let runs = SnippetText.runs(from: "<mark>wire</mark> and <mark>transfer</mark>")
 
         #expect(runs.filter(\.isHighlighted).map(\.text) == ["wire", "transfer"])
-        #expect(SnippetText.plain(from: "<mark>wire</mark> and <mark>transfer</mark>")
-            == "wire and transfer")
+        #expect(
+            SnippetText.plain(from: "<mark>wire</mark> and <mark>transfer</mark>")
+                == "wire and transfer")
     }
 
     /// The whole reason this is not passed to a web view or rendered as HTML.
