@@ -36,6 +36,14 @@ public final class MailSyncService {
     /// down" and "the app is broken".
     public private(set) var degradedAccounts: [String: String] = [:]
 
+    /// Highlighted match text, keyed by `accountKey#emailId`.
+    ///
+    /// In memory rather than in the store: it belongs to one query rather than
+    /// to the message, it is meaningless the moment the search text changes,
+    /// and the store's rule is that everything in it is reconstructible cache
+    /// — this is reconstructible, but only alongside a query nobody kept.
+    public private(set) var snippets: [String: String] = [:]
+
     /// One merge per feed, so each keeps its own buffers and cursors.
     private var merges: [FeedID: UnifiedFeed] = [:]
     /// Which accounts each merge was built for. A change means it has to be
@@ -286,6 +294,64 @@ public final class MailSyncService {
         await merge.loadMore()
 
         degradedAccounts = await merge.failures
+
+        await loadSnippets(for: feed)
+    }
+
+    /// Asks the server which part of each result actually matched.
+    ///
+    /// A separate round trip on purpose: `SearchSnippet/get` needs the ids the
+    /// query returned, and there is no back-reference from a query to a
+    /// snippet call. It runs after the rows are already on screen, so results
+    /// appear at query speed and sharpen a moment later rather than waiting.
+    ///
+    /// Failure is silent. A snippet is an improvement on the preview the row
+    /// already has; a server that does not implement the method — it is
+    /// optional in RFC 8621 — should cost nothing but the generic text.
+    private func loadSnippets(for feed: FeedID) async {
+        guard case .searchResults(let raw) = feed else { return }
+
+        let parsed = SearchQuery.parse(raw)
+
+        let rows = (try? await store.feedRows(feedID: feed.rawValue)) ?? []
+
+        for account in accounts {
+            let ids = rows.filter { $0.accountKey == account.accountKey }.map(\.emailID)
+
+            guard ids.isEmpty == false else { continue }
+
+            let accountMailboxes = mailboxes.filter { $0.accountKey == account.accountKey }
+
+            // The same filter the query ran with, built the same way. A
+            // different one here would highlight terms the results were never
+            // matched on.
+            let filter = SearchQueryCompiler.filter(
+                for: parsed,
+                mailboxID: SearchQueryCompiler.mailboxID(
+                    for: parsed, mailboxes: accountMailboxes)
+            )
+
+            do {
+                var builder = RequestBuilder(session: try await client.session())
+                let call = builder.add(
+                    SearchSnippetGet(
+                        accountID: account.accountID,
+                        filter: filter,
+                        emailIDs: ids.map { EmailID($0) }
+                    )
+                )
+
+                let results = try await client.send(builder)
+
+                for snippet in try results.result(of: call).list {
+                    guard let html = snippet.preview ?? snippet.subject else { continue }
+
+                    snippets["\(account.accountKey)#\(snippet.emailID.rawValue)"] = html
+                }
+            } catch {
+                logger.debug("No snippets for \(account.accountKey, privacy: .public)")
+            }
+        }
     }
 
     /// Drops a search's stored rows.
@@ -294,6 +360,8 @@ public final class MailSyncService {
     /// typed would grow without bound, and none of them is worth keeping.
     public func discardSearch(feed: FeedID) async {
         guard case .searchResults = feed else { return }
+
+        snippets.removeAll()
 
         for account in accounts {
             try? await store.resetFeed(feedID: feed.rawValue, accountKey: account.accountKey)

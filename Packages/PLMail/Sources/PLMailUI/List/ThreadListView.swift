@@ -38,6 +38,8 @@ public struct ThreadListView: View {
     /// mode: there is no separate toggle to get out of sync with it.
     @State private var checked: Set<ThreadRef> = []
     @State private var isPickingBulkLabel = false
+    /// The conversation whose exact snooze time is being picked.
+    @State private var snoozing: ActionTarget?
     /// The conversation whose labels are being edited. A target rather than a
     /// Bool, so the sheet cannot outlive the row that opened it.
     @State private var labelling: ActionTarget?
@@ -88,6 +90,7 @@ public struct ThreadListView: View {
                         accountLabel: accountLabel(for: row.entry),
                         isSelected: checked.contains(ThreadRef(thread: row.thread)),
                         isOpen: selection == ThreadRef(thread: row.thread),
+                        snippet: sync.snippets["\(row.entry.accountKey)#\(row.entry.emailID)"],
                         onToggleStar: {
                             act {
                                 await actions.setFlagged(
@@ -162,9 +165,13 @@ public struct ThreadListView: View {
                     }
 
                     Menu {
-                        SnoozeMenu(isSnoozed: row.thread.snoozedUntil != nil) { until in
-                            act { await actions.snooze(target(for: row.thread), until: until) }
-                        }
+                        SnoozeMenu(
+                            isSnoozed: row.thread.snoozedUntil != nil,
+                            onPick: { until in
+                                act { await actions.snooze(target(for: row.thread), until: until) }
+                            },
+                            onPickExact: { snoozing = target(for: row.thread) }
+                        )
                     } label: {
                         Label("Snooze", systemImage: "clock")
                     }
@@ -197,6 +204,11 @@ public struct ThreadListView: View {
         .sheet(isPresented: $isPickingBulkLabel) {
             BulkLabelPickerView(targets: checkedTargets, sync: sync, actions: actions) {
                 checked = []
+            }
+        }
+        .sheet(item: $snoozing) { target in
+            SnoozeDatePicker { until in
+                act { await actions.snooze(target, until: until) }
             }
         }
         .sheet(item: $labelling) { target in

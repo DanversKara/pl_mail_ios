@@ -31,12 +31,18 @@ public struct ThreadRowView: View {
     /// Tapping the avatar picks the row out for a bulk action. Absent where
     /// multi-select is not offered, in which case the avatar is inert.
     var onToggleSelection: (() -> Void)?
+    /// The matched text from `SearchSnippet/get`, when this row is a search
+    /// result and the server offered one. Replaces the generic preview, which
+    /// in a ranked search is the same opening line on every row and says
+    /// nothing about why the message came back.
+    var snippet: String?
 
     public init(
         thread: StoredThread,
         accountLabel: String? = nil,
         isSelected: Bool = false,
         isOpen: Bool = false,
+        snippet: String? = nil,
         onToggleStar: (() -> Void)? = nil,
         onToggleSelection: (() -> Void)? = nil
     ) {
@@ -44,6 +50,7 @@ public struct ThreadRowView: View {
         self.accountLabel = accountLabel
         self.isSelected = isSelected
         self.isOpen = isOpen
+        self.snippet = snippet
         self.onToggleStar = onToggleStar
         self.onToggleSelection = onToggleSelection
     }
@@ -175,12 +182,40 @@ public struct ThreadRowView: View {
 
     @ViewBuilder
     private var snippetLine: some View {
-        if thread.snippet.isEmpty == false {
+        if let snippet {
+            Text(highlighted(snippet))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        } else if thread.snippet.isEmpty == false {
             Text(thread.snippet)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
         }
+    }
+
+    /// The server's snippet as attributed text.
+    ///
+    /// Built through `SnippetText`, which understands the one tag the server
+    /// emits and leaves everything else as the characters the sender typed —
+    /// this string is message content, and the whole point is that it cannot
+    /// carry markup of its own.
+    private func highlighted(_ html: String) -> AttributedString {
+        var result = AttributedString()
+
+        for run in SnippetText.runs(from: html) {
+            var piece = AttributedString(run.text)
+
+            if run.isHighlighted {
+                piece.foregroundColor = .primary
+                piece.font = .footnote.weight(.semibold)
+            }
+
+            result.append(piece)
+        }
+
+        return result
     }
 
     /// The row's quiet metadata. Kept on its own line so a long subject never

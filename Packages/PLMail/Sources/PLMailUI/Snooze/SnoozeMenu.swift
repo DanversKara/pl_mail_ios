@@ -11,6 +11,9 @@ import SwiftUI
 struct SnoozeMenu: View {
     let isSnoozed: Bool
     let onPick: (Date?) -> Void
+    /// Menus cannot present sheets, so the date picker belongs to whoever put
+    /// this menu on screen.
+    let onPickExact: () -> Void
 
     var body: some View {
         ForEach(SnoozePreset.available(), id: \.preset.id) { entry in
@@ -28,9 +31,13 @@ struct SnoozeMenu: View {
             }
         }
 
-        if isSnoozed {
-            Divider()
+        Divider()
 
+        Button(action: onPickExact) {
+            Label("Pick a date and time…", systemImage: "calendar.badge.clock")
+        }
+
+        if isSnoozed {
             Button {
                 onPick(nil)
             } label: {

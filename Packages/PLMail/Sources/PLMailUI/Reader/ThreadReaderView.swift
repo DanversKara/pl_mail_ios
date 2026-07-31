@@ -19,6 +19,7 @@ public struct ThreadReaderView: View {
     @State private var previewedAttachment: URL?
     @State private var composing: ComposeModel.Kind?
     @State private var isPickingLabels = false
+    @State private var isPickingSnoozeDate = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -120,6 +121,12 @@ public struct ThreadReaderView: View {
         .undoOverlay(actions)
         .overlay { statusOverlay }
         .quickLookPreview($previewedAttachment)
+        .sheet(isPresented: $isPickingSnoozeDate) {
+            SnoozeDatePicker { until in
+                Task { await actions.snooze(target, until: until) }
+                dismiss()
+            }
+        }
         .sheet(isPresented: $isPickingLabels) {
             LabelPickerView(target: target, sync: sync, actions: actions, store: store)
         }
@@ -305,12 +312,16 @@ public struct ThreadReaderView: View {
                 .keyboardShortcut("l", modifiers: [])
 
                 Menu {
-                    SnoozeMenu(isSnoozed: loader.snoozedUntil != nil) { until in
-                        Task { await actions.snooze(target, until: until) }
-                        // Snoozing takes the thread out of the inbox, so
-                        // there is nothing left here to look at.
-                        if until != nil { dismiss() }
-                    }
+                    SnoozeMenu(
+                        isSnoozed: loader.snoozedUntil != nil,
+                        onPick: { until in
+                            Task { await actions.snooze(target, until: until) }
+                            // Snoozing takes the thread out of the inbox, so
+                            // there is nothing left here to look at.
+                            if until != nil { dismiss() }
+                        },
+                        onPickExact: { isPickingSnoozeDate = true }
+                    )
                 } label: {
                     Label("Snooze", systemImage: "clock")
                 }
