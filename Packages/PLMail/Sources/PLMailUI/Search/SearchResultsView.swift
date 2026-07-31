@@ -13,6 +13,7 @@ struct SearchResultsView: View {
     let raw: String
     let sync: MailSyncService
     let actions: MailActions
+    @Binding var selection: ThreadRef?
 
     @State private var isSearching = false
 
@@ -28,10 +29,12 @@ struct SearchResultsView: View {
                     Text(Self.help)
                 }
             } else {
-                ThreadListView(feed: feed, sync: sync, actions: actions)
-                    .safeAreaInset(edge: .top, spacing: 0) {
-                        SearchTokensView(query: parsed)
-                    }
+                ThreadListView(
+                    feed: feed, sync: sync, actions: actions, selection: $selection
+                )
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    SearchTokensView(query: parsed)
+                }
             }
         }
         // Re-runs whenever the typed string settles on something new; the

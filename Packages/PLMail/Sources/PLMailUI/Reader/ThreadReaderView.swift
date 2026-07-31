@@ -17,10 +17,18 @@ public struct ThreadReaderView: View {
     @State private var sendersAllowedRemoteContent: Set<String> = []
     @State private var blockedRemoteContent: Set<String> = []
     @State private var previewedAttachment: URL?
+    @State private var composing: ComposeModel.Kind?
+    @Environment(\.dismiss) private var dismiss
 
     private let subject: String
     private let blobs: BlobCache
     private let downloadContext: DownloadContext
+    private let accountKey: String
+    private let accountID: AccountID
+    private let client: JMAPClient
+    private let store: SyncStore
+    private let actions: MailActions
+    private let threadID: String
 
     public init(
         threadID: String,
@@ -30,10 +38,17 @@ public struct ThreadReaderView: View {
         client: JMAPClient,
         store: SyncStore,
         blobs: BlobCache,
+        actions: MailActions,
         credential: Credential
     ) {
         self.subject = subject
         self.blobs = blobs
+        self.accountKey = accountKey
+        self.accountID = accountID
+        self.client = client
+        self.store = store
+        self.actions = actions
+        self.threadID = threadID
         downloadContext = DownloadContext(
             accountID: accountID, client: client, credential: credential)
         _loader = State(
@@ -67,9 +82,23 @@ public struct ThreadReaderView: View {
                     Divider()
                 }
             }
+            // A line of text is readable up to roughly 75 characters and
+            // painful past it. On a 13" iPad the detail column is wide enough
+            // to run to twice that, so the measure is capped and centred
+            // rather than filled. The cap is wider than any iPhone, so the
+            // phone layout is untouched.
+            .frame(maxWidth: 700)
+            .frame(maxWidth: .infinity)
         }
         .navigationTitle(subject)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar { toolbar }
+        .sheet(item: $composing) { kind in
+            ComposeView(
+                kind: kind, accountKey: accountKey, accountID: accountID,
+                client: client, store: store)
+        }
+        .undoOverlay(actions)
         .overlay { statusOverlay }
         .quickLookPreview($previewedAttachment)
         .task {
@@ -81,6 +110,78 @@ public struct ThreadReaderView: View {
             // loses someone's place.
             await loader.markRead()
         }
+    }
+
+    /// The actions a thread affords, in the order Gmail puts them.
+    @ToolbarContentBuilder
+    private var toolbar: some ToolbarContent {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            Button {
+                Task { await actions.archive(target) }
+                dismiss()
+            } label: {
+                Label("Archive", systemImage: "archivebox")
+            }
+
+            Button {
+                Task { await actions.trash(target) }
+                dismiss()
+            } label: {
+                Label("Trash", systemImage: "trash")
+            }
+
+            Menu {
+                if let newest = loader.messages.last {
+                    Button {
+                        composing = .reply(to: newest, all: false)
+                    } label: {
+                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    }
+
+                    Button {
+                        composing = .reply(to: newest, all: true)
+                    } label: {
+                        Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
+                    }
+
+                    Button {
+                        composing = .forward(newest)
+                    } label: {
+                        Label("Forward", systemImage: "arrowshape.turn.up.right")
+                    }
+                }
+
+                Divider()
+
+                Button {
+                    Task { await actions.setSeen(false, target) }
+                    dismiss()
+                } label: {
+                    Label("Mark as unread", systemImage: "envelope.badge")
+                }
+
+                Button {
+                    Task { await actions.setFlagged(isFlagged == false, target) }
+                } label: {
+                    Label(isFlagged ? "Remove star" : "Star", systemImage: "star")
+                }
+            } label: {
+                Label("More", systemImage: "ellipsis.circle")
+            }
+        }
+    }
+
+    private var isFlagged: Bool {
+        loader.messages.contains(where: \.isFlagged)
+    }
+
+    private var target: ActionTarget {
+        ActionTarget(
+            threadID: threadID,
+            accountKey: accountKey,
+            accountID: accountID,
+            emailIDs: loader.messages.map { EmailID(rawValue: $0.emailID) }
+        )
     }
 
     // MARK: - State

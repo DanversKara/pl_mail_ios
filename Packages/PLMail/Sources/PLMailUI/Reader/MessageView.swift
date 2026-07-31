@@ -50,6 +50,14 @@ struct MessageView: View {
     private var header: some View {
         Button(action: onToggle) {
             HStack(alignment: .top, spacing: 10) {
+                // The same circle the list draws, so a message and its row are
+                // recognisably the same correspondent.
+                SenderAvatar(
+                    name: message.fromName ?? message.displayName,
+                    address: message.fromAddress,
+                    diameter: 36
+                )
+
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text(message.displayName)

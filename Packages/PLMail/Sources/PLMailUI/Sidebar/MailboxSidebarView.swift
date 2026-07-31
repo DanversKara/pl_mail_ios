@@ -27,17 +27,31 @@ public struct MailboxSidebarView: View {
         List(selection: $selection) {
             Section {
                 ForEach(unifiedRoles, id: \.self) { role in
-                    Label(role.displayName, systemImage: role.symbolName)
-                        .badge(unreadCount(for: role))
-                        .tag(FeedID.unified(role))
+                    Label {
+                        Text(role.displayName)
+                    } icon: {
+                        Image(systemName: role.symbolName)
+                            .foregroundStyle(Self.tint(for: role))
+                    }
+                    .badge(unreadCount(for: role))
+                    .tag(FeedID.unified(role))
                 }
             }
 
             if labels.isEmpty == false {
                 Section("Labels") {
                     ForEach(labels, id: \.id) { label in
-                        Label(label.name, systemImage: "tag")
-                            .tag(FeedID.unifiedLabel(label.labelID))
+                        Label {
+                            Text(label.name)
+                        } icon: {
+                            // Hashed from the label id, so a label keeps its
+                            // colour when it is renamed — the same rule the
+                            // avatars follow, for the same reason.
+                            Image(systemName: "tag.fill")
+                                .foregroundStyle(
+                                    AvatarPalette.color(for: label.labelID.rawValue))
+                        }
+                        .tag(FeedID.unifiedLabel(label.labelID))
                     }
                 }
             }
@@ -45,11 +59,36 @@ public struct MailboxSidebarView: View {
             if sync.accounts.count > 1 {
                 Section("Accounts") {
                     ForEach(sync.accounts) { account in
-                        Label(account.name, systemImage: "person.crop.circle")
-                            .font(.footnote)
+                        HStack(spacing: 10) {
+                            SenderAvatar(
+                                name: account.name, address: account.name, diameter: 24)
+
+                            Text(account.name)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                        }
+                        .accessibilityElement(children: .combine)
                     }
                 }
             }
+        }
+        .listStyle(.sidebar)
+    }
+
+    /// Colour carries the role, so the icons are distinguishable before the
+    /// words are read. These follow the platform's own conventions — trash is
+    /// never green, spam is never blue — rather than the app's accent, which
+    /// would make every row identical.
+    private static func tint(for role: MailboxRole) -> Color {
+        switch role {
+        case .inbox: .accentColor
+        case .flagged: .orange
+        case .drafts: .gray
+        case .sent: .teal
+        case .archive: .green
+        case .junk: .yellow
+        case .trash: .red
+        default: .secondary
         }
     }
 

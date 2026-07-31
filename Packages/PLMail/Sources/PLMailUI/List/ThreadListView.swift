@@ -17,15 +17,30 @@ public struct ThreadListView: View {
     private let sync: MailSyncService
     private let actions: MailActions
 
+    /// Owned by the split view, not by this list.
+    ///
+    /// Selection *is* the navigation on a wide layout — it fills the third
+    /// column — and on a narrow one the collapsed split view turns the same
+    /// binding into a push. One piece of state drives both, which is what
+    /// keeps the open thread open across a rotation or a Stage Manager
+    /// resize instead of dumping the reader.
+    @Binding private var selection: ThreadRef?
+
     @Query private var entries: [StoredFeedEntry]
     @Query private var threads: [StoredThread]
 
     @State private var isLoadingMore = false
 
-    public init(feed: FeedID, sync: MailSyncService, actions: MailActions) {
+    public init(
+        feed: FeedID,
+        sync: MailSyncService,
+        actions: MailActions,
+        selection: Binding<ThreadRef?>
+    ) {
         self.feed = feed
         self.sync = sync
         self.actions = actions
+        _selection = selection
 
         let feedID = feed.rawValue
 
@@ -38,11 +53,18 @@ public struct ThreadListView: View {
     }
 
     public var body: some View {
-        List {
+        List(selection: $selection) {
             ForEach(rows, id: \.entry.uid) { row in
-                NavigationLink(value: ThreadRef(thread: row.thread)) {
-                    ThreadRowView(thread: row.thread, accountLabel: accountLabel(for: row.entry))
+                ThreadRowView(
+                    thread: row.thread,
+                    accountLabel: accountLabel(for: row.entry)
+                ) {
+                    act {
+                        await actions.setFlagged(
+                            row.thread.isFlagged == false, target(for: row.thread))
+                    }
                 }
+                .tag(ThreadRef(thread: row.thread))
                 .task { await loadMoreIfNeeded(at: row.entry) }
                 // Both directions, both undoable, and everything a swipe does
                 // is also reachable from the row's context menu — a gesture

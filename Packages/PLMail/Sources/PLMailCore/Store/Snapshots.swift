@@ -41,6 +41,9 @@ public struct MessageSnapshot: Hashable, Sendable, Identifiable {
     public var to: [EmailAddress]
     public var cc: [EmailAddress]
     public var receivedAt: Date?
+    /// Bare, angle brackets already stripped. Needed to thread a reply.
+    public var messageID: String?
+    public var references: [String]
     public var preview: String
     public var isSeen: Bool
     public var isFlagged: Bool
@@ -80,6 +83,27 @@ public struct AttachmentSnapshot: Hashable, Sendable, Identifiable {
     public var displayName: String {
         guard let name, name.isEmpty == false else { return "Attachment" }
         return name
+    }
+}
+
+/// A sendable address for one account.
+public struct IdentitySnapshot: Hashable, Sendable, Identifiable {
+    public var id: IdentityID
+    public var name: String?
+    public var email: String
+
+    public var address: EmailAddress { EmailAddress(name: name, email: email) }
+
+    public var displayName: String {
+        guard let name, name.isEmpty == false else { return email }
+
+        // An account whose stored address is really its display name — plMail
+        // allows it, and a few provider imports produce it — would otherwise
+        // render as "Work <Work>", which looks like a formatting bug rather
+        // than the data problem it is.
+        guard name != email else { return email }
+
+        return "\(name) <\(email)>"
     }
 }
 

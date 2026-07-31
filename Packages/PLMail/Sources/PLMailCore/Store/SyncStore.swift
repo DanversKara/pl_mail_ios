@@ -198,6 +198,8 @@ public actor SyncStore {
         if let receivedAt = email.receivedAt { stored.receivedAt = receivedAt.date }
         if let sentAt = email.sentAt { stored.sentAt = sentAt.date }
         if let subject = email.subject { stored.subject = subject }
+        if let messageID = email.messageID?.first { stored.messageID = messageID }
+        if let references = email.references { stored.references = references }
         if let preview = email.preview { stored.preview = preview }
         if let size = email.size { stored.size = size }
         if let hasAttachment = email.hasAttachment { stored.hasAttachment = hasAttachment }
@@ -268,6 +270,7 @@ public actor SyncStore {
         // Until the reader fetches whole threads, this is the newest sender,
         // which is right for the single-message threads that dominate a list.
         thread.participantsSummary = email.fromName ?? email.fromAddress ?? ""
+        thread.participantsAddress = email.fromAddress
     }
 
     /// Writes the parts of an Email that only the reader needs.
@@ -395,6 +398,8 @@ public actor SyncStore {
             to: (email.toJSON.flatMap { try? decoder.decode([EmailAddress].self, from: $0) }) ?? [],
             cc: (email.ccJSON.flatMap { try? decoder.decode([EmailAddress].self, from: $0) }) ?? [],
             receivedAt: email.receivedAt,
+            messageID: email.messageID,
+            references: email.references,
             preview: email.preview,
             isSeen: email.isSeen,
             isFlagged: email.isFlagged,
@@ -421,6 +426,76 @@ public actor SyncStore {
             cid: attachment.cid,
             isInline: attachment.isInline
         )
+    }
+
+    // MARK: - Identities and contacts
+
+    public func replaceIdentities(_ identities: [Identity], accountKey: String) throws {
+        try modelContext.delete(
+            model: StoredIdentity.self, where: #Predicate { $0.accountKey == accountKey })
+
+        for identity in identities {
+            guard let email = identity.email else { continue }
+
+            let stored = StoredIdentity(
+                uid: StoreKey.object(accountKey: accountKey, id: identity.id.rawValue),
+                accountKey: accountKey,
+                identityID: identity.id.rawValue,
+                email: email
+            )
+            stored.name = identity.name
+            modelContext.insert(stored)
+        }
+
+        try modelContext.save()
+    }
+
+    public func identities(accountKey: String) throws -> [IdentitySnapshot] {
+        try modelContext.fetch(
+            FetchDescriptor<StoredIdentity>(
+                predicate: #Predicate { $0.accountKey == accountKey })
+        )
+        .map {
+            IdentitySnapshot(
+                id: IdentityID(rawValue: $0.identityID), name: $0.name, email: $0.email)
+        }
+    }
+
+    /// Addresses this account has corresponded with.
+    ///
+    /// Harvested from mail already on the device rather than fetched: the
+    /// server exposes no JMAP Contacts, and the people someone writes to are
+    /// exactly the people already in their mail.
+    public func knownAddresses(accountKey: String, limit: Int = 500) throws -> [EmailAddress] {
+        let emails = try modelContext.fetch(
+            FetchDescriptor<StoredEmail>(
+                predicate: #Predicate { $0.accountKey == accountKey },
+                sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+            )
+        )
+        .prefix(limit)
+
+        var byAddress: [String: EmailAddress] = [:]
+        let decoder = JSONDecoder()
+
+        for email in emails {
+            if let address = email.fromAddress {
+                byAddress[address.lowercased()] =
+                    EmailAddress(name: email.fromName, email: address)
+            }
+
+            for data in [email.toJSON, email.ccJSON] {
+                guard let data,
+                    let addresses = try? decoder.decode([EmailAddress].self, from: data)
+                else { continue }
+
+                for address in addresses {
+                    byAddress[address.email.lowercased()] = address
+                }
+            }
+        }
+
+        return byAddress.values.sorted { $0.email < $1.email }
     }
 
     // MARK: - Optimistic edits

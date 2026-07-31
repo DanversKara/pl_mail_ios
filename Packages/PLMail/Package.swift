@@ -41,6 +41,7 @@ let package = Package(
             name: "PLMailCoreTests",
             dependencies: ["PLMailCore", "JMAPTestSupport"]
         ),
+        .testTarget(name: "PLMailUITests", dependencies: ["PLMailUI"]),
     ],
     swiftLanguageModes: [.v6]
 )

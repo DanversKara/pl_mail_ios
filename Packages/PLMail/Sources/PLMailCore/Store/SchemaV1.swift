@@ -145,6 +145,11 @@ public final class StoredThread {
     public var latestReceivedAt: Date = Date.distantPast
     public var subject: String?
     public var participantsSummary: String = ""
+    /// The newest sender's address, kept beside the display name because the
+    /// list draws an avatar whose colour is hashed from it. Hashing the display
+    /// name instead would recolour the same person whenever they changed how
+    /// their client spells their name.
+    public var participantsAddress: String?
     public var snippet: String = ""
     public var messageCount: Int = 1
     public var isUnread: Bool = false
@@ -177,6 +182,10 @@ public final class StoredEmail {
     public var sentAt: Date?
 
     public var subject: String?
+    /// Bare header ids, brackets stripped. Kept because a reply that omits
+    /// them starts a new conversation instead of continuing one.
+    public var messageID: String?
+    public var references: [String] = []
     public var fromName: String?
     public var fromAddress: String?
     /// `[EmailAddress]` as JSON. Recipients are shown but never queried on, so

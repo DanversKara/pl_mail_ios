@@ -32,6 +32,12 @@ public struct ServerSetupView: View {
                 credentialSection
                 statusSection
             }
+            // Two short fields stretched across an iPad read as a form that
+            // failed to lay out. Capped at a comfortable measure and centred,
+            // which is what every system setup flow does at this width; the
+            // cap is above any iPhone's width, so nothing changes there.
+            .frame(maxWidth: 560)
+            .frame(maxWidth: .infinity)
             .navigationTitle("Connect to plMail")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {

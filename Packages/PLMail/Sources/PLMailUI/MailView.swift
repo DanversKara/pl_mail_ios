@@ -15,7 +15,12 @@ public struct MailView: View {
     @State private var sync: MailSyncService
     @State private var actions: MailActions
     @State private var selectedFeed: FeedID?
+    @State private var selectedThread: ThreadRef?
+    /// Three columns by default on iPad. Left to the system on iPhone, where
+    /// the split view is collapsed and this is ignored.
+    @State private var columns = NavigationSplitViewVisibility.all
     @State private var isShowingDiagnostics = false
+    @State private var composing: ComposeModel.Kind?
     @State private var searchText = ""
     /// Debounced separately from `searchText`, so a keystroke does not start a
     /// query against someone's home server.
@@ -71,6 +76,7 @@ public struct MailView: View {
                 client: sync.jmapClient,
                 store: store,
                 blobs: blobs,
+                actions: actions,
                 credential: connection.credential
             )
         } else {
@@ -83,23 +89,88 @@ public struct MailView: View {
         }
     }
 
+    /// Which account a new message is sent from.
+    ///
+    /// The account whose mailbox is on screen when there is one, so composing
+    /// from a specific inbox sends from that address rather than whichever
+    /// account happens to sort first.
+    private var composeAccount: AccountSnapshot? {
+        if case .mailbox(let accountKey, _) = selectedFeed {
+            return sync.accounts.first { $0.accountKey == accountKey }
+        }
+
+        return sync.accounts.first
+    }
+
+    /// The compose button, where every mail app has put it for a decade.
+    private var composeButton: some View {
+        Button {
+            composing = .new
+        } label: {
+            Label("New message", systemImage: "square.and.pencil")
+                .labelStyle(.iconOnly)
+                .font(.title3)
+                .frame(width: 56, height: 56)
+                .background(.tint, in: Circle())
+                .foregroundStyle(.white)
+                .shadow(radius: 6, y: 3)
+        }
+        .padding(.trailing, 20)
+        // Above the undo bar, which occupies the same corner.
+        .padding(.bottom, 80)
+        .accessibilityLabel("New message")
+    }
+
     private var isSearching: Bool {
         searchText.trimmingCharacters(in: .whitespaces).isEmpty == false
     }
 
     /// The sidebar, or the results that replaced it on a narrow screen.
+    ///
+    /// Compact: the sidebar *is* the screen, so results have to appear where
+    /// the field is — putting them one column over would mean typing here and
+    /// navigating there.
     @ViewBuilder
     private var sidebarContent: some View {
         if isSearching, sizeClass == .compact {
-            SearchResultsView(raw: settledSearch, sync: sync, actions: actions)
-                .navigationDestination(for: ThreadRef.self, destination: reader(for:))
+            SearchResultsView(
+                raw: settledSearch, sync: sync, actions: actions,
+                selection: $selectedThread)
         } else {
             MailboxSidebarView(sync: sync, selection: $selectedFeed)
         }
     }
 
+    /// The middle column: results while searching, otherwise the mailbox.
+    @ViewBuilder
+    private var listContent: some View {
+        if isSearching, sizeClass != .compact {
+            SearchResultsView(
+                raw: settledSearch, sync: sync, actions: actions,
+                selection: $selectedThread)
+        } else if let selectedFeed {
+            // `.inline`, not large: a large title silently fails to render
+            // when this column is restored rather than pushed, which is
+            // exactly the cold-launch path, and an untitled list reads as a
+            // bug.
+            ThreadListView(
+                feed: selectedFeed, sync: sync, actions: actions,
+                selection: $selectedThread
+            )
+            .overlay(alignment: .bottomTrailing) { composeButton }
+        } else {
+            ContentUnavailableView(
+                "Pick a mailbox", systemImage: "tray.2",
+                description: Text("Choose a list from the sidebar."))
+        }
+    }
+
     public var body: some View {
-        NavigationSplitView {
+        // Three columns — mailboxes, conversations, message — which is the
+        // web UI's three regions and what an iPad has room for. On iPhone the
+        // split view collapses the same three into one stack, so `Back`
+        // genuinely means back and no second layout has to be maintained.
+        NavigationSplitView(columnVisibility: $columns) {
             sidebarContent
                 .searchable(
                     text: $searchText,
@@ -116,22 +187,32 @@ public struct MailView: View {
                         }
                     }
                 }
+                .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+        } content: {
+            listContent
+                // Wider than the system default, which is sized for a list of
+                // short titles. A conversation row carries an avatar, a
+                // subject and a snippet, and at the default width the subject
+                // truncates on almost every message. The minimum matters more
+                // than the ideal: when the detail column is hungry the split
+                // view hands this one its minimum, so a generous ideal alone
+                // changes nothing.
+                .navigationSplitViewColumnWidth(min: 380, ideal: 420, max: 520)
         } detail: {
-            // The detail column needs its own stack for the list-to-reader
-            // push. Note the list titles itself `.inline`: a *large* title
-            // silently fails to render when this column is restored rather
-            // than pushed, which is exactly the cold-launch path.
+            // Its own stack so the reader can push further — an attachment
+            // preview, a sender's other mail — without disturbing the columns
+            // to its left.
             NavigationStack {
-                if let selectedFeed {
-                    ThreadListView(feed: selectedFeed, sync: sync, actions: actions)
-                        .navigationDestination(for: ThreadRef.self, destination: reader(for:))
+                if let selectedThread {
+                    reader(for: selectedThread)
                 } else {
                     ContentUnavailableView(
-                        "Pick a mailbox", systemImage: "tray.2",
-                        description: Text("Choose a list from the sidebar."))
+                        "No conversation selected", systemImage: "envelope",
+                        description: Text("Pick a message to read it here."))
                 }
             }
         }
+        .navigationSplitViewStyle(.balanced)
         .task(id: searchText) {
             // 350ms: long enough that typing a word is one query rather than
             // five, short enough not to feel laggy.
@@ -146,6 +227,10 @@ public struct MailView: View {
                 await sync.discardSearch(feed: .search(abandoned))
             }
         }
+        // Switching mailbox leaves the reader showing a thread that is no
+        // longer in the list beside it — on a wide layout the two columns
+        // would visibly disagree.
+        .onChange(of: selectedFeed) { _, _ in selectedThread = nil }
         .task(id: selectedFeed) {
             guard let selectedFeed else { return }
 
@@ -154,6 +239,17 @@ public struct MailView: View {
             // Only once a list is actually on screen, and torn down as soon as
             // it is not — each stream holds a server worker for its life.
             await sync.beginLiveUpdates(feed: selectedFeed)
+        }
+        .sheet(item: $composing) { kind in
+            if let account = composeAccount {
+                ComposeView(
+                    kind: kind,
+                    accountKey: account.accountKey,
+                    accountID: account.accountID,
+                    client: sync.jmapClient,
+                    store: store
+                )
+            }
         }
         .sheet(isPresented: $isShowingDiagnostics) {
             ServerDiagnosticsView(
