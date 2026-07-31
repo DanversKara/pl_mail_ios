@@ -518,18 +518,20 @@ public final class MailSyncService {
 
         switch error {
         case .notAuthenticated:
-            return "Your app password was revoked or is no longer valid."
+            return String(
+                localized: "Your app password was revoked or is no longer valid.", bundle: .module)
         case .unreachable(let host, _):
-            return "Can't reach \(host)."
+            return String(localized: "Can't reach \(host).", bundle: .module)
         case .untrustedCertificate(let host, _):
             return "\(host) presented a certificate that no longer matches the one you trusted."
         case .methodFailed(let type, let description, _):
             // Raw JMAP error types are for the log, never for a person.
             logger.error("Method error \(type.rawValue, privacy: .public): \(description ?? "")")
-            return "The server couldn't complete that request."
+            return String(localized: "The server couldn't complete that request.", bundle: .module)
         default:
             logger.error("Unexpected: \(error, privacy: .public)")
-            return "Something went wrong talking to \(connection.host)."
+            return String(
+                localized: "Something went wrong talking to \(connection.host).", bundle: .module)
         }
     }
 }

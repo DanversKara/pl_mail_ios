@@ -296,9 +296,12 @@ public actor UnifiedFeed {
         guard let error = error as? JMAPError else { return error.localizedDescription }
 
         switch error {
-        case .notAuthenticated: return "Sign-in is no longer valid."
-        case .unreachable(let host, _): return "Can't reach \(host)."
-        default: return "This account didn't sync."
+        case .notAuthenticated:
+            return String(localized: "Sign-in is no longer valid.", bundle: .module)
+        case .unreachable(let host, _):
+            return String(localized: "Can't reach \(host).", bundle: .module)
+        default:
+            return String(localized: "This account didn't sync.", bundle: .module)
         }
     }
 }

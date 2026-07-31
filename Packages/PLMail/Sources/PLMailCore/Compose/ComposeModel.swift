@@ -227,7 +227,7 @@ public final class ComposeModel {
                 apply(loaded)
             }
         } catch {
-            status = .failed("Couldn't open this draft.")
+            status = .failed(String(localized: "Couldn't open this draft.", bundle: .module))
             logger.error("Draft load failed: \(error, privacy: .public)")
         }
     }
@@ -405,7 +405,10 @@ public final class ComposeModel {
         } catch {
             // Nowhere left to put it. Keeping the composer open with the text
             // intact is the only honest response.
-            status = .failed("Couldn't save this message. Don't close the composer yet.")
+            status = .failed(
+                String(
+                    localized: "Couldn't save this message. Don't close the composer yet.",
+                    bundle: .module))
             logger.error("Outbox enqueue failed: \(error, privacy: .public)")
 
             return
@@ -422,9 +425,9 @@ public final class ComposeModel {
         let type = refusals.values.compactMap { $0.objectValue?["type"]?.stringValue }.first
 
         return switch type {
-        case "noRecipients": "This message has no recipients."
-        case "forbidden": "This account isn't allowed to send."
-        default: "The server wouldn't send this message."
+        case "noRecipients": String(localized: "This message has no recipients.", bundle: .module)
+        case "forbidden": String(localized: "This account isn't allowed to send.", bundle: .module)
+        default: String(localized: "The server wouldn't send this message.", bundle: .module)
         }
     }
 

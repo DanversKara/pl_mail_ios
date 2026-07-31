@@ -11,3 +11,38 @@
 "Starred" = "Starred";
 "Important" = "Important";
 "All mail" = "All mail";
+
+/* Failures. These are the strings that show up on the worst day someone has
+   with this app, so they say what happened and, where it is knowable, what to
+   do about it. */
+
+"This account has no Drafts mailbox to send from." = "This account has no Drafts mailbox to send from.";
+"The server wouldn't accept this message." = "The server wouldn't accept this message.";
+"Sign in again to send this." = "Sign in again to send this.";
+"Waiting for the server." = "Waiting for the server.";
+"Couldn't open this draft." = "Couldn't open this draft.";
+"Couldn't save this message. Don't close the composer yet." = "Couldn't save this message. Don't close the composer yet.";
+"This message has no recipients." = "This message has no recipients.";
+"This account isn't allowed to send." = "This account isn't allowed to send.";
+"The server wouldn't send this message." = "The server wouldn't send this message.";
+"That isn't a plMail pairing code." = "That isn't a plMail pairing code.";
+"That code points at an address this app can't reach." = "That code points at an address this app can't reach.";
+"That code didn't work. They last two minutes and work once — show a new one." = "That code didn't work. They last two minutes and work once — show a new one.";
+"Can't reach %@. Check you're on the same network as the server." = "Can't reach %@. Check you're on the same network as the server.";
+"The server wouldn't change that snooze." = "The server wouldn't change that snooze.";
+"Couldn't reach the server. Nothing was changed." = "Couldn't reach the server. Nothing was changed.";
+"This account has no Spam mailbox." = "This account has no Spam mailbox.";
+"A message has to stay in at least one label, and that was the last one." = "A message has to stay in at least one label, and that was the last one.";
+"Your app password was revoked or is no longer valid." = "Your app password was revoked or is no longer valid.";
+"Can't reach %@." = "Can't reach %@.";
+"The server couldn't complete that request." = "The server couldn't complete that request.";
+"Something went wrong talking to %@." = "Something went wrong talking to %@.";
+"Sign-in is no longer valid." = "Sign-in is no longer valid.";
+"This account didn't sync." = "This account didn't sync.";
+"That pairing code couldn't be read." = "That pairing code couldn't be read.";
+"Couldn't save to the keychain: %@" = "Couldn't save to the keychain: %@";
+"That pairing code didn't work." = "That pairing code didn't work.";
+"Something went wrong: %@" = "Something went wrong: %@";
+"Enter your server's address." = "Enter your server's address.";
+"That address is missing a hostname." = "That address is missing a hostname.";
+"That address couldn't be read." = "That address couldn't be read.";

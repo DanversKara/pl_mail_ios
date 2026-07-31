@@ -228,7 +228,8 @@ public final class MailActions {
             let result = try results.result(of: call)
 
             if let refused = result.notUpdated, refused.isEmpty == false {
-                failure = "The server wouldn't change that snooze."
+                failure = String(
+                    localized: "The server wouldn't change that snooze.", bundle: .module)
                 logger.error("Snooze refused: \(String(describing: refused), privacy: .public)")
 
                 return false
@@ -236,7 +237,8 @@ public final class MailActions {
 
             return true
         } catch {
-            failure = "Couldn't reach the server. Nothing was changed."
+            failure = String(
+                localized: "Couldn't reach the server. Nothing was changed.", bundle: .module)
             logger.error("Snooze failed: \(error, privacy: .public)")
 
             return false
@@ -258,7 +260,7 @@ public final class MailActions {
         guard let inbox = try? await store.mailbox(role: .inbox, accountKey: target.accountKey),
             let junk = try? await store.mailbox(role: .junk, accountKey: target.accountKey)
         else {
-            failure = "This account has no Spam mailbox."
+            failure = String(localized: "This account has no Spam mailbox.", bundle: .module)
             return
         }
 
@@ -570,7 +572,10 @@ public final class MailActions {
             // binding to move to, and removing a label hits it when that label
             // was the last one. Both leave the message nowhere, so the copy
             // names the rule rather than guessing which of the two it was.
-            "A message has to stay in at least one label, and that was the last one."
+            String(
+                localized:
+                    "A message has to stay in at least one label, and that was the last one.",
+                bundle: .module)
         case "forbidden", "accountReadOnly":
             "This account is read-only."
         default:

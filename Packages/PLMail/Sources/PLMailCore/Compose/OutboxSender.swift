@@ -188,13 +188,13 @@ public final class OutboxSender {
     private static func describe(_ error: any Error) -> String {
         switch error {
         case SendFailure.noDraftsMailbox:
-            "This account has no Drafts mailbox to send from."
+            String(localized: "This account has no Drafts mailbox to send from.", bundle: .module)
         case SendFailure.refused:
-            "The server wouldn't accept this message."
+            String(localized: "The server wouldn't accept this message.", bundle: .module)
         case JMAPError.notAuthenticated:
-            "Sign in again to send this."
+            String(localized: "Sign in again to send this.", bundle: .module)
         default:
-            "Waiting for the server."
+            String(localized: "Waiting for the server.", bundle: .module)
         }
     }
 }

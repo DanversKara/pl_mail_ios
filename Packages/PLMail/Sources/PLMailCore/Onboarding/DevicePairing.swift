@@ -153,13 +153,19 @@ extension DevicePairing.Failure {
     public var message: String {
         switch self {
         case .notAPairingLink:
-            "That isn't a plMail pairing code."
+            String(localized: "That isn't a plMail pairing code.", bundle: .module)
         case .badServerAddress:
-            "That code points at an address this app can't reach."
+            String(
+                localized: "That code points at an address this app can't reach.", bundle: .module)
         case .codeRejected:
-            "That code didn't work. They last two minutes and work once — show a new one."
+            String(
+                localized:
+                    "That code didn't work. They last two minutes and work once — show a new one.",
+                bundle: .module)
         case .unreachable(let host):
-            "Can't reach \(host). Check you're on the same network as the server."
+            String(
+                localized: "Can't reach \(host). Check you're on the same network as the server.",
+                bundle: .module)
         case .untrustedCertificate(let host, _):
             "\(host) presented a certificate this device doesn't recognise."
         }

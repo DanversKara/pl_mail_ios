@@ -97,7 +97,8 @@ public final class ServerSetupModel {
         } catch let failure as DevicePairing.Failure {
             phase = .failed(message: failure.message)
         } catch {
-            phase = .failed(message: "That pairing code couldn't be read.")
+            phase = .failed(
+                message: String(localized: "That pairing code couldn't be read.", bundle: .module))
         }
     }
 
@@ -115,7 +116,10 @@ public final class ServerSetupModel {
             try store.save(verifiedConnection)
             onConnected(verifiedConnection)
         } catch {
-            phase = .failed(message: "Couldn't save to the keychain: \(error).")
+            phase = .failed(
+                message: String(
+                    localized: "Couldn't save to the keychain: \(String(describing: error))",
+                    bundle: .module))
         }
     }
 
@@ -174,7 +178,9 @@ public final class ServerSetupModel {
 
                 return
             } catch {
-                phase = .failed(message: "That pairing code didn't work.")
+                phase = .failed(
+                    message: String(
+                        localized: "That pairing code didn't work.", bundle: .module))
 
                 return
             }
@@ -210,7 +216,10 @@ public final class ServerSetupModel {
         } catch let error as JMAPError {
             phase = Self.phase(for: error, host: address.host)
         } catch {
-            phase = .failed(message: "Something went wrong: \(error.localizedDescription)")
+            phase = .failed(
+                message: String(
+                    localized: "Something went wrong: \(error.localizedDescription)",
+                    bundle: .module))
         }
     }
 
@@ -260,13 +269,13 @@ public final class ServerSetupModel {
     private static func describe(addressError: any Error) -> String {
         switch addressError {
         case ServerAddress.ParseError.empty:
-            "Enter your server's address."
+            String(localized: "Enter your server's address.", bundle: .module)
         case ServerAddress.ParseError.unsupportedScheme(let scheme):
             "\(scheme):// isn't something this app can talk to. Use https, or http on a local network."
         case ServerAddress.ParseError.missingHost:
-            "That address is missing a hostname."
+            String(localized: "That address is missing a hostname.", bundle: .module)
         default:
-            "That address couldn't be read."
+            String(localized: "That address couldn't be read.", bundle: .module)
         }
     }
 }

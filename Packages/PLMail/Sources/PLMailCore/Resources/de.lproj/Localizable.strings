@@ -12,3 +12,38 @@
 "Starred" = "Markiert";
 "Important" = "Wichtig";
 "All mail" = "Alle E-Mails";
+
+/* Fehlermeldungen. Sie erscheinen am schlechtesten Tag, den jemand mit dieser
+   App hat — also sagen sie, was passiert ist, und wo es bekannt ist, was zu
+   tun ist. Geduzt, wie im Rest der App. */
+
+"This account has no Drafts mailbox to send from." = "Dieses Konto hat kein Entwurfs-Postfach zum Senden.";
+"The server wouldn't accept this message." = "Der Server hat diese Nachricht abgelehnt.";
+"Sign in again to send this." = "Melde dich erneut an, um das zu senden.";
+"Waiting for the server." = "Warte auf den Server.";
+"Couldn't open this draft." = "Dieser Entwurf ließ sich nicht öffnen.";
+"Couldn't save this message. Don't close the composer yet." = "Diese Nachricht ließ sich nicht sichern. Schließe den Editor noch nicht.";
+"This message has no recipients." = "Diese Nachricht hat keine Empfänger.";
+"This account isn't allowed to send." = "Dieses Konto darf nicht senden.";
+"The server wouldn't send this message." = "Der Server hat den Versand abgelehnt.";
+"That isn't a plMail pairing code." = "Das ist kein plMail-Kopplungscode.";
+"That code points at an address this app can't reach." = "Dieser Code zeigt auf eine Adresse, die die App nicht erreicht.";
+"That code didn't work. They last two minutes and work once — show a new one." = "Dieser Code hat nicht funktioniert. Codes gelten zwei Minuten und nur einmal — zeig einen neuen an.";
+"Can't reach %@. Check you're on the same network as the server." = "%@ ist nicht erreichbar. Prüfe, ob du im selben Netzwerk wie der Server bist.";
+"The server wouldn't change that snooze." = "Der Server hat die Zurückstellung nicht geändert.";
+"Couldn't reach the server. Nothing was changed." = "Server nicht erreichbar. Es wurde nichts geändert.";
+"This account has no Spam mailbox." = "Dieses Konto hat kein Werbung-Postfach.";
+"A message has to stay in at least one label, and that was the last one." = "Eine Nachricht muss in mindestens einem Label bleiben, und das war das letzte.";
+"Your app password was revoked or is no longer valid." = "Dein App-Passwort wurde widerrufen oder ist nicht mehr gültig.";
+"Can't reach %@." = "%@ ist nicht erreichbar.";
+"The server couldn't complete that request." = "Der Server konnte die Anfrage nicht abschließen.";
+"Something went wrong talking to %@." = "Bei der Verbindung mit %@ ist etwas schiefgelaufen.";
+"Sign-in is no longer valid." = "Die Anmeldung ist nicht mehr gültig.";
+"This account didn't sync." = "Dieses Konto wurde nicht synchronisiert.";
+"That pairing code couldn't be read." = "Dieser Kopplungscode ließ sich nicht lesen.";
+"Couldn't save to the keychain: %@" = "Sichern im Schlüsselbund fehlgeschlagen: %@";
+"That pairing code didn't work." = "Dieser Kopplungscode hat nicht funktioniert.";
+"Something went wrong: %@" = "Etwas ist schiefgelaufen: %@";
+"Enter your server's address." = "Gib die Adresse deines Servers ein.";
+"That address is missing a hostname." = "Dieser Adresse fehlt ein Hostname.";
+"That address couldn't be read." = "Diese Adresse ließ sich nicht lesen.";
