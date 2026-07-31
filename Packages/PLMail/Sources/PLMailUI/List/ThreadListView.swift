@@ -182,7 +182,7 @@ public struct ThreadListView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(allChecked ? "Deselect all" : "Select all") {
+                    Button(allChecked ? .ui("Deselect all") : .ui("Select all")) {
                         checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
                     }
                 }
@@ -385,20 +385,21 @@ public struct ThreadListView: View {
                 Divider()
 
                 HStack(spacing: 0) {
-                    bulkButton("Archive", "archivebox") { .archive }
-                    bulkButton("Labels", "tag", action: nil) { isPickingBulkLabel = true }
+                    bulkButton(.ui("Archive"), "archivebox") { .archive }
+                    bulkButton(.ui("Labels"), "tag", action: nil) { isPickingBulkLabel = true }
                     bulkButton(
-                        anyUnread ? "Read" : "Unread",
+                        anyUnread ? .ui("Read") : .ui("Unread"),
                         anyUnread ? "envelope.open" : "envelope.badge"
                     ) {
                         .setSeen(anyUnread)
                     }
                     bulkButton(
-                        anyUnstarred ? "Star" : "Unstar", anyUnstarred ? "star" : "star.slash"
+                        anyUnstarred ? .ui("Star") : .ui("Unstar"),
+                        anyUnstarred ? "star" : "star.slash"
                     ) {
                         .setFlagged(anyUnstarred)
                     }
-                    bulkButton("Trash", "trash", role: .destructive) { .trash }
+                    bulkButton(.ui("Trash"), "trash", role: .destructive) { .trash }
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
@@ -409,7 +410,7 @@ public struct ThreadListView: View {
     }
 
     private func bulkButton(
-        _ title: String,
+        _ title: LocalizedStringResource,
         _ symbol: String,
         role: ButtonRole? = nil,
         action: (() -> MailActions.BulkAction)? = nil,

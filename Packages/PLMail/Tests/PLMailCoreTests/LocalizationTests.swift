@@ -160,6 +160,58 @@ struct LocalizationTests {
             "Missing English: \(de.subtracting(en).sorted().joined(separator: ", "))")
     }
 
+    /// PLMailUI carries the larger of the two string tables and has no test
+    /// target of its own — its views are `#if os(iOS)` and would not build on
+    /// the host. Read from the source tree instead: drift between two files is
+    /// a property of the files, not of the bundle they end up in.
+    @Test("The UI strings do not drift either")
+    func uiStringsDoNotDrift() throws {
+        let en = try uiKeys(language: "en")
+        let de = try uiKeys(language: "de")
+
+        #expect(en.isEmpty == false, "No English UI keys were found.")
+        #expect(
+            en.subtracting(de).isEmpty,
+            "Missing German: \(en.subtracting(de).sorted().joined(separator: ", "))")
+        #expect(
+            de.subtracting(en).isEmpty,
+            "Missing English: \(de.subtracting(en).sorted().joined(separator: ", "))")
+    }
+
+    /// A spot check that the UI table really is translated, not just present
+    /// on both sides with the English copied across.
+    @Test("UI strings are actually in German")
+    func uiStringsAreGerman() throws {
+        let de = try uiTable(language: "de")
+
+        #expect(de["Subject"] == "Betreff")
+        #expect(de["Outbox"] == "Postausgang")
+        #expect(de["Deselect all"] == "Auswahl aufheben")
+    }
+
+    private var uiResources: URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appending(path: "Sources/PLMailUI/Resources")
+    }
+
+    private func uiTable(language: String) throws -> [String: String] {
+        let url =
+            uiResources
+            .appending(path: "\(language).lproj")
+            .appending(path: "Localizable.strings")
+
+        return try #require(
+            NSDictionary(contentsOf: url) as? [String: String],
+            "\(language) UI strings are missing or malformed.")
+    }
+
+    private func uiKeys(language: String) throws -> Set<String> {
+        Set(try uiTable(language: language).keys)
+    }
+
     /// Reads the shipped `.strings` rather than the source tree, so this also
     /// proves the resources are actually in the bundle.
     private func keys(in language: String) throws -> Set<String> {

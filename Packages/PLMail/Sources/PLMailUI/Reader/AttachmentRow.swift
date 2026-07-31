@@ -74,7 +74,7 @@ struct AttachmentRow: View {
             do {
                 onPreview(try await downloadContext.file(for: attachment, blobs: blobs))
             } catch {
-                errorMessage = "Couldn't download this attachment."
+                errorMessage = String(localized: .ui("Couldn't download this attachment."))
             }
         }
     }

@@ -27,8 +27,9 @@ public struct AccountSnapshot: Hashable, Sendable, Identifiable {
     /// rather than as missing data, which is the worst of both — it looks
     /// broken *and* tells you nothing.
     ///
-    /// Falls back to the account id, which is at least stable and
-    /// distinguishes one nameless account from another.
+    /// A nameless account is backfilled with its own address when identities
+    /// are synced, so this last-resort id should only ever be seen in the
+    /// window before that happens.
     public var displayName: String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
 

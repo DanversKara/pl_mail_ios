@@ -84,10 +84,10 @@ public struct ThreadRowView: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction(named: thread.isFlagged ? "Unstar" : "Star") {
+        .accessibilityAction(named: Text(thread.isFlagged ? .ui("Unstar") : .ui("Star"))) {
             onToggleStar?()
         }
-        .accessibilityAction(named: isSelected ? "Deselect" : "Select") {
+        .accessibilityAction(named: Text(isSelected ? .ui("Deselect") : .ui("Select"))) {
             onToggleSelection?()
         }
     }

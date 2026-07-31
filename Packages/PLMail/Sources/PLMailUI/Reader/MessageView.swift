@@ -111,7 +111,7 @@ struct MessageView: View {
 
         guard names.isEmpty == false else { return "" }
 
-        return "To: " + names.joined(separator: ", ")
+        return String(localized: .ui("To: \(names.joined(separator: ", "))"))
     }
 
     private var date: String {

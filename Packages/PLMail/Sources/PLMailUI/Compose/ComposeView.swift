@@ -119,7 +119,7 @@ public struct ComposeView: View {
     /// window in which the URL resolves.
     private func attach(_ result: Result<[URL], any Error>) {
         guard case .success(let urls) = result else {
-            attachmentError = "That file couldn't be opened."
+            attachmentError = String(localized: .ui("That file couldn't be opened."))
             return
         }
 
@@ -129,7 +129,8 @@ public struct ComposeView: View {
             defer { if scoped { url.stopAccessingSecurityScopedResource() } }
 
             guard let data = try? Data(contentsOf: url) else {
-                attachmentError = "\(url.lastPathComponent) couldn't be read."
+                attachmentError = String(
+                    localized: .ui("\(url.lastPathComponent) couldn't be read."))
                 continue
             }
 
@@ -158,14 +159,14 @@ public struct ComposeView: View {
             }
 
             RecipientField(
-                label: "To", text: $model.to, suggestions: model.suggestions
+                label: .ui("To"), text: $model.to, suggestions: model.suggestions
             )
             .focused($focus, equals: .to)
 
             if showsMoreRecipients {
-                RecipientField(label: "Cc", text: $model.cc, suggestions: model.suggestions)
+                RecipientField(label: .ui("Cc"), text: $model.cc, suggestions: model.suggestions)
                     .focused($focus, equals: .cc)
-                RecipientField(label: "Bcc", text: $model.bcc, suggestions: model.suggestions)
+                RecipientField(label: .ui("Bcc"), text: $model.bcc, suggestions: model.suggestions)
                     .focused($focus, equals: .bcc)
             } else {
                 Button(.ui("Cc / Bcc")) { showsMoreRecipients = true }
@@ -176,7 +177,7 @@ public struct ComposeView: View {
 
     private var subjectField: some View {
         Section {
-            TextField("Subject", text: $model.subject)
+            TextField(text: $model.subject) { Text(.ui("Subject")) }
                 .focused($focus, equals: .subject)
         }
     }
@@ -312,7 +313,7 @@ public struct ComposeView: View {
 
 /// One address field, with completions drawn from mail already synced.
 private struct RecipientField: View {
-    let label: String
+    let label: LocalizedStringResource
     @Binding var text: String
     let suggestions: [EmailAddress]
 

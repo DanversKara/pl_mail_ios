@@ -30,7 +30,12 @@ public actor SyncStore {
 
             let account =
                 try account(key) ?? insertAccount(key: key, serverID: serverID, id: entry.id)
-            account.name = entry.account.name
+            // Not assigned blindly: a JMAP account may carry no name at all,
+            // and overwriting a good one with an empty string on every sync
+            // would undo the backfill in `replaceIdentities` a moment later.
+            if entry.account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                account.name = entry.account.name
+            }
             account.isPersonal = entry.account.isPersonal
             account.isReadOnly = entry.account.isReadOnly
             account.sortIndex = index
@@ -531,6 +536,17 @@ public actor SyncStore {
             stored.name = identity.name
             stored.textSignature = identity.textSignature
             modelContext.insert(stored)
+        }
+
+        // A nameless account used to render as "Mailbox 1119" on every row of
+        // a two-account inbox — an internal id, in front of the user, as the
+        // only thing distinguishing one account from another. Its own address
+        // is the thing people actually recognise, and by this point we have it.
+        if let account = try account(accountKey),
+            account.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+            let email = identities.compactMap(\.email).first
+        {
+            account.name = email
         }
 
         try modelContext.save()
