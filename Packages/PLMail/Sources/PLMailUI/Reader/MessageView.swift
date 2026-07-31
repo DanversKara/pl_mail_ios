@@ -20,6 +20,7 @@ struct MessageView: View {
     /// Follows the system, so mail matches the rest of the phone rather than
     /// being the one screen that stays white at night.
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var prefersOriginalColors = false
     @State private var showsQuotedHistory = false
 
@@ -67,7 +68,7 @@ struct MessageView: View {
                     HStack(spacing: 6) {
                         Text(message.displayName)
                             .font(.subheadline.weight(.semibold))
-                            .lineLimit(1)
+                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                         if message.isDraft {
                             Text(.ui("Draft"))
@@ -98,6 +99,11 @@ struct MessageView: View {
                     Text(date)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        // Never squeezed to nothing so a long sender name can
+                        // fit: the name truncates first, and it is the thing
+                        // with a sensible truncation.
+                        .layoutPriority(1)
 
                     if message.attachments.isEmpty == false {
                         Image(systemName: "paperclip")
@@ -125,7 +131,14 @@ struct MessageView: View {
     private var date: String {
         guard let receivedAt = message.receivedAt else { return "" }
 
-        return receivedAt.formatted(date: .abbreviated, time: .shortened)
+        // "31 Jul 2026 at 18:18" wraps to three lines at accessibility sizes
+        // and takes half the row from the sender's name. The day and time are
+        // what a reader is actually scanning for in a thread.
+        guard dynamicTypeSize.isAccessibilitySize else {
+            return receivedAt.formatted(date: .abbreviated, time: .shortened)
+        }
+
+        return receivedAt.formatted(date: .omitted, time: .shortened)
     }
 
     // MARK: - Body

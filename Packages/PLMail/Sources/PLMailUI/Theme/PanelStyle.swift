@@ -36,6 +36,20 @@ enum PanelStyle {
 }
 
 extension View {
+    /// Drops a label's text, conditionally.
+    ///
+    /// `.labelStyle(flag ? .iconOnly : .automatic)` does not compile — the two
+    /// styles are different types and the ternary has nowhere to land. This is
+    /// the branch-on-the-view form, which does.
+    @ViewBuilder
+    func iconOnly(when condition: Bool) -> some View {
+        if condition {
+            labelStyle(.iconOnly)
+        } else {
+            self
+        }
+    }
+
     /// One message in a conversation, as its own card.
     ///
     /// A thread used to be one continuous column with hairlines between

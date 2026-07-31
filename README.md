@@ -26,6 +26,8 @@ It talks to plMail directly over **JMAP** — no scraping, no bridge, no account
 
 **Dark mode, iPad and German** are not afterthoughts: three columns on a tablet, a real back stack on a phone, and the whole interface in either language.
 
+**It works at large text sizes.** At the accessibility sizes the rows restack rather than truncating — a name you can read on two lines beats one you can't on one — and the reply bar drops to icons rather than hyphenating "Re-ply" inside a pill.
+
 ---
 
 ## Screenshots

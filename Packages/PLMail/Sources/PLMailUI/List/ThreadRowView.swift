@@ -37,6 +37,13 @@ public struct ThreadRowView: View {
     /// nothing about why the message came back.
     var snippet: String?
 
+    /// At accessibility sizes a row that keeps its columns has no room left
+    /// for any of them: the sender truncates to "Ada Lovel…" so that a
+    /// timestamp can sit beside it. Stacking is what the system's own lists
+    /// do, and it is the difference between a large-text layout that works
+    /// and one that merely does not crash.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     public init(
         thread: StoredThread,
         accountLabel: String? = nil,
@@ -113,41 +120,75 @@ public struct ThreadRowView: View {
         }
     }
 
+    @ViewBuilder
     private var topLine: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(participants)
-                .font(.subheadline)
-                .fontWeight(thread.isUnread ? .semibold : .regular)
-                .foregroundStyle(thread.isUnread ? .primary : .secondary)
-                .lineLimit(1)
+        if dynamicTypeSize.isAccessibilitySize {
+            // Date on its own line, sender free to wrap. Two lines of a name
+            // people can read beats one line of a name they cannot.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    senderName.lineLimit(2)
+                    messageCountBadge
+                }
 
-            if thread.messageCount > 1 {
-                Text("\(thread.messageCount)")
-                    .font(.caption2)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.quaternary, in: Capsule())
+                dateText
             }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                senderName.lineLimit(1)
+                messageCountBadge
 
-            Spacer(minLength: 4)
+                Spacer(minLength: 4)
 
-            Text(relativeDate)
-                .font(.caption)
-                .fontWeight(thread.isUnread ? .medium : .regular)
-                .foregroundStyle(thread.isUnread ? Color.accentColor : .secondary)
-                .accessibilityHidden(true)
+                dateText
+            }
         }
     }
 
+    private var senderName: some View {
+        Text(participants)
+            .font(.subheadline)
+            .fontWeight(thread.isUnread ? .semibold : .regular)
+            .foregroundStyle(thread.isUnread ? .primary : .secondary)
+    }
+
+    @ViewBuilder
+    private var messageCountBadge: some View {
+        if thread.messageCount > 1 {
+            Text("\(thread.messageCount)")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 1)
+                .background(.quaternary, in: Capsule())
+        }
+    }
+
+    private var dateText: some View {
+        Text(relativeDate)
+            .font(.caption)
+            .fontWeight(thread.isUnread ? .medium : .regular)
+            .foregroundStyle(thread.isUnread ? Color.accentColor : .secondary)
+            // Already in the row's combined label, in a form that reads
+            // properly out loud ("2 hours ago" rather than "2h").
+            .accessibilityHidden(true)
+    }
+
     private var subjectLine: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
+        // Top-aligned rather than baseline-aligned once the subject can wrap:
+        // a star sitting on the baseline of a two-line subject floats in the
+        // middle of the row with nothing beside it.
+        HStack(
+            alignment: dynamicTypeSize.isAccessibilitySize ? .top : .firstTextBaseline, spacing: 6
+        ) {
             Text(subject)
                 .font(.subheadline)
                 .fontWeight(thread.isUnread ? .semibold : .regular)
                 .foregroundStyle(.primary)
-                .lineLimit(1)
+                // The subject is the one line worth reading in full. At large
+                // sizes it gets a second line rather than an ellipsis.
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
             Spacer(minLength: 4)
 

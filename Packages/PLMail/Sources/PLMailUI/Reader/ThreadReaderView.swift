@@ -15,6 +15,15 @@ public struct ThreadReaderView: View {
     @State private var loader: ThreadLoader
     @State private var expanded: Set<String> = []
     @State private var showsEarlierMessages = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Whether the reply bar drops its words.
+    ///
+    /// At accessibility sizes "Reply" and "Forward" do not fit their capsules
+    /// and hyphenate — "Re-ply", "For-ward", stacked over two lines inside a
+    /// pill. The icons are the ones Mail uses and are already labelled for
+    /// VoiceOver, which is what someone at these sizes is most likely using.
+    private var compactActions: Bool { dynamicTypeSize.isAccessibilitySize }
     /// Persisted rather than view state: this is a decision the user made,
     /// and as `@State` it did not survive walking back to the list.
     private let remoteContent = RemoteContentPolicy()
@@ -231,6 +240,7 @@ public struct ThreadReaderView: View {
                         composing = .reply(to: newest, all: false)
                     } label: {
                         Label(.ui("Reply"), systemImage: "arrowshape.turn.up.left")
+                            .iconOnly(when: compactActions)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                     }
@@ -254,6 +264,7 @@ public struct ThreadReaderView: View {
                         composing = .forward(newest)
                     } label: {
                         Label(.ui("Forward"), systemImage: "arrowshape.turn.up.right")
+                            .iconOnly(when: compactActions)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                     }
