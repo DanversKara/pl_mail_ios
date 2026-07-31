@@ -20,6 +20,7 @@ public struct ThreadReaderView: View {
     @State private var composing: ComposeModel.Kind?
     @State private var isPickingLabels = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private let subject: String
     private let blobs: BlobCache
@@ -71,7 +72,7 @@ public struct ThreadReaderView: View {
     public var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(loader.messages) { message in
+                ForEach(Array(loader.messages.enumerated()), id: \.element.id) { index, message in
                     MessageView(
                         message: message,
                         isExpanded: isExpanded(message),
@@ -85,9 +86,15 @@ public struct ThreadReaderView: View {
                         onPreview: { previewedAttachment = $0 }
                     )
 
-                    Divider()
+                    // Between messages only. A rule under the last one is a
+                    // line across empty space, which reads as content that
+                    // failed to load.
+                    if index < loader.messages.count - 1 {
+                        Divider()
+                    }
                 }
             }
+            .padding(.top, 4)
             // A line of text is readable up to roughly 75 characters and
             // painful past it. On a 13" iPad the detail column is wide enough
             // to run to twice that, so the measure is capped and centred
@@ -104,6 +111,7 @@ public struct ThreadReaderView: View {
                 kind: kind, accountKey: accountKey, accountID: accountID,
                 client: client, store: store)
         }
+        .safeAreaInset(edge: .bottom) { replyBar }
         .undoOverlay(actions)
         .overlay { statusOverlay }
         .quickLookPreview($previewedAttachment)
@@ -119,6 +127,75 @@ public struct ThreadReaderView: View {
             // loses someone's place.
             await loader.markRead()
         }
+    }
+
+    /// Reply and forward, where a thumb is.
+    ///
+    /// These were in the More menu, which is two taps and a read for the two
+    /// things anyone actually does with a message they have just finished
+    /// reading. Floating glass rather than a bar so the message keeps scrolling
+    /// visibly underneath — the bar is over the mail, not a wall beneath it.
+    @ViewBuilder
+    private var replyBar: some View {
+        if let newest = loader.messages.last {
+            GlassEffectContainer(spacing: 12) {
+                HStack(spacing: 12) {
+                    Button {
+                        composing = .reply(to: newest, all: false)
+                    } label: {
+                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .glassEffect(.regular.interactive(), in: .capsule)
+
+                    // Only when there is someone else to include. On a message
+                    // with one recipient it does the same thing as Reply, and
+                    // an affordance that duplicates its neighbour is noise.
+                    if hasOtherRecipients(newest) {
+                        Button {
+                            composing = .reply(to: newest, all: true)
+                        } label: {
+                            Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
+                                .labelStyle(.iconOnly)
+                                .padding(12)
+                        }
+                        .glassEffect(.regular.interactive(), in: .circle)
+                    }
+
+                    Button {
+                        composing = .forward(newest)
+                    } label: {
+                        Label("Forward", systemImage: "arrowshape.turn.up.right")
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 10)
+                    }
+                    .glassEffect(.regular.interactive(), in: .capsule)
+                }
+                .font(.subheadline.weight(.medium))
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16)
+            // Room for the compose button, which floats over this same corner
+            // on a wide layout. Sized to it rather than guessed, so the two
+            // read as one row of controls instead of a collision.
+            .padding(.trailing, isSeparated ? 96 : 16)
+            .padding(.bottom, 8)
+        }
+    }
+
+    private var isSeparated: Bool { sizeClass != .compact }
+
+    /// Whether replying to everyone would reach anyone the plain reply misses.
+    private func hasOtherRecipients(_ message: MessageSnapshot) -> Bool {
+        let sender = message.fromAddress ?? ""
+        let mine = Set(loader.ownAddresses.map { $0.lowercased() })
+
+        return (message.to + message.cc)
+            .map { $0.email.lowercased() }
+            .contains {
+                $0 != sender.lowercased() && mine.contains($0) == false
+            }
     }
 
     /// The actions a thread affords, in the order Gmail puts them.
@@ -149,30 +226,20 @@ public struct ThreadReaderView: View {
             .keyboardShortcut(.delete, modifiers: .command)
 
             Menu {
+                // Reply, reply-all and forward live in the bar at the bottom
+                // now. They stay here as hidden shortcut targets only: a
+                // `.keyboardShortcut` needs a control to hang off, and the bar's
+                // buttons are not in a menu the shortcut system can reach.
                 if let newest = loader.messages.last {
-                    Button {
-                        composing = .reply(to: newest, all: false)
-                    } label: {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                    Section {
+                        Button("Reply") { composing = .reply(to: newest, all: false) }
+                            .keyboardShortcut("r", modifiers: [])
+                        Button("Reply all") { composing = .reply(to: newest, all: true) }
+                            .keyboardShortcut("a", modifiers: [])
+                        Button("Forward") { composing = .forward(newest) }
+                            .keyboardShortcut("f", modifiers: [])
                     }
-                    .keyboardShortcut("r", modifiers: [])
-
-                    Button {
-                        composing = .reply(to: newest, all: true)
-                    } label: {
-                        Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
-                    }
-                    .keyboardShortcut("a", modifiers: [])
-
-                    Button {
-                        composing = .forward(newest)
-                    } label: {
-                        Label("Forward", systemImage: "arrowshape.turn.up.right")
-                    }
-                    .keyboardShortcut("f", modifiers: [])
                 }
-
-                Divider()
 
                 Button {
                     isPickingLabels = true

@@ -66,21 +66,44 @@ public struct ThreadListView: View {
     }
 
     public var body: some View {
-        List(selection: $selection) {
+        List {
             ForEach(rows, id: \.entry.uid) { row in
-                ThreadRowView(
-                    thread: row.thread,
-                    accountLabel: accountLabel(for: row.entry),
-                    isSelected: checked.contains(ThreadRef(thread: row.thread)),
-                    onToggleStar: {
-                        act {
-                            await actions.setFlagged(
-                                row.thread.isFlagged == false, target(for: row.thread))
-                        }
-                    },
-                    onToggleSelection: { toggle(ThreadRef(thread: row.thread)) }
-                )
-                .tag(ThreadRef(thread: row.thread))
+                // A Button rather than List's own selection binding. The
+                // system's selected appearance is a hard blue fill that also
+                // recolours the row's text, and none of it is restylable — on
+                // a mail list, where the row's own colours carry unread and
+                // starred, that erases the state it is sitting on top of.
+                // Owning the tap means owning the highlight.
+                Button {
+                    let ref = ThreadRef(thread: row.thread)
+
+                    if isSelecting {
+                        toggle(ref)
+                    } else {
+                        selection = ref
+                    }
+                } label: {
+                    ThreadRowView(
+                        thread: row.thread,
+                        accountLabel: accountLabel(for: row.entry),
+                        isSelected: checked.contains(ThreadRef(thread: row.thread)),
+                        isOpen: selection == ThreadRef(thread: row.thread),
+                        onToggleStar: {
+                            act {
+                                await actions.setFlagged(
+                                    row.thread.isFlagged == false, target(for: row.thread))
+                            }
+                        },
+                        onToggleSelection: { toggle(ThreadRef(thread: row.thread)) }
+                    )
+                }
+                .buttonStyle(.plain)
+                .listRowSeparator(.hidden)
+                .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
+                // Hiding the *scroll* background is not enough: rows paint
+                // their own on top of it, which on a separated pane shows as
+                // an opaque band sitting over the card.
+                .listRowBackground(Color.clear)
                 .task { await loadMoreIfNeeded(at: row.entry) }
                 // Both directions, both undoable, and everything a swipe does
                 // is also reachable from the row's context menu — a gesture
@@ -162,20 +185,13 @@ public struct ThreadListView: View {
 
             if degraded.isEmpty == false {
                 degradedSection
+                    .listRowBackground(Color.clear)
             }
         }
         .listStyle(.plain)
-        // While a selection is up, a row tap picks it out rather than opening
-        // it. Done by intercepting the navigation binding rather than by
-        // swapping in a second List in edit mode: swapping would reset the
-        // scroll position every time selection starts, which on a long list
-        // loses the reader's place for no reason.
-        .onChange(of: selection) { _, new in
-            guard isSelecting, let new else { return }
-
-            selection = nil
-            toggle(new)
-        }
+        // The pane behind supplies the surface; a List painting its own would
+        // square off the pane's rounded corners.
+        .scrollContentBackground(.hidden)
         .safeAreaInset(edge: .bottom) { bulkBar }
         .onChange(of: isSelecting) { _, active in isSelectionActive = active }
         .sheet(isPresented: $isPickingBulkLabel) {

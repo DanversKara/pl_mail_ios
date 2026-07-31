@@ -12,6 +12,10 @@ public final class ThreadLoader {
     /// store rather than tracked here, so the reader agrees with the row that
     /// opened it.
     public private(set) var snoozedUntil: Date?
+    /// This account's own addresses, so "reply all" can tell whether there is
+    /// anyone else to include — replying to everyone on a message addressed
+    /// only to you is the same as replying.
+    public private(set) var ownAddresses: [String] = []
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
 
@@ -59,6 +63,8 @@ public final class ThreadLoader {
         messages = (try? await store.messages(threadID: threadID, accountKey: accountKey)) ?? []
         snoozedUntil = try? await store.snoozedUntil(
             threadID: threadID, accountKey: accountKey)
+        ownAddresses = ((try? await store.identities(accountKey: accountKey)) ?? [])
+            .map(\.email)
     }
 
     /// One round trip: the thread's message ids, then those messages with

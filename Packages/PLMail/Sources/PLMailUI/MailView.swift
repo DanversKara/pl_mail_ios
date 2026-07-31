@@ -113,10 +113,13 @@ public struct MailView: View {
                 .labelStyle(.iconOnly)
                 .font(.title3)
                 .frame(width: 56, height: 56)
-                .background(.tint, in: Circle())
-                .foregroundStyle(.white)
-                .shadow(radius: 6, y: 3)
         }
+        // Prominent glass: it is the one thing on this screen that creates
+        // rather than acts on what is already there, and it floats over a
+        // scrolling list where a flat fill would sit oddly on top of the rows
+        // passing under it.
+        .buttonStyle(.glassProminent)
+        .clipShape(.circle)
         .padding(.trailing, 20)
         // Sits close to the bottom, where a thumb is, and steps up out of
         // the way only while the undo bar is actually showing rather than
@@ -129,6 +132,11 @@ public struct MailView: View {
         // Both reach the same button, so neither is a second code path.
         .keyboardShortcut("c", modifiers: [])
     }
+
+    /// Panes are drawn as separate surfaces only where there is more than one
+    /// on screen. Collapsed, the split view shows one pane at a time and the
+    /// system's own chrome already separates it from everything else.
+    private var isSeparated: Bool { sizeClass != .compact }
 
     private var isUndoBarShowing: Bool {
         actions.pending != nil || actions.failure != nil
@@ -200,8 +208,10 @@ public struct MailView: View {
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+                .mailPane(isSeparated: isSeparated)
         } content: {
             listContent
+                .mailPane(isSeparated: isSeparated)
                 // Wider than the system default, which is sized for a list of
                 // short titles. A conversation row carries an avatar, a
                 // subject and a snippet, and at the default width the subject
@@ -209,7 +219,10 @@ public struct MailView: View {
                 // than the ideal: when the detail column is hungry the split
                 // view hands this one its minimum, so a generous ideal alone
                 // changes nothing.
-                .navigationSplitViewColumnWidth(min: 380, ideal: 420, max: 520)
+                //
+                // The inset comes out of this width, so it is a little wider
+                // than it was before the panes were separated.
+                .navigationSplitViewColumnWidth(min: 396, ideal: 440, max: 540)
         } detail: {
             // Its own stack so the reader can push further — an attachment
             // preview, a sender's other mail — without disturbing the columns
@@ -223,6 +236,7 @@ public struct MailView: View {
                         description: Text("Pick a message to read it here."))
                 }
             }
+            .mailPane(isSeparated: isSeparated)
         }
         .navigationSplitViewStyle(.balanced)
         // Over the whole split view rather than over the list column, so on a

@@ -35,6 +35,7 @@ public struct MailboxSidebarView: View {
                     }
                     .badge(unreadCount(for: role))
                     .tag(FeedID.unified(role))
+                    .listRowBackground(Color.clear)
                 }
             }
 
@@ -52,6 +53,7 @@ public struct MailboxSidebarView: View {
                                     AvatarPalette.color(for: label.labelID.rawValue))
                         }
                         .tag(FeedID.unifiedLabel(label.labelID))
+                        .listRowBackground(Color.clear)
                     }
                 }
             }
@@ -68,11 +70,13 @@ public struct MailboxSidebarView: View {
                                 .lineLimit(1)
                         }
                         .accessibilityElement(children: .combine)
+                        .listRowBackground(Color.clear)
                     }
                 }
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
     }
 
     /// Colour carries the role, so the icons are distinguishable before the

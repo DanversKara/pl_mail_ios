@@ -24,6 +24,10 @@ public struct ThreadRowView: View {
     /// star then falls back to an indicator.
     var onToggleStar: (() -> Void)?
     var isSelected = false
+    /// Drawn by the row rather than through `listRowBackground`, which fills
+    /// the whole row rectangle and ignores any inset applied to it — so the
+    /// highlight would run to the pane's edge and square off its corner.
+    var isOpen = false
     /// Tapping the avatar picks the row out for a bulk action. Absent where
     /// multi-select is not offered, in which case the avatar is inert.
     var onToggleSelection: (() -> Void)?
@@ -32,12 +36,14 @@ public struct ThreadRowView: View {
         thread: StoredThread,
         accountLabel: String? = nil,
         isSelected: Bool = false,
+        isOpen: Bool = false,
         onToggleStar: (() -> Void)? = nil,
         onToggleSelection: (() -> Void)? = nil
     ) {
         self.thread = thread
         self.accountLabel = accountLabel
         self.isSelected = isSelected
+        self.isOpen = isOpen
         self.onToggleStar = onToggleStar
         self.onToggleSelection = onToggleSelection
     }
@@ -57,7 +63,16 @@ public struct ThreadRowView: View {
                 badges
             }
         }
-        .padding(.vertical, 6)
+        // Roomier than a separator-divided list needs to be: without rules
+        // between rows, whitespace is the only thing grouping each block.
+        .padding(.vertical, 9)
+        .padding(.horizontal, 12)
+        .background {
+            if isOpen || isSelected {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.accentColor.opacity(isOpen ? 0.16 : 0.10))
+            }
+        }
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityDescription)
