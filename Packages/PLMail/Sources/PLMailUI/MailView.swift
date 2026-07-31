@@ -189,6 +189,17 @@ public struct MailView: View {
         }
     }
 
+    /// A message is open and filling the screen, rather than sitting in its
+    /// own column beside the list.
+    private var isReadingOnPhone: Bool {
+        sizeClass == .compact && selectedThread != nil
+    }
+
+    /// Drives the phone's push, and is inert on iPad.
+    private var compactReader: Binding<ThreadRef?> {
+        sizeClass == .compact ? $selectedThread : .constant(nil)
+    }
+
     public var body: some View {
         // Three columns — mailboxes, conversations, message — which is the
         // web UI's three regions and what an iPad has room for. On iPhone the
@@ -215,6 +226,20 @@ public struct MailView: View {
                 .mailPane(isSeparated: isSeparated)
         } content: {
             listContent
+                // The push that a collapsed split view would normally do for
+                // us. It does that only for a `List(selection:)`, and these
+                // rows are buttons — they have to be, so a tap can mean
+                // "add to the selection" while multi-select is on. Without
+                // this, tapping a row on a phone marked it read and then sat
+                // there, which is about the worst possible failure: it looks
+                // like the app noticed you and decided not to help.
+                //
+                // Bound to nothing at regular width, where the reader has its
+                // own column and pushing would put the message in the middle
+                // of the list.
+                .navigationDestination(item: compactReader) { thread in
+                    reader(for: thread)
+                }
                 .mailPane(isSeparated: isSeparated)
                 // Wider than the system default, which is sized for a list of
                 // short titles. A conversation row carries an avatar, a
@@ -256,7 +281,14 @@ public struct MailView: View {
             // The bulk action bar occupies this corner while a selection is
             // up, and composing is not something anyone reaches for
             // mid-selection anyway.
-            if isSelectionActive == false { composeButton }
+            //
+            // Hidden over an open message on a phone too: the reader puts
+            // Reply, Reply all and Forward along the bottom, and a floating
+            // button there sits on top of Forward. The reader has its own
+            // reply actions, so nothing is lost by standing aside.
+            if isSelectionActive == false, isReadingOnPhone == false {
+                composeButton
+            }
         }
         .task(id: searchText) {
             // 350ms: long enough that typing a word is one query rather than

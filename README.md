@@ -1,67 +1,101 @@
 # plMail for iOS
 
-A native iPhone and iPad client for [plMail](https://github.com/karatektus/pl_mail), talking to it
-over JMAP (RFC 8620 / RFC 8621).
+A native iPhone and iPad client for [plMail](https://github.com/karatektus/pl_mail), the self-hosted mail client. Your mail stays on your server; this is the app you read it in.
 
-plMail is a **self-hosted** mail client, so there is no canonical server: the app asks for an
-address at onboarding and expects LAN hostnames, Tailscale nodes, private-CA certificates and a
-NAS that is sometimes rebooting. Everything the app does is shaped by that — cache aggressively,
-poll rarely, degrade per-account, and never busy-loop against someone's home server.
+It talks to plMail directly over **JMAP** — no scraping, no bridge, no account with anyone else in the middle. Pair it once by scanning a code, and every mailbox plMail syncs for you turns up in one inbox.
 
-The server's [docs/CLIENT_DEVELOPMENT.md](https://github.com/karatektus/pl_mail/blob/main/docs/CLIENT_DEVELOPMENT.md)
-is the specification this app implements. Read it before changing anything here.
+<p align="center">
+  <img src="docs/screenshots/06-ipad.png" width="90%" alt="plMail on iPad: mailboxes, conversations and the open message side by side">
+</p>
 
-## Layout
+---
 
-| Path | What |
+## What it does
+
+**One inbox, every account.** plMail already pulls your IMAP, Gmail and Outlook mailboxes into one place. The app keeps them that way — a single conversation list in time order, with a coloured dot showing which account a message came from. Narrowing to one account is something you choose, not the default.
+
+**It works with no signal.** Everything you have already read is on the device, and so is search over it. Open the app on a train, in a lift, in a basement: your mail is there.
+
+**Mail you write does not get lost.** Press send while the server is unreachable and the message is written to disk rather than thrown away. It appears in an Outbox that says plainly what it is waiting for, it survives the app being force-quit, and it goes out on its own once your server is back. Nothing to press, nothing to retype.
+
+**Formatting that survives the trip.** Bold, italic, underline, strikethrough and links, sent as real HTML — so a reply written on your phone reads like one written in the browser, and the quoted thread comes back intact instead of flattened into plain text.
+
+**Reading done properly.** Messages render as the sender wrote them, on white, even when your phone is in dark mode — mail is authored for a light background, and forcing it dark gives you black text on black. Remote images stay blocked until you ask, because in email a remote image is usually a tracking pixel. Attachments open in Quick Look.
+
+**The rest of what you'd expect.** Swipe to archive or delete, with undo. Star, mark read, move between labels. Snooze a conversation until tomorrow morning or a time you pick, and it leaves the inbox and returns unread. Select a dozen messages and act on them at once. Search with the same `from:`, `in:`, `has:attachment` operators as the web UI — matched quirk for quirk, so a query means the same thing in both.
+
+**Dark mode, iPad and German** are not afterthoughts: three columns on a tablet, a real back stack on a phone, and the whole interface in either language.
+
+---
+
+## Screenshots
+
+| Conversations | Reading | Writing |
+|---|---|---|
+| <img src="docs/screenshots/01-inbox.png" alt="The unified conversation list"> | <img src="docs/screenshots/02-reader.png" alt="An open message with reply, reply all and forward"> | <img src="docs/screenshots/03-compose.png" alt="The composer, with bold and italic applied mid-sentence"> |
+
+| Mailboxes | Dark mode |
 |---|---|
-| `App/` | The app target: `@main`, the shell, xcconfigs. Deliberately thin. |
-| `Packages/PLMail/Sources/JMAPKit` | Transport and codec. Foundation only — no SwiftData, no SwiftUI. |
-| `Packages/PLMail/Sources/PLMailCore` | Persistence, sync, search, Keychain. |
-| `Packages/PLMail/Sources/PLMailUI` | Theme tokens and views. |
+| <img src="docs/screenshots/04-sidebar.png" alt="The mailbox sidebar"> | <img src="docs/screenshots/05-dark.png" alt="The conversation list in dark mode"> |
 
-`JMAPKit` has no dependencies on purpose: it is the code most worth testing, and keeping the
-frameworks out means its suite runs on the host in seconds instead of booting a simulator.
+---
 
-## Building
+## Getting started
 
-```bash
-swift test --package-path Packages/PLMail
-```
+### You'll need
 
-```bash
-xcodebuild build -project plMail.xcodeproj -scheme plMail -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
-```
+- **A plMail server you can reach** — on your LAN, over Tailscale or a VPN, or on the open internet. This is a client; it does not host anything.
+- **iOS or iPadOS 26** or later.
+- **Xcode 26**, because there is no App Store build. See [Installing](#installing).
 
-Formatting is `swift-format`, which ships with the toolchain. Run it without
-`--configuration` so it picks up the per-directory config:
+### Pairing
 
-```bash
-swift format lint --strict --recursive App Packages
-```
+In plMail, open **Settings → App passwords → Pair a device**, and scan the code with the app.
 
-`Packages/PLMail/Tests/.swift-format` and the matching file in
-`Sources/JMAPTestSupport` relax `NeverForceUnwrap` and `NeverUseForceTry`.
-Force-unwrapping a literal URL, or a fixture the test itself just wrote, is not
-the hazard those rules exist to catch — a wrong one fails the test loudly at the
-line that caused it, and wrapping each in `#require` adds noise without adding
-signal. Shipping code still forbids both.
+That's it. The app takes the address and a freshly issued app password from the code, checks the server is who it claims to be, and shows you which mailbox it found so you can confirm it's the right one before anything is saved.
 
-`JMAPTestSupport` lives under `Sources/` only so that two test targets can share
-it; it is not a product and nothing but tests depends on it, so it never links
-into the app.
+You can still type the address and paste an app password by hand. But a 71-character secret typed on a phone keyboard is precisely what the QR code exists to spare you.
 
-Device builds need a signing identity. Copy `App/Config/Signing.xcconfig.dist` to
-`Signing.xcconfig` (gitignored) and fill in your team. Simulator builds need neither line.
+### Self-signed certificates
 
-## Running against a server
+If your server presents a certificate your phone doesn't trust — a private CA, a NAS with its own — the app shows you the subject, the issuer, the expiry and a SHA-256 fingerprint, and asks you to accept it once. It's pinned from then on. If that fingerprint ever changes the app stops and tells you, rather than quietly accepting the new one.
 
-Bring up the server's own stack, then create an app password in **Settings → App passwords** and
-paste it into onboarding. The secret is shown once and looks like `plmail_<64 hex>`.
+Plain `http://` works for a server on your own network, behind a toggle that says in so many words that the connection isn't encrypted.
+
+---
+
+## Installing
+
+No App Store release. Build it yourself:
 
 ```bash
-docker compose up --build
+git clone https://github.com/karatektus/pl_mail_ios.git
 ```
 
-For anything automated, prefer the server's isolated test stack (`npm run test:env:up`, serving at
-`http://127.0.0.1:8001`) so tests never touch real mail.
+Open `plMail.xcodeproj`, pick a simulator or your own device, and press Run.
+
+A device build needs your Apple Developer team id: copy `App/Config/Signing.xcconfig.dist` to `Signing.xcconfig` and fill it in. Simulator builds need no account at all.
+
+---
+
+## Privacy
+
+- Mail is fetched **from your server and nowhere else**. No analytics, no crash reporting, no third-party network calls of any kind.
+- Your app password is kept in the **iOS Keychain**, marked as non-syncing, so it stays on the one device it was issued to.
+- The local database is a **cache** holding nothing that couldn't be fetched again — which is why signing out simply deletes it.
+- **Remote images are blocked by default.** Loading one tells the sender you opened their message, roughly when, and roughly from where.
+
+---
+
+## What isn't there yet
+
+- **No push notifications.** New mail arrives when the app checks — on opening, and periodically in the background. The interface says "last checked N minutes ago" rather than implying it's live, because it isn't. Real push needs an arrangement between app and server that doesn't exist yet.
+- **A few error messages are English-only** even with the app in German. The interface is translated; some failure messages from the networking layer aren't yet.
+- **The attachment picker is lightly tested** — it works, but it hasn't been put through every document provider.
+- **This is a plMail client, not a general JMAP one.** Snooze, cross-account labels and search lean on plMail's own extensions. It won't work against Fastmail or a stock Cyrus server.
+
+---
+
+## Contributing
+
+Issues and pull requests welcome. See [docs/DEVELOPING.md](docs/DEVELOPING.md) for the architecture, the test setup, and the handful of decisions that will look strange until you know why they're there.
