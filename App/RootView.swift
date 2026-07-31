@@ -15,11 +15,12 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if let connection = model.connection, let sync = model.sync {
+            if let connection = model.connection, let sync = model.sync, let outbox = model.outbox {
                 MailView(
                     connection: connection,
                     sync: sync,
                     store: model.store,
+                    outbox: outbox,
                     onSignOut: model.signOut
                 )
             } else if model.hasLoaded {

@@ -71,6 +71,10 @@ public final class ComposeModel {
     private let accountID: AccountID
     private let client: JMAPClient
     private let store: SyncStore
+    private let outbox: Outbox
+    /// Asks the sender to try now. Separate from the outbox itself because
+    /// draining is main-actor work that touches observable state.
+    private let onQueued: @MainActor () -> Void
     private let logger = Logger(subsystem: "de.plmail", category: "compose")
     private var sendTask: Task<Void, Never>?
     /// Guards against a second identity refresh appending the signature twice.
@@ -85,13 +89,17 @@ public final class ComposeModel {
         accountKey: String,
         accountID: AccountID,
         client: JMAPClient,
-        store: SyncStore
+        store: SyncStore,
+        outbox: Outbox,
+        onQueued: @escaping @MainActor () -> Void = {}
     ) {
         self.kind = kind
         self.accountKey = accountKey
         self.accountID = accountID
         self.client = client
         self.store = store
+        self.outbox = outbox
+        self.onQueued = onQueued
 
         prefill()
     }
@@ -341,152 +349,52 @@ public final class ComposeModel {
         status = .editing
     }
 
+    /// Queues the message and asks the outbox to send it.
+    ///
+    /// Always queued first, even when the server is right there. The previous
+    /// version sent directly and, when the request failed, told the user "the
+    /// message is saved as a draft" — which was false: the draft creation *was*
+    /// the request that failed, so dismissing the composer lost the text. For a
+    /// mail client whose server is somebody's NAS, being unreachable is a
+    /// normal Tuesday, and it must not be the way mail disappears.
+    ///
+    /// Writing to disk before sending also means the message survives the app
+    /// being killed mid-send, which no amount of retry logic in memory does.
     private func deliver(identity: IdentitySnapshot) async {
-        guard let drafts = try? await store.mailbox(role: .drafts, accountKey: accountKey) else {
-            status = .failed("This account has no Drafts mailbox to send from.")
-            return
-        }
-
-        // Uploaded here rather than when the file was picked. plMail reclaims
-        // unreferenced uploads on a timer, so a draft left open would otherwise
-        // send with blob ids the server had already collected.
-        let uploaded: [EmailCreate.Draft.Attachment]
-
-        do {
-            uploaded = try await upload(attachments)
-        } catch {
-            status = .failed(Self.describeUploadFailure(error))
-            logger.error("Attachment upload failed: \(error, privacy: .public)")
-            return
-        }
-
-        let draft = EmailCreate.Draft(
-            drafts: drafts,
+        let queued = Outbox.PendingMessage(
+            accountKey: accountKey,
+            accountID: accountID,
+            identityID: identity.id,
             from: identity.address,
             to: recipients(from: to),
             cc: recipients(from: cc),
             bcc: recipients(from: bcc),
             subject: subject,
-            text: body,
+            body: body,
             inReplyTo: replyTargets?.inReplyTo,
             references: replyTargets?.references,
-            attachments: uploaded
+            editingEmailID: editingEmailID,
+            attachments: attachments.map {
+                Outbox.Attachment(name: $0.name, type: $0.type, data: $0.data)
+            }
         )
 
         do {
-            var builder = RequestBuilder(session: try await client.session())
-
-            // Continuing a draft rewrites the message that already exists.
-            // Creating a second one would leave the original sitting in Drafts
-            // forever, which is the classic way a mail client accumulates
-            // near-duplicate ghosts of everything ever sent.
-            if let editingEmailID {
-                let update = builder.add(
-                    EmailUpdateDraft(
-                        accountID: accountID,
-                        emailID: EmailID(editingEmailID),
-                        draft: draft
-                    )
-                )
-                let submit = builder.add(
-                    EmailSubmissionSet(
-                        accountID: accountID,
-                        emailID: editingEmailID,
-                        identityID: identity.id
-                    )
-                )
-
-                let results = try await client.send(builder)
-
-                if let error = results.failure(of: update) { throw error }
-
-                if let refused = try results.result(of: update).notUpdated, refused.isEmpty == false
-                {
-                    status = .failed("The server wouldn't accept this message.")
-                    return
-                }
-
-                if let error = results.failure(of: submit) { throw error }
-
-                if let refused = try results.result(of: submit).notCreated,
-                    refused.isEmpty == false
-                {
-                    status = .failed(Self.describe(refused))
-                    return
-                }
-
-                status = .sent
-                return
-            }
-
-            let create = builder.add(EmailCreate(accountID: accountID, draft: draft))
-            // The creation id from the call above: one round trip writes the
-            // draft and queues it.
-            let submit = builder.add(
-                EmailSubmissionSet(
-                    accountID: accountID,
-                    emailID: "#\(EmailCreate.creationID)",
-                    identityID: identity.id
-                )
-            )
-
-            let results = try await client.send(builder)
-
-            if let error = results.failure(of: create) { throw error }
-
-            let created = try results.result(of: create)
-
-            if let refused = created.notCreated, refused.isEmpty == false {
-                status = .failed("The server wouldn't accept this message.")
-                return
-            }
-
-            if let error = results.failure(of: submit) { throw error }
-
-            let submission = try results.result(of: submit)
-
-            if let refused = submission.notCreated, refused.isEmpty == false {
-                status = .failed(Self.describe(refused))
-                return
-            }
-
-            status = .sent
+            try await outbox.enqueue(queued)
         } catch {
-            status = .failed("Couldn't send. The message is saved as a draft.")
-            logger.error("Send failed: \(error, privacy: .public)")
-        }
-    }
+            // Nowhere left to put it. Keeping the composer open with the text
+            // intact is the only honest response.
+            status = .failed("Couldn't save this message. Don't close the composer yet.")
+            logger.error("Outbox enqueue failed: \(error, privacy: .public)")
 
-    /// Uploads every attachment and returns what to name them by.
-    ///
-    /// Sequential rather than concurrent: the server advertises a small upload
-    /// allowance and these are someone's home server's workers. Three
-    /// photographs are not worth saturating it.
-    private func upload(
-        _ pending: [PendingAttachment]
-    ) async throws -> [EmailCreate.Draft.Attachment] {
-        var uploaded: [EmailCreate.Draft.Attachment] = []
-
-        for attachment in pending {
-            let blob = try await client.upload(
-                attachment.data, type: attachment.type, accountID: accountID)
-
-            uploaded.append(
-                EmailCreate.Draft.Attachment(
-                    blobID: blob.blobID, type: attachment.type, name: attachment.name))
+            return
         }
 
-        return uploaded
-    }
-
-    private static func describeUploadFailure(_ error: any Error) -> String {
-        guard case JMAPError.requestFailed(let type, _) = error else {
-            return "Couldn't upload the attachments. The message wasn't sent."
-        }
-
-        return type == "tooLarge"
-            ? "One of these files is too large for this server."
-            : "The server wouldn't accept one of these files."
+        // Closes immediately. The send happens in the outbox, which outlives
+        // this sheet — waiting here would make an offline send look like a
+        // hang, and the message is already safe on disk.
+        onQueued()
+        status = .sent
     }
 
     private static func describe(_ refusals: [String: JSONValue]) -> String {

@@ -94,3 +94,10 @@
 "Scan pairing code" = "Code scannen";
 "Camera unavailable" = "Kamera nicht verfügbar";
 "In plMail, open Settings → App passwords and choose Pair a device." = "Öffne in plMail Einstellungen → App-Passwörter und wähle „Gerät koppeln“.";
+"Outbox" = "Postausgang";
+"Nothing waiting" = "Nichts wartet";
+"Everything you've written has been sent." = "Alles Geschriebene wurde gesendet.";
+"Try now" = "Jetzt versuchen";
+"Sending…" = "Wird gesendet …";
+"Discard" = "Verwerfen";
+"(no subject)" = "(kein Betreff)";

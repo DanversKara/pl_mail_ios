@@ -16,10 +16,15 @@ import SwiftUI
 /// are. Custom labels sort alphabetically after.
 public struct MailboxSidebarView: View {
     let sync: MailSyncService
+    let outbox: OutboxSender
     @Binding var selection: FeedID?
+    @State private var showingOutbox = false
 
-    public init(sync: MailSyncService, selection: Binding<FeedID?>) {
+    public init(
+        sync: MailSyncService, outbox: OutboxSender, selection: Binding<FeedID?>
+    ) {
         self.sync = sync
+        self.outbox = outbox
         _selection = selection
     }
 
@@ -35,6 +40,28 @@ public struct MailboxSidebarView: View {
                     }
                     .badge(unreadCount(for: role))
                     .tag(FeedID.unified(role))
+                    .listRowBackground(Color.clear)
+                }
+            }
+
+            // Only when there is something in it. A permanent Outbox row is
+            // a permanent suggestion that mail might be stuck, and on a
+            // working connection the queue is empty microseconds after a
+            // send.
+            if outbox.pendingCount > 0 {
+                Section {
+                    Button {
+                        showingOutbox = true
+                    } label: {
+                        Label {
+                            Text(.ui("Outbox"))
+                                .foregroundStyle(.primary)
+                        } icon: {
+                            Image(systemName: "tray.and.arrow.up.fill")
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                    .badge(outbox.pendingCount)
                     .listRowBackground(Color.clear)
                 }
             }
@@ -77,6 +104,9 @@ public struct MailboxSidebarView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
+        .sheet(isPresented: $showingOutbox) {
+            OutboxView(outbox: outbox)
+        }
     }
 
     /// Colour carries the role, so the icons are distinguishable before the

@@ -39,6 +39,7 @@ public struct ThreadReaderView: View {
     /// reader itself reads nothing from the sync service.
     private let sync: MailSyncService
     private let actions: MailActions
+    private let outbox: OutboxSender
     private let threadID: String
 
     public init(
@@ -51,6 +52,7 @@ public struct ThreadReaderView: View {
         sync: MailSyncService,
         blobs: BlobCache,
         actions: MailActions,
+        outbox: OutboxSender,
         credential: Credential
     ) {
         self.subject = subject
@@ -61,6 +63,7 @@ public struct ThreadReaderView: View {
         self.store = store
         self.sync = sync
         self.actions = actions
+        self.outbox = outbox
         self.threadID = threadID
         downloadContext = DownloadContext(
             accountID: accountID, client: client, credential: credential)
@@ -124,7 +127,7 @@ public struct ThreadReaderView: View {
         .sheet(item: $composing) { kind in
             ComposeView(
                 kind: kind, accountKey: accountKey, accountID: accountID,
-                client: client, store: store)
+                client: client, store: store, outbox: outbox)
         }
         .safeAreaInset(edge: .bottom) { replyBar }
         .undoOverlay(actions)

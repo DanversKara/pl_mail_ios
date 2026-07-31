@@ -13,6 +13,7 @@ struct SearchResultsView: View {
     let raw: String
     let sync: MailSyncService
     let actions: MailActions
+    let outbox: OutboxSender
     @Binding var selection: ThreadRef?
 
     @State private var isSearching = false
@@ -30,7 +31,8 @@ struct SearchResultsView: View {
                 }
             } else {
                 ThreadListView(
-                    feed: feed, sync: sync, actions: actions, selection: $selection
+                    feed: feed, sync: sync, actions: actions, outbox: outbox,
+                    selection: $selection
                 )
                 .safeAreaInset(edge: .top, spacing: 0) {
                     SearchTokensView(query: parsed)

@@ -57,12 +57,28 @@ final class AppModel {
 
         guard let connection else {
             sync = nil
+            outbox = nil
             return
         }
 
         let service = MailSyncService(connection: connection, store: store)
         service.onReauthenticationNeeded = { [weak self] in self?.signOut() }
         sync = service
+
+        let sender = OutboxSender(
+            outbox: Outbox(serverID: connection.host),
+            client: service.jmapClient,
+            store: store
+        )
+        outbox = sender
+
+        // Anything queued from a previous run goes out as soon as there is a
+        // client to send it with. Someone who wrote a message on a train and
+        // then killed the app expects it gone by the time they look again.
+        Task {
+            await sender.refreshCount()
+            sender.drain()
+        }
 
         startMonitoringNetwork()
     }
@@ -72,6 +88,10 @@ final class AppModel {
     func scenePhaseChanged(to phase: ScenePhase) async {
         switch phase {
         case .active:
+            // Coming back to the app is the most likely moment for the server
+            // to have become reachable again.
+            outbox?.drain()
+
             // Nothing is opened here: the live stream belongs to whichever
             // list is on screen, and opening it before one exists would hold a
             // server worker to show nothing.
@@ -88,6 +108,9 @@ final class AppModel {
             await sync?.endLiveUpdates()
         }
     }
+
+    /// Queued mail waiting to go out. Nil until there is a connection.
+    private(set) var outbox: OutboxSender?
 
     func refreshInBackground() async {
         guard sync == nil else {
@@ -109,7 +132,13 @@ final class AppModel {
         monitor.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied else { return }
 
-            Task { @MainActor in await self?.sync?.networkPathChanged() }
+            Task { @MainActor in
+                await self?.sync?.networkPathChanged()
+                // The network coming back is the other moment worth retrying:
+                // the app may have been foregrounded for an hour on a train
+                // with nothing to send to.
+                self?.outbox?.drain()
+            }
         }
         monitor.start(queue: .global(qos: .utility))
     }

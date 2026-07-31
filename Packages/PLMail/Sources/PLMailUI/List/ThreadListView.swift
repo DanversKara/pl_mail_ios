@@ -16,6 +16,9 @@ public struct ThreadListView: View {
     private let feed: FeedID
     private let sync: MailSyncService
     private let actions: MailActions
+    /// Only for the composer a draft row opens. The list itself has nothing
+    /// queued.
+    private let outbox: OutboxSender
 
     /// Owned by the split view, not by this list.
     ///
@@ -57,12 +60,14 @@ public struct ThreadListView: View {
         feed: FeedID,
         sync: MailSyncService,
         actions: MailActions,
+        outbox: OutboxSender,
         selection: Binding<ThreadRef?>,
         isSelectionActive: Binding<Bool> = .constant(false)
     ) {
         self.feed = feed
         self.sync = sync
         self.actions = actions
+        self.outbox = outbox
         _selection = selection
         _isSelectionActive = isSelectionActive
 
@@ -99,20 +104,7 @@ public struct ThreadListView: View {
                         selection = ref
                     }
                 } label: {
-                    ThreadRowView(
-                        thread: row.thread,
-                        accountLabel: accountLabel(for: row.entry),
-                        isSelected: checked.contains(ThreadRef(thread: row.thread)),
-                        isOpen: selection == ThreadRef(thread: row.thread),
-                        snippet: sync.snippets["\(row.entry.accountKey)#\(row.entry.emailID)"],
-                        onToggleStar: {
-                            act {
-                                await actions.setFlagged(
-                                    row.thread.isFlagged == false, target(for: row.thread))
-                            }
-                        },
-                        onToggleSelection: { toggle(ThreadRef(thread: row.thread)) }
-                    )
+                    rowContent(for: row)
                 }
                 .buttonStyle(.plain)
                 .listRowSeparator(.hidden)
@@ -125,93 +117,16 @@ public struct ThreadListView: View {
                 // Both directions, both undoable, and everything a swipe does
                 // is also reachable from the row's context menu — a gesture
                 // must never be the only way to reach an action.
+                // Both directions, both undoable, and everything a swipe does
+                // is also reachable from the row's context menu — a gesture
+                // must never be the only way to reach an action.
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                    Button {
-                        act { await actions.archive(target(for: row.thread)) }
-                    } label: {
-                        Label(.ui("Archive"), systemImage: "archivebox")
-                    }
-                    .tint(.green)
+                    leadingSwipe(for: row.thread)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    Button(role: .destructive) {
-                        act { await actions.trash(target(for: row.thread)) }
-                    } label: {
-                        Label(.ui("Trash"), systemImage: "trash")
-                    }
-
-                    Button {
-                        act {
-                            await actions.setSeen(
-                                row.thread.isUnread, target(for: row.thread))
-                        }
-                    } label: {
-                        Label(
-                            row.thread.isUnread ? "Read" : "Unread",
-                            systemImage: row.thread.isUnread ? "envelope.open" : "envelope.badge")
-                    }
-                    .tint(.blue)
+                    trailingSwipe(for: row.thread)
                 }
-                .contextMenu {
-                    Button {
-                        act {
-                            await actions.setFlagged(
-                                row.thread.isFlagged == false, target(for: row.thread))
-                        }
-                    } label: {
-                        Label(
-                            row.thread.isFlagged ? "Remove star" : "Star",
-                            systemImage: row.thread.isFlagged ? "star.slash" : "star")
-                    }
-
-                    Button {
-                        act { await actions.setSeen(row.thread.isUnread, target(for: row.thread)) }
-                    } label: {
-                        Label(
-                            row.thread.isUnread ? "Mark as read" : "Mark as unread",
-                            systemImage: row.thread.isUnread ? "envelope.open" : "envelope.badge")
-                    }
-
-                    Button {
-                        labelling = target(for: row.thread)
-                    } label: {
-                        Label(.ui("Labels"), systemImage: "tag")
-                    }
-
-                    Menu {
-                        SnoozeMenu(
-                            isSnoozed: row.thread.snoozedUntil != nil,
-                            onPick: { until in
-                                act { await actions.snooze(target(for: row.thread), until: until) }
-                            },
-                            onPickExact: { snoozing = target(for: row.thread) }
-                        )
-                    } label: {
-                        Label(.ui("Snooze"), systemImage: "clock")
-                    }
-
-                    Button {
-                        act { await actions.archive(target(for: row.thread)) }
-                    } label: {
-                        Label(.ui("Archive"), systemImage: "archivebox")
-                    }
-
-                    Button {
-                        act { await actions.setSpam(isJunkFeed == false, target(for: row.thread)) }
-                    } label: {
-                        Label(
-                            isJunkFeed ? .ui("Not spam") : .ui("Report spam"),
-                            systemImage: isJunkFeed
-                                ? "tray.and.arrow.down" : "exclamationmark.shield"
-                        )
-                    }
-
-                    Button(role: .destructive) {
-                        act { await actions.trash(target(for: row.thread)) }
-                    } label: {
-                        Label(.ui("Move to Trash"), systemImage: "trash")
-                    }
-                }
+                .contextMenu { rowMenu(for: row.thread) }
             }
 
             if degraded.isEmpty == false {
@@ -237,7 +152,8 @@ public struct ThreadListView: View {
                     accountKey: draft.accountKey,
                     accountID: account.accountID,
                     client: sync.jmapClient,
-                    store: sync.store
+                    store: sync.store,
+                    outbox: outbox
                 )
             }
         }
@@ -293,6 +209,146 @@ public struct ThreadListView: View {
         }
 
         return false
+    }
+
+    /// One row's contents.
+    ///
+    /// Also extracted for the type-checker: six arguments, two of them
+    /// closures, one an interpolated dictionary lookup, inside a `List` that
+    /// already carries the swipe and menu builders was past what it will solve.
+    private func rowContent(
+        for row: (entry: StoredFeedEntry, thread: StoredThread)
+    )
+        -> some View
+    {
+        let ref = ThreadRef(thread: row.thread)
+        let snippet = sync.snippets["\(row.entry.accountKey)#\(row.entry.emailID)"]
+
+        return ThreadRowView(
+            thread: row.thread,
+            accountLabel: accountLabel(for: row.entry),
+            isSelected: checked.contains(ref),
+            isOpen: selection == ref,
+            snippet: snippet,
+            onToggleStar: {
+                act {
+                    await actions.setFlagged(
+                        row.thread.isFlagged == false, target(for: row.thread))
+                }
+            },
+            onToggleSelection: { toggle(ref) }
+        )
+    }
+
+    // MARK: - Row actions
+    //
+    // Extracted from the `List` body rather than written inline. Every one of
+    // these is a ternary picking both a title and a symbol, and with a dozen of
+    // them in one expression the type-checker gives up — which surfaces as
+    // "unable to type-check in reasonable time", not as an error pointing at
+    // any of them.
+
+    @ViewBuilder
+    private func leadingSwipe(for thread: StoredThread) -> some View {
+        Button {
+            act { await actions.archive(target(for: thread)) }
+        } label: {
+            Label(.ui("Archive"), systemImage: "archivebox")
+        }
+        .tint(.green)
+    }
+
+    @ViewBuilder
+    private func trailingSwipe(for thread: StoredThread) -> some View {
+        Button(role: .destructive) {
+            act { await actions.trash(target(for: thread)) }
+        } label: {
+            Label(.ui("Trash"), systemImage: "trash")
+        }
+
+        Button {
+            act { await actions.setSeen(thread.isUnread, target(for: thread)) }
+        } label: {
+            readLabel(for: thread, long: false)
+        }
+        .tint(.blue)
+    }
+
+    @ViewBuilder
+    private func rowMenu(for thread: StoredThread) -> some View {
+        Button {
+            act { await actions.setFlagged(thread.isFlagged == false, target(for: thread)) }
+        } label: {
+            starLabel(for: thread)
+        }
+
+        Button {
+            act { await actions.setSeen(thread.isUnread, target(for: thread)) }
+        } label: {
+            readLabel(for: thread, long: true)
+        }
+
+        Button {
+            labelling = target(for: thread)
+        } label: {
+            Label(.ui("Labels"), systemImage: "tag")
+        }
+
+        Menu {
+            SnoozeMenu(
+                isSnoozed: thread.snoozedUntil != nil,
+                onPick: { until in
+                    act { await actions.snooze(target(for: thread), until: until) }
+                },
+                onPickExact: { snoozing = target(for: thread) }
+            )
+        } label: {
+            Label(.ui("Snooze"), systemImage: "clock")
+        }
+
+        Button {
+            act { await actions.setSpam(isJunkFeed == false, target(for: thread)) }
+        } label: {
+            spamLabel
+        }
+
+        Button {
+            act { await actions.archive(target(for: thread)) }
+        } label: {
+            Label(.ui("Archive"), systemImage: "archivebox")
+        }
+
+        Button(role: .destructive) {
+            act { await actions.trash(target(for: thread)) }
+        } label: {
+            Label(.ui("Move to Trash"), systemImage: "trash")
+        }
+    }
+
+    private func readLabel(for thread: StoredThread, long: Bool) -> some View {
+        let title: LocalizedStringResource =
+            switch (thread.isUnread, long) {
+            case (true, true): .ui("Mark as read")
+            case (true, false): .ui("Read")
+            case (false, true): .ui("Mark as unread")
+            case (false, false): .ui("Unread")
+            }
+
+        return Label(
+            title, systemImage: thread.isUnread ? "envelope.open" : "envelope.badge")
+    }
+
+    private func starLabel(for thread: StoredThread) -> some View {
+        Label(
+            thread.isFlagged ? .ui("Remove star") : .ui("Star"),
+            systemImage: thread.isFlagged ? "star.slash" : "star")
+    }
+
+    private var spamLabel: some View {
+        Label(
+            isJunkFeed ? .ui("Not spam") : .ui("Report spam"),
+            systemImage: isJunkFeed ? "tray.and.arrow.down" : "exclamationmark.shield"
+        )
     }
 
     private var isSelecting: Bool { checked.isEmpty == false }

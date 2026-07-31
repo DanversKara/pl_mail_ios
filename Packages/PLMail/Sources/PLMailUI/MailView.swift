@@ -39,6 +39,7 @@ public struct MailView: View {
 
     private let connection: ServerConnection
     private let store: SyncStore
+    private let outbox: OutboxSender
     private let blobs: BlobCache
     private let onSignOut: () -> Void
 
@@ -46,10 +47,12 @@ public struct MailView: View {
         connection: ServerConnection,
         sync: MailSyncService,
         store: SyncStore,
+        outbox: OutboxSender,
         onSignOut: @escaping () -> Void
     ) {
         self.connection = connection
         self.store = store
+        self.outbox = outbox
         self.onSignOut = onSignOut
         // Scoped to the server, so signing into another one cannot serve the
         // previous server's attachments out of a shared directory.
@@ -79,6 +82,7 @@ public struct MailView: View {
                 sync: sync,
                 blobs: blobs,
                 actions: actions,
+                outbox: outbox,
                 credential: connection.credential
             )
         } else {
@@ -155,10 +159,10 @@ public struct MailView: View {
     private var sidebarContent: some View {
         if isSearching, sizeClass == .compact {
             SearchResultsView(
-                raw: settledSearch, sync: sync, actions: actions,
+                raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
                 selection: $selectedThread)
         } else {
-            MailboxSidebarView(sync: sync, selection: $selectedFeed)
+            MailboxSidebarView(sync: sync, outbox: outbox, selection: $selectedFeed)
         }
     }
 
@@ -167,7 +171,7 @@ public struct MailView: View {
     private var listContent: some View {
         if isSearching, sizeClass != .compact {
             SearchResultsView(
-                raw: settledSearch, sync: sync, actions: actions,
+                raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
                 selection: $selectedThread)
         } else if let selectedFeed {
             // `.inline`, not large: a large title silently fails to render
@@ -175,7 +179,7 @@ public struct MailView: View {
             // exactly the cold-launch path, and an untitled list reads as a
             // bug.
             ThreadListView(
-                feed: selectedFeed, sync: sync, actions: actions,
+                feed: selectedFeed, sync: sync, actions: actions, outbox: outbox,
                 selection: $selectedThread, isSelectionActive: $isSelectionActive
             )
         } else {
@@ -288,7 +292,8 @@ public struct MailView: View {
                     accountKey: account.accountKey,
                     accountID: account.accountID,
                     client: sync.jmapClient,
-                    store: store
+                    store: store,
+                    outbox: outbox
                 )
             }
         }

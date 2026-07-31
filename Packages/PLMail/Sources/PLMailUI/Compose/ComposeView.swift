@@ -26,12 +26,15 @@ public struct ComposeView: View {
         accountKey: String,
         accountID: AccountID,
         client: JMAPClient,
-        store: SyncStore
+        store: SyncStore,
+        outbox: OutboxSender
     ) {
         _model = State(
             wrappedValue: ComposeModel(
                 kind: kind, accountKey: accountKey, accountID: accountID,
-                client: client, store: store))
+                client: client, store: store,
+                outbox: outbox.queue,
+                onQueued: { outbox.drain() }))
     }
 
     public var body: some View {
