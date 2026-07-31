@@ -87,6 +87,65 @@ public actor JMAPClient {
         return try MethodResults.decode(body: data, statusCode: response.statusCode)
     }
 
+    /// Uploads bytes and gets back a blob id (RFC 8620 §6.1).
+    ///
+    /// Not a method call — a plain POST of the raw bytes to the session's
+    /// `uploadUrl`, with the media type in `Content-Type`. There is no
+    /// batching and no back-reference: a client uploads, then names the
+    /// returned id in the `Email/set` that follows.
+    ///
+    /// Uploaded blobs are **scratch space**; plMail reclaims unreferenced ones
+    /// on a timer. That is why compose uploads at send time rather than when a
+    /// file is picked — a draft left open overnight would otherwise send with
+    /// its attachments already collected.
+    ///
+    /// The ceiling comes from the live session rather than a constant, so a
+    /// server configured for larger uploads is not second-guessed here.
+    public func upload(
+        _ data: Data, type: String, accountID: AccountID
+    ) async throws -> UploadedBlob {
+        let session = try await session()
+
+        guard data.isEmpty == false else {
+            throw JMAPError.requestFailed(
+                type: "invalidArguments", detail: "Refusing to upload an empty file.")
+        }
+
+        guard data.count <= session.capabilities.core.maxSizeUpload else {
+            throw JMAPError.requestFailed(
+                type: "tooLarge",
+                detail: "This file is \(data.count) bytes; this server accepts "
+                    + "\(session.capabilities.core.maxSizeUpload)."
+            )
+        }
+
+        guard let url = session.uploadURL.expanded(["accountId": accountID.rawValue]) else {
+            throw JMAPError.malformedResponse("The session's uploadUrl is not a usable template.")
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.httpBody = data
+        request.setValue(type, forHTTPHeaderField: "Content-Type")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue(credential.authorizationHeader, forHTTPHeaderField: "Authorization")
+
+        let prepared = request
+        let (body, response) = try await withPermit {
+            try await self.transport.send(prepared)
+        }
+
+        guard (200..<300).contains(response.statusCode) else {
+            throw JMAPError.unexpectedStatus(code: response.statusCode)
+        }
+
+        do {
+            return try JSONDecoder().decode(UploadedBlob.self, from: body)
+        } catch {
+            throw JMAPError.malformedResponse("The upload response was not an upload object.")
+        }
+    }
+
     /// Runs `body` holding one concurrency permit.
     ///
     /// Before the first Session arrives there is no advertised limit to

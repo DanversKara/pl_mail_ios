@@ -37,12 +37,29 @@ public final class ComposeModel {
     public private(set) var identities: [IdentitySnapshot] = []
     public private(set) var status: Status = .editing
 
+    /// Files picked for this message, not yet uploaded.
+    ///
+    /// Held as bytes rather than as security-scoped URLs: a picked file's URL
+    /// stops resolving once the picker's scope is released, and a draft that
+    /// sends an hour later would find nothing there.
+    public private(set) var attachments: [PendingAttachment] = []
+
     /// Everyone this account has corresponded with, for autocomplete.
     ///
     /// Harvested from synced mail rather than fetched: the server exposes no
     /// JMAP Contacts, and the addresses someone actually writes to are all in
     /// the mail already on the device.
     public private(set) var suggestions: [EmailAddress] = []
+
+    /// A file waiting to be sent.
+    public struct PendingAttachment: Identifiable, Sendable, Hashable {
+        public let id = UUID()
+        public var name: String
+        public var type: String
+        public var data: Data
+
+        public var size: Int { data.count }
+    }
 
     private let kind: Kind
     private let accountKey: String
@@ -74,6 +91,18 @@ public final class ComposeModel {
 
     public var canSend: Bool {
         recipients(from: to).isEmpty == false && status == .editing
+    }
+
+    public func attach(name: String, type: String, data: Data) {
+        attachments.append(PendingAttachment(name: name, type: type, data: data))
+    }
+
+    public func removeAttachment(_ id: PendingAttachment.ID) {
+        attachments.removeAll { $0.id == id }
+    }
+
+    public var attachmentsSize: Int {
+        attachments.reduce(0) { $0 + $1.size }
     }
 
     public var isSending: Bool {
@@ -207,6 +236,19 @@ public final class ComposeModel {
             return
         }
 
+        // Uploaded here rather than when the file was picked. plMail reclaims
+        // unreferenced uploads on a timer, so a draft left open would otherwise
+        // send with blob ids the server had already collected.
+        let uploaded: [EmailCreate.Draft.Attachment]
+
+        do {
+            uploaded = try await upload(attachments)
+        } catch {
+            status = .failed(Self.describeUploadFailure(error))
+            logger.error("Attachment upload failed: \(error, privacy: .public)")
+            return
+        }
+
         let draft = EmailCreate.Draft(
             drafts: drafts,
             from: identity.address,
@@ -216,7 +258,8 @@ public final class ComposeModel {
             subject: subject,
             text: body,
             inReplyTo: replyTargets?.inReplyTo,
-            references: replyTargets?.references
+            references: replyTargets?.references,
+            attachments: uploaded
         )
 
         do {
@@ -258,6 +301,38 @@ public final class ComposeModel {
             status = .failed("Couldn't send. The message is saved as a draft.")
             logger.error("Send failed: \(error, privacy: .public)")
         }
+    }
+
+    /// Uploads every attachment and returns what to name them by.
+    ///
+    /// Sequential rather than concurrent: the server advertises a small upload
+    /// allowance and these are someone's home server's workers. Three
+    /// photographs are not worth saturating it.
+    private func upload(
+        _ pending: [PendingAttachment]
+    ) async throws -> [EmailCreate.Draft.Attachment] {
+        var uploaded: [EmailCreate.Draft.Attachment] = []
+
+        for attachment in pending {
+            let blob = try await client.upload(
+                attachment.data, type: attachment.type, accountID: accountID)
+
+            uploaded.append(
+                EmailCreate.Draft.Attachment(
+                    blobID: blob.blobID, type: attachment.type, name: attachment.name))
+        }
+
+        return uploaded
+    }
+
+    private static func describeUploadFailure(_ error: any Error) -> String {
+        guard case JMAPError.requestFailed(let type, _) = error else {
+            return "Couldn't upload the attachments. The message wasn't sent."
+        }
+
+        return type == "tooLarge"
+            ? "One of these files is too large for this server."
+            : "The server wouldn't accept one of these files."
     }
 
     private static func describe(_ refusals: [String: JSONValue]) -> String {

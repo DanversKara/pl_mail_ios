@@ -4,6 +4,7 @@ public import PLMailCore
 
 import JMAPKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Writing a message.
 ///
@@ -17,6 +18,8 @@ public struct ComposeView: View {
     private enum Field: Hashable { case to, cc, bcc, subject, body }
 
     @State private var showsMoreRecipients = false
+    @State private var isPickingFiles = false
+    @State private var attachmentError: String?
 
     public init(
         kind: ComposeModel.Kind,
@@ -37,6 +40,7 @@ public struct ComposeView: View {
                 recipients
                 subjectField
                 bodyField
+                attachmentsSection
             }
             // Same reasoning as the reader: a composer stretched across an
             // iPad puts the send button a hand's width from the text.
@@ -54,14 +58,65 @@ public struct ComposeView: View {
                         .disabled(model.canSend == false)
                         .fontWeight(.semibold)
                 }
+
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Attach", systemImage: "paperclip") { isPickingFiles = true }
+                        .disabled(model.isSending)
+                }
             }
             .safeAreaInset(edge: .bottom) { sendingBar }
+            // Copied into memory on pick rather than held as a URL: the
+            // picker's security scope is released when it closes, and a send
+            // minutes later would find nothing at the other end.
+            .fileImporter(
+                isPresented: $isPickingFiles,
+                allowedContentTypes: [.item],
+                allowsMultipleSelection: true
+            ) { result in
+                attach(result)
+            }
+            .alert(
+                "Couldn't attach that",
+                isPresented: .init(
+                    get: { attachmentError != nil },
+                    set: { if $0 == false { attachmentError = nil } })
+            ) {
+                Button("OK", role: .cancel) { attachmentError = nil }
+            } message: {
+                Text(attachmentError ?? "")
+            }
             .task { await model.load() }
             .onChange(of: model.status) { _, status in
                 if status == .sent { dismiss() }
             }
         }
         .interactiveDismissDisabled(model.isSending)
+    }
+
+    /// Reads each picked file inside its security scope, which is the only
+    /// window in which the URL resolves.
+    private func attach(_ result: Result<[URL], any Error>) {
+        guard case .success(let urls) = result else {
+            attachmentError = "That file couldn't be opened."
+            return
+        }
+
+        for url in urls {
+            let scoped = url.startAccessingSecurityScopedResource()
+
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+
+            guard let data = try? Data(contentsOf: url) else {
+                attachmentError = "\(url.lastPathComponent) couldn't be read."
+                continue
+            }
+
+            let type =
+                (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)?
+                .preferredMIMEType ?? "application/octet-stream"
+
+            model.attach(name: url.lastPathComponent, type: type, data: data)
+        }
     }
 
     // MARK: - Fields
@@ -109,6 +164,45 @@ public struct ComposeView: View {
             TextField("Write your message…", text: $model.body, axis: .vertical)
                 .lineLimit(10...40)
                 .focused($focus, equals: .body)
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentsSection: some View {
+        if model.attachments.isEmpty == false {
+            Section {
+                ForEach(model.attachments) { attachment in
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc")
+                            .foregroundStyle(.secondary)
+
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text(attachment.name)
+                                .font(.subheadline)
+                                .lineLimit(1)
+                            Text(attachment.size.formatted(.byteCount(style: .file)))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer(minLength: 0)
+
+                        Button("Remove", systemImage: "xmark.circle.fill") {
+                            model.removeAttachment(attachment.id)
+                        }
+                        .labelStyle(.iconOnly)
+                        .foregroundStyle(.secondary)
+                        .buttonStyle(.plain)
+                    }
+                    .accessibilityElement(children: .combine)
+                }
+            } header: {
+                Text("Attachments")
+            } footer: {
+                // Stated because it is the number that gets a send refused,
+                // and the ceiling is the server's rather than the app's.
+                Text("\(model.attachmentsSize.formatted(.byteCount(style: .file))) total")
+            }
         }
     }
 

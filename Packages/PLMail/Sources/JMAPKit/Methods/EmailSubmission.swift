@@ -27,11 +27,38 @@ public struct EmailCreate: JMAPMethod {
         /// the text was lost rather than never read.
         public var textBody: [BodyPart]?
         public var bodyValues: [String: BodyValue]?
+        /// Files, named by the blob ids a prior upload returned. Omitted
+        /// entirely when there are none — an empty array is a different thing
+        /// to say than nothing.
+        public var attachments: [Attachment]?
 
         private enum CodingKeys: String, CodingKey {
             case mailboxIDs = "mailboxIds"
             case keywords, from, to, cc, bcc, subject, inReplyTo, references
-            case textBody, bodyValues
+            case textBody, bodyValues, attachments
+        }
+
+        /// One file on a draft.
+        ///
+        /// A cut-down `EmailBodyPart`: the three fields the server reads, and
+        /// nothing else. `name` is a display label — the server takes its
+        /// basename before it touches the filesystem — and `type` is echoed
+        /// back rather than trusted.
+        public struct Attachment: Encodable, Sendable {
+            public var blobID: BlobID
+            public var type: String
+            public var name: String
+
+            private enum CodingKeys: String, CodingKey {
+                case blobID = "blobId"
+                case type, name
+            }
+
+            public init(blobID: BlobID, type: String, name: String) {
+                self.blobID = blobID
+                self.type = type
+                self.name = name
+            }
         }
 
         public init(
@@ -43,7 +70,8 @@ public struct EmailCreate: JMAPMethod {
             subject: String,
             text: String,
             inReplyTo: [String]? = nil,
-            references: [String]? = nil
+            references: [String]? = nil,
+            attachments: [Attachment] = []
         ) {
             mailboxIDs = JMAPIDSet([drafts])
             // The draft keyword is what makes the row open the composer rather
@@ -62,6 +90,7 @@ public struct EmailCreate: JMAPMethod {
             part.type = "text/plain"
             textBody = [part]
             bodyValues = ["text": BodyValue(value: text)]
+            self.attachments = attachments.isEmpty ? nil : attachments
         }
     }
 
