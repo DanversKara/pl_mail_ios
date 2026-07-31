@@ -2,6 +2,7 @@
 
 public import PLMailCore
 
+import JMAPKit
 import SwiftData
 import SwiftUI
 
@@ -14,15 +15,17 @@ import SwiftUI
 public struct ThreadListView: View {
     private let feed: FeedID
     private let sync: MailSyncService
+    private let actions: MailActions
 
     @Query private var entries: [StoredFeedEntry]
     @Query private var threads: [StoredThread]
 
     @State private var isLoadingMore = false
 
-    public init(feed: FeedID, sync: MailSyncService) {
+    public init(feed: FeedID, sync: MailSyncService, actions: MailActions) {
         self.feed = feed
         self.sync = sync
+        self.actions = actions
 
         let feedID = feed.rawValue
 
@@ -41,6 +44,68 @@ public struct ThreadListView: View {
                     ThreadRowView(thread: row.thread, accountLabel: accountLabel(for: row.entry))
                 }
                 .task { await loadMoreIfNeeded(at: row.entry) }
+                // Both directions, both undoable, and everything a swipe does
+                // is also reachable from the row's context menu — a gesture
+                // must never be the only way to reach an action.
+                .swipeActions(edge: .leading, allowsFullSwipe: true) {
+                    Button {
+                        act { await actions.archive(target(for: row.thread)) }
+                    } label: {
+                        Label("Archive", systemImage: "archivebox")
+                    }
+                    .tint(.green)
+                }
+                .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                    Button(role: .destructive) {
+                        act { await actions.trash(target(for: row.thread)) }
+                    } label: {
+                        Label("Trash", systemImage: "trash")
+                    }
+
+                    Button {
+                        act {
+                            await actions.setSeen(
+                                row.thread.isUnread, target(for: row.thread))
+                        }
+                    } label: {
+                        Label(
+                            row.thread.isUnread ? "Read" : "Unread",
+                            systemImage: row.thread.isUnread ? "envelope.open" : "envelope.badge")
+                    }
+                    .tint(.blue)
+                }
+                .contextMenu {
+                    Button {
+                        act {
+                            await actions.setFlagged(
+                                row.thread.isFlagged == false, target(for: row.thread))
+                        }
+                    } label: {
+                        Label(
+                            row.thread.isFlagged ? "Remove star" : "Star",
+                            systemImage: row.thread.isFlagged ? "star.slash" : "star")
+                    }
+
+                    Button {
+                        act { await actions.setSeen(row.thread.isUnread, target(for: row.thread)) }
+                    } label: {
+                        Label(
+                            row.thread.isUnread ? "Mark as read" : "Mark as unread",
+                            systemImage: row.thread.isUnread ? "envelope.open" : "envelope.badge")
+                    }
+
+                    Button {
+                        act { await actions.archive(target(for: row.thread)) }
+                    } label: {
+                        Label("Archive", systemImage: "archivebox")
+                    }
+
+                    Button(role: .destructive) {
+                        act { await actions.trash(target(for: row.thread)) }
+                    } label: {
+                        Label("Move to Trash", systemImage: "trash")
+                    }
+                }
             }
 
             if degraded.isEmpty == false {
@@ -48,6 +113,7 @@ public struct ThreadListView: View {
             }
         }
         .listStyle(.plain)
+        .undoOverlay(actions)
         .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         .refreshable { await sync.refresh(feed: feed) }
         .overlay { emptyState }
@@ -78,6 +144,24 @@ public struct ThreadListView: View {
 
             return (entry, thread)
         }
+    }
+
+    /// What an action applies to.
+    ///
+    /// The whole thread: archiving one reply and leaving the rest is not
+    /// something anyone means, and this is a list of conversations.
+    private func target(for thread: StoredThread) -> ActionTarget {
+        ActionTarget(
+            threadID: thread.threadID,
+            accountKey: thread.accountKey,
+            accountID: sync.accounts.first { $0.accountKey == thread.accountKey }?.accountID
+                ?? AccountID(""),
+            emailIDs: thread.emailIDs.map { EmailID(rawValue: $0) }
+        )
+    }
+
+    private func act(_ work: @escaping @MainActor () async -> Void) {
+        Task { await work() }
     }
 
     private func accountLabel(for entry: StoredFeedEntry) -> String? {

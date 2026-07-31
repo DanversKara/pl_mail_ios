@@ -423,6 +423,90 @@ public actor SyncStore {
         )
     }
 
+    // MARK: - Optimistic edits
+
+    /// Takes a thread out of every list it appears in.
+    ///
+    /// Used for archive and trash, which both mean "not here any more" from
+    /// the list's point of view. The thread itself is kept: it still exists on
+    /// the server, and an undo should not have to re-fetch what was never
+    /// really gone.
+    /// - Returns: The rows removed, so they can be put back if the server
+    ///   refuses the change they were anticipating.
+    @discardableResult
+    public func removeFromFeeds(
+        _ threadID: String, accountKey: String
+    ) throws
+        -> [RemovedFeedRow]
+    {
+        let entries = try feedEntries(threadID: threadID, accountKey: accountKey)
+
+        let removed = entries.map {
+            RemovedFeedRow(
+                feedID: $0.feedID, sortDate: $0.sortDate,
+                accountKey: $0.accountKey, threadID: $0.threadID, emailID: $0.emailID)
+        }
+
+        for entry in entries {
+            modelContext.delete(entry)
+        }
+
+        try modelContext.save()
+
+        return removed
+    }
+
+    /// Puts optimistically-removed rows back where they were.
+    ///
+    /// The alternative — re-paging the feed — would move the reader's place
+    /// for a change that never happened.
+    public func restoreFeedRows(_ rows: [RemovedFeedRow]) throws {
+        for row in rows {
+            let uid = "\(row.feedID)#\(row.accountKey)#\(row.threadID)"
+
+            guard try existing(StoredFeedEntry.self, uid: uid) == nil else { continue }
+
+            modelContext.insert(
+                StoredFeedEntry(
+                    uid: uid, feedID: row.feedID, sortDate: row.sortDate,
+                    accountKey: row.accountKey, threadID: row.threadID, emailID: row.emailID))
+        }
+
+        try modelContext.save()
+    }
+
+    public func setFlagged(_ isFlagged: Bool, emailIDs: [String], accountKey: String) throws {
+        var threads: Set<String> = []
+
+        for emailID in emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid) else { continue }
+
+            email.isFlagged = isFlagged
+
+            if let threadID = email.threadID { threads.insert(threadID) }
+        }
+
+        // A thread shows as starred when any message in it is — the same rule
+        // the list row renders from.
+        for threadID in threads {
+            let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+            guard let thread = try existing(StoredThread.self, uid: uid) else { continue }
+
+            let emails = try thread.emailIDs.compactMap { emailID in
+                try existing(
+                    StoredEmail.self,
+                    uid: StoreKey.object(accountKey: accountKey, id: emailID))
+            }
+
+            thread.isFlagged = emails.contains(where: \.isFlagged)
+        }
+
+        try modelContext.save()
+    }
+
     // MARK: - Delta sync
 
     public func setEmailState(_ state: StateToken, accountKey: String) throws {

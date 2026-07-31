@@ -12,6 +12,7 @@ import SwiftUI
 struct SearchResultsView: View {
     let raw: String
     let sync: MailSyncService
+    let actions: MailActions
 
     @State private var isSearching = false
 
@@ -27,7 +28,7 @@ struct SearchResultsView: View {
                     Text(Self.help)
                 }
             } else {
-                ThreadListView(feed: feed, sync: sync)
+                ThreadListView(feed: feed, sync: sync, actions: actions)
                     .safeAreaInset(edge: .top, spacing: 0) {
                         SearchTokensView(query: parsed)
                     }

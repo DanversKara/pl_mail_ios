@@ -83,6 +83,15 @@ public struct AttachmentSnapshot: Hashable, Sendable, Identifiable {
     }
 }
 
+/// A feed row taken out optimistically, kept so it can be put back.
+public struct RemovedFeedRow: Hashable, Sendable {
+    public var feedID: String
+    public var sortDate: Date
+    public var accountKey: String
+    public var threadID: String
+    public var emailID: String
+}
+
 /// One row of a materialised feed.
 public struct FeedEntrySnapshot: Hashable, Sendable {
     public var accountKey: String

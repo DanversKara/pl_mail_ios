@@ -13,6 +13,7 @@ import SwiftUI
 /// Stage Manager resize keeps the selection rather than resetting it.
 public struct MailView: View {
     @State private var sync: MailSyncService
+    @State private var actions: MailActions
     @State private var selectedFeed: FeedID?
     @State private var isShowingDiagnostics = false
     @State private var searchText = ""
@@ -50,6 +51,8 @@ public struct MailView: View {
         // Owned by the app rather than this view: the live stream and the
         // background refresh have to act on the same sync state the UI shows.
         _sync = State(wrappedValue: sync)
+        _actions = State(
+            wrappedValue: MailActions(client: sync.jmapClient, store: store))
         _selectedFeed = State(wrappedValue: .unified(.inbox))
     }
 
@@ -88,7 +91,7 @@ public struct MailView: View {
     @ViewBuilder
     private var sidebarContent: some View {
         if isSearching, sizeClass == .compact {
-            SearchResultsView(raw: settledSearch, sync: sync)
+            SearchResultsView(raw: settledSearch, sync: sync, actions: actions)
                 .navigationDestination(for: ThreadRef.self, destination: reader(for:))
         } else {
             MailboxSidebarView(sync: sync, selection: $selectedFeed)
@@ -120,7 +123,7 @@ public struct MailView: View {
             // than pushed, which is exactly the cold-launch path.
             NavigationStack {
                 if let selectedFeed {
-                    ThreadListView(feed: selectedFeed, sync: sync)
+                    ThreadListView(feed: selectedFeed, sync: sync, actions: actions)
                         .navigationDestination(for: ThreadRef.self, destination: reader(for:))
                 } else {
                     ContentUnavailableView(
