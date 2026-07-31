@@ -173,8 +173,20 @@ public struct ThreadRowView: View {
     /// an empty line would make every row taller for the sake of a few.
     @ViewBuilder
     private var badges: some View {
-        if thread.hasAttachment || accountLabel != nil {
+        if thread.hasAttachment || accountLabel != nil || thread.snoozedUntil != nil {
             HStack(spacing: 6) {
+                if let snoozedUntil = thread.snoozedUntil {
+                    // Tinted rather than grey: a snoozed conversation is not
+                    // in the inbox, and a row that looks identical to its
+                    // neighbours would be a surprise when it reappears.
+                    Label(SnoozeMenu.badge(for: snoozedUntil), systemImage: "clock")
+                        .font(.caption2)
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1)
+                        .background(Color.accentColor.opacity(0.12), in: Capsule())
+                }
+
                 if thread.hasAttachment {
                     Image(systemName: "paperclip")
                         .font(.caption2)
@@ -240,6 +252,11 @@ public struct ThreadRowView: View {
 
         if thread.messageCount > 1 { parts.append("\(thread.messageCount) messages") }
         if thread.hasAttachment { parts.append("Has attachment") }
+        if let snoozedUntil = thread.snoozedUntil {
+            parts.append(
+                "Snoozed until "
+                    + snoozedUntil.formatted(date: .abbreviated, time: .shortened))
+        }
         if let accountLabel { parts.append(accountLabel) }
 
         parts.append(thread.latestReceivedAt.formatted(date: .abbreviated, time: .shortened))

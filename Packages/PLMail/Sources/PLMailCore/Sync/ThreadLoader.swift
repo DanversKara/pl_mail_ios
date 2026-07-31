@@ -8,6 +8,10 @@ import Observation
 @Observable
 public final class ThreadLoader {
     public private(set) var messages: [MessageSnapshot] = []
+    /// When this conversation is due back, if it is snoozed. Read from the
+    /// store rather than tracked here, so the reader agrees with the row that
+    /// opened it.
+    public private(set) var snoozedUntil: Date?
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
 
@@ -53,6 +57,8 @@ public final class ThreadLoader {
 
     private func readCache() async {
         messages = (try? await store.messages(threadID: threadID, accountKey: accountKey)) ?? []
+        snoozedUntil = try? await store.snoozedUntil(
+            threadID: threadID, accountKey: accountKey)
     }
 
     /// One round trip: the thread's message ids, then those messages with

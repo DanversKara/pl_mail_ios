@@ -66,6 +66,10 @@ public enum MailboxRole: Hashable, Sendable, RawRepresentable, Codable {
     case junk
     case trash
     case archive
+    /// Where a snoozed conversation waits — a **plMail extension**, not an
+    /// IANA special-use. Created lazily the first time something is snoozed,
+    /// so an account that never has one is normal rather than broken.
+    case snoozed
     case flagged
     case important
     case all
@@ -79,6 +83,7 @@ public enum MailboxRole: Hashable, Sendable, RawRepresentable, Codable {
         case "junk": self = .junk
         case "trash": self = .trash
         case "archive": self = .archive
+        case "snoozed": self = .snoozed
         case "flagged": self = .flagged
         case "important": self = .important
         case "all": self = .all
@@ -94,6 +99,7 @@ public enum MailboxRole: Hashable, Sendable, RawRepresentable, Codable {
         case .junk: "junk"
         case .trash: "trash"
         case .archive: "archive"
+        case .snoozed: "snoozed"
         case .flagged: "flagged"
         case .important: "important"
         case .all: "all"
@@ -112,7 +118,8 @@ public enum MailboxRole: Hashable, Sendable, RawRepresentable, Codable {
         case .junk: 30
         case .trash: 40
         case .archive: 50
-        default: 60
+        case .snoozed: 60
+        default: 70
         }
     }
 }

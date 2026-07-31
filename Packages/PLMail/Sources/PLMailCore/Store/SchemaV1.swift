@@ -155,6 +155,10 @@ public final class StoredThread {
     public var isUnread: Bool = false
     public var isFlagged: Bool = false
     public var hasAttachment: Bool = false
+    /// When a snoozed conversation is due back, from plMail's Thread
+    /// extension. The server nils an elapsed snooze, so a value here is always
+    /// still pending — nothing has to re-check the clock to know that.
+    public var snoozedUntil: Date?
 
     public init(uid: String, accountKey: String, threadID: String) {
         self.uid = uid

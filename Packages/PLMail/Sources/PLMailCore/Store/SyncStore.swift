@@ -167,9 +167,11 @@ public actor SyncStore {
         emailState: StateToken?
     ) throws {
         var threadEmailIDs: [String: [String]] = [:]
+        var snoozedUntil: [String: Date] = [:]
 
         for thread in threads {
             threadEmailIDs[thread.id.rawValue] = thread.emailIDs.map(\.rawValue)
+            snoozedUntil[thread.id.rawValue] = thread.snoozedUntil?.date
         }
 
         for email in emails {
@@ -181,7 +183,12 @@ public actor SyncStore {
                 threadID,
                 accountKey: accountKey,
                 from: stored,
-                emailIDs: threadEmailIDs[threadID]
+                emailIDs: threadEmailIDs[threadID],
+                // Only when this batch actually carried the thread. A page
+                // that fetched emails without their threads must not read a
+                // missing key as "no longer snoozed" and clear the badge.
+                snoozedUntil: threadEmailIDs[threadID] != nil
+                    ? .some(snoozedUntil[threadID]) : nil
             )
         }
 
@@ -246,7 +253,12 @@ public actor SyncStore {
         _ threadID: String,
         accountKey: String,
         from email: StoredEmail,
-        emailIDs: [String]?
+        emailIDs: [String]?,
+        /// Double optional on purpose: nil means "this batch said nothing
+        /// about the snooze", `.some(nil)` means "the server says it is not
+        /// snoozed". Collapsing the two would clear the badge on every page
+        /// that fetched emails without their threads.
+        snoozedUntil: Date??
     ) throws {
         let uid = StoreKey.object(accountKey: accountKey, id: threadID)
 
@@ -264,6 +276,13 @@ public actor SyncStore {
         } else if thread.emailIDs.contains(email.emailID) == false {
             thread.emailIDs.append(email.emailID)
             thread.messageCount = thread.emailIDs.count
+        }
+
+        // Thread-level, so it is applied before the newest-message guard
+        // below: a snooze belongs to the conversation, and an older message
+        // arriving late must still not drop it.
+        if let snoozedUntil {
+            thread.snoozedUntil = snoozedUntil
         }
 
         // The row renders from the newest message, so older ones arriving
@@ -633,6 +652,13 @@ public actor SyncStore {
         let uid = StoreKey.object(accountKey: accountKey, id: emailID)
 
         return try existing(StoredEmail.self, uid: uid)?.mailboxIDs ?? []
+    }
+
+    /// When a conversation is due back, or nil when it is not snoozed.
+    public func snoozedUntil(threadID: String, accountKey: String) throws -> Date? {
+        let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+        return try existing(StoredThread.self, uid: uid)?.snoozedUntil
     }
 
     /// Which mailboxes a thread's messages are in.

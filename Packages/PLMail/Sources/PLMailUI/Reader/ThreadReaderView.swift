@@ -181,6 +181,17 @@ public struct ThreadReaderView: View {
                 }
                 .keyboardShortcut("l", modifiers: [])
 
+                Menu {
+                    SnoozeMenu(isSnoozed: loader.snoozedUntil != nil) { until in
+                        Task { await actions.snooze(target, until: until) }
+                        // Snoozing takes the thread out of the inbox, so
+                        // there is nothing left here to look at.
+                        if until != nil { dismiss() }
+                    }
+                } label: {
+                    Label("Snooze", systemImage: "clock")
+                }
+
                 Button {
                     Task { await actions.setSeen(false, target) }
                     dismiss()

@@ -164,6 +164,91 @@ public final class MailActions {
         )
     }
 
+    /// Puts a conversation away until a time, or brings it back now.
+    ///
+    /// Not an Email/set: snooze is thread state, and the server does the label
+    /// moves — out of the Inbox now, back into it when the time comes, marked
+    /// unread so it is noticed. So this cannot go through `apply`, which is
+    /// built around one EmailSet and its inverse.
+    ///
+    /// The local change is the same one archiving makes — the row leaves the
+    /// list — because that is what happens on the server too.
+    public func snooze(_ target: ActionTarget, until: Date?) async {
+        failure = nil
+
+        let removed: [RemovedFeedRow]
+
+        if until == nil {
+            // Waking puts it back in the Inbox, which this list may or may not
+            // be; a refetch settles it rather than a guessed local insert.
+            removed = []
+        } else {
+            removed =
+                (try? await store.removeFromFeeds(
+                    target.threadID, accountKey: target.accountKey)) ?? []
+        }
+
+        let threadID = ThreadID(target.threadID)
+
+        offerUndo(until == nil ? "Woken" : "Snoozed \(Self.describe(until))") { [weak self] in
+            guard let self else { return }
+
+            _ = await sendThreadSet(
+                .snooze(threadID, until: nil, accountID: target.accountID), target: target)
+            await refetch(target)
+        }
+
+        let sent = await sendThreadSet(
+            .snooze(
+                threadID, until: until.map(UTCDate.init), accountID: target.accountID),
+            target: target)
+
+        guard sent else {
+            dismissUndo()
+            try? await store.restoreFeedRows(removed)
+            await refetch(target)
+
+            return
+        }
+
+        // The server changed which labels the messages carry, so the cached
+        // copies are stale in a way only it can settle.
+        await refetch(target)
+    }
+
+    /// - Returns: Whether the server accepted the change.
+    private func sendThreadSet(_ request: ThreadSet, target: ActionTarget) async -> Bool {
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let call = builder.add(request)
+            let results = try await client.send(builder)
+
+            if let error = results.failure(of: call) { throw error }
+
+            let result = try results.result(of: call)
+
+            if let refused = result.notUpdated, refused.isEmpty == false {
+                failure = "The server wouldn't change that snooze."
+                logger.error("Snooze refused: \(String(describing: refused), privacy: .public)")
+
+                return false
+            }
+
+            return true
+        } catch {
+            failure = "Couldn't reach the server. Nothing was changed."
+            logger.error("Snooze failed: \(error, privacy: .public)")
+
+            return false
+        }
+    }
+
+    private static func describe(_ until: Date?) -> String {
+        guard let until else { return "" }
+
+        return "until " + until.formatted(.dateTime.weekday(.abbreviated).hour().minute())
+    }
+
     // MARK: - Bulk
 
     /// What a selection can be acted on with.

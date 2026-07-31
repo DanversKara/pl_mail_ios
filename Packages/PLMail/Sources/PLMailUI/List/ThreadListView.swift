@@ -138,6 +138,14 @@ public struct ThreadListView: View {
                         Label("Labels", systemImage: "tag")
                     }
 
+                    Menu {
+                        SnoozeMenu(isSnoozed: row.thread.snoozedUntil != nil) { until in
+                            act { await actions.snooze(target(for: row.thread), until: until) }
+                        }
+                    } label: {
+                        Label("Snooze", systemImage: "clock")
+                    }
+
                     Button {
                         act { await actions.archive(target(for: row.thread)) }
                     } label: {

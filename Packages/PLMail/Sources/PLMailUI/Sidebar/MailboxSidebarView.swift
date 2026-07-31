@@ -86,6 +86,7 @@ public struct MailboxSidebarView: View {
         case .drafts: .gray
         case .sent: .teal
         case .archive: .green
+        case .snoozed: .indigo
         case .junk: .yellow
         case .trash: .red
         default: .secondary
@@ -100,7 +101,7 @@ public struct MailboxSidebarView: View {
     private var unifiedRoles: [MailboxRole] {
         let present = Set(sync.mailboxes.compactMap(\.role))
 
-        return [.inbox, .flagged, .drafts, .sent, .archive, .junk, .trash]
+        return [.inbox, .flagged, .snoozed, .drafts, .sent, .archive, .junk, .trash]
             .filter(present.contains)
     }
 
