@@ -15,6 +15,20 @@ public struct MailView: View {
     @State private var sync: MailSyncService
     @State private var selectedFeed: FeedID?
     @State private var isShowingDiagnostics = false
+    @State private var searchText = ""
+    /// Debounced separately from `searchText`, so a keystroke does not start a
+    /// query against someone's home server.
+    @State private var settledSearch = ""
+
+    /// Where results belong depends on the layout, and the search field can
+    /// only live in the sidebar — the detail column's navigation bar is not
+    /// owned by its own stack when the split view collapses, so a field
+    /// attached there simply never renders.
+    ///
+    /// Compact: the sidebar *is* the screen, so results replace it in place.
+    /// Regular: the sidebar stays as navigation and results fill the detail,
+    /// which is where a wide layout expects a list.
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     private let connection: ServerConnection
     private let store: SyncStore
@@ -63,9 +77,31 @@ public struct MailView: View {
         }
     }
 
+    private var isSearching: Bool {
+        searchText.trimmingCharacters(in: .whitespaces).isEmpty == false
+    }
+
+    /// The sidebar, or the results that replaced it on a narrow screen.
+    @ViewBuilder
+    private var sidebarContent: some View {
+        if isSearching, sizeClass == .compact {
+            SearchResultsView(raw: settledSearch, sync: sync)
+                .navigationDestination(for: ThreadRef.self, destination: reader(for:))
+        } else {
+            MailboxSidebarView(sync: sync, selection: $selectedFeed)
+        }
+    }
+
     public var body: some View {
         NavigationSplitView {
-            MailboxSidebarView(sync: sync, selection: $selectedFeed)
+            sidebarContent
+                .searchable(
+                    text: $searchText,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Search mail"
+                )
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
                 .navigationTitle("plMail")
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -88,6 +124,20 @@ public struct MailView: View {
                         "Pick a mailbox", systemImage: "tray.2",
                         description: Text("Choose a list from the sidebar."))
                 }
+            }
+        }
+        .task(id: searchText) {
+            // 350ms: long enough that typing a word is one query rather than
+            // five, short enough not to feel laggy.
+            try? await Task.sleep(for: .milliseconds(350))
+
+            guard Task.isCancelled == false else { return }
+
+            let abandoned = settledSearch
+            settledSearch = searchText
+
+            if searchText.isEmpty, abandoned.isEmpty == false {
+                await sync.discardSearch(feed: .search(abandoned))
             }
         }
         .task(id: selectedFeed) {

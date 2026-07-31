@@ -15,6 +15,12 @@ public enum FeedID: Hashable, Sendable {
     case unifiedLabel(LabelID)
     /// One mailbox in one account.
     case mailbox(accountKey: String, mailboxID: MailboxID)
+    /// The results of one search, across every account that can serve it.
+    ///
+    /// Materialised like any other feed so results page and survive a
+    /// backgrounding, but pruned when the search is abandoned — a stored feed
+    /// per query typed would grow without bound.
+    case searchResults(query: String)
 
     public var rawValue: String {
         switch self {
@@ -22,6 +28,8 @@ public enum FeedID: Hashable, Sendable {
         case .unifiedLabel(let label): "label:\(label.rawValue)"
         case .mailbox(let accountKey, let mailboxID):
             "acct:\(accountKey):mbox:\(mailboxID.rawValue)"
+        case .searchResults(let query):
+            "search:\(query)"
         }
     }
 
@@ -44,6 +52,9 @@ public enum FeedID: Hashable, Sendable {
             }
 
             return match?.name ?? "Mailbox"
+
+        case .searchResults:
+            return "Results"
         }
     }
 }

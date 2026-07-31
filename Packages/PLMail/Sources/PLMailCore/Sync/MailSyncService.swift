@@ -169,6 +169,43 @@ public final class MailSyncService {
         degradedAccounts = await merge.failures
     }
 
+    /// Runs a search, replacing any previous results for the same query.
+    ///
+    /// Rebuilt rather than refreshed: a search feed's rows are answers to a
+    /// question, and re-asking should not splice new answers on top of stale
+    /// ones from a query that has since changed.
+    public func search(feed: FeedID) async {
+        for account in accounts {
+            try? await store.resetFeed(feedID: feed.rawValue, accountKey: account.accountKey)
+        }
+
+        merges[feed] = nil
+        mergedAccounts[feed] = nil
+
+        status = .syncing
+        defer { if case .syncing = status { status = .idle } }
+
+        let merge = await merge(for: feed)
+        await merge.loadMore()
+
+        degradedAccounts = await merge.failures
+    }
+
+    /// Drops a search's stored rows.
+    ///
+    /// Called when a search is abandoned: one materialised feed per query ever
+    /// typed would grow without bound, and none of them is worth keeping.
+    public func discardSearch(feed: FeedID) async {
+        guard case .searchResults = feed else { return }
+
+        for account in accounts {
+            try? await store.resetFeed(feedID: feed.rawValue, accountKey: account.accountKey)
+        }
+
+        merges[feed] = nil
+        mergedAccounts[feed] = nil
+    }
+
     /// Extends `feed` by one screenful, interleaved across every account.
     public func loadMore(of feed: FeedID) async {
         let merge = await merge(for: feed)
@@ -237,6 +274,26 @@ public final class MailSyncService {
             guard accountKey == account.accountKey else { return nil }
 
             filter = .inMailbox(mailboxID)
+
+        case .searchResults(let raw):
+            let parsed = SearchQuery.parse(raw)
+            let accountMailboxes = mailboxes.filter { $0.accountKey == account.accountKey }
+
+            // An account with no mailbox for the requested role cannot answer
+            // this query, and including it unfiltered would return its whole
+            // mailbox as "results".
+            guard SearchQueryCompiler.canSearch(parsed, mailboxes: accountMailboxes) else {
+                return nil
+            }
+
+            filter = SearchQueryCompiler.filter(
+                for: parsed,
+                mailboxID: SearchQueryCompiler.mailboxID(
+                    for: parsed, mailboxes: accountMailboxes)
+            )
+
+            // A query that narrows nothing would page the entire account.
+            guard filter != nil else { return nil }
         }
 
         return AccountPager(
