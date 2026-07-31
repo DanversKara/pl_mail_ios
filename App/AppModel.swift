@@ -29,6 +29,30 @@ final class AppModel {
     func load() {
         guard hasLoaded == false else { return }
 
+        #if DEBUG
+        // A UI test that only passes on the second run — because the
+        // first one left an account signed in — is worse than no test.
+        // Debug-only and launch-argument-only: there is no way to reach
+        // this from a shipped build, which matters because what it does
+        // is delete someone's mailbox.
+        if UserDefaults.standard.bool(forKey: "plmail.resetForUITests") {
+            try? credentials.delete()
+
+            let container = container
+            let semaphore = DispatchSemaphore(value: 0)
+
+            // Synchronously, unlike `signOut`: onboarding is about to be
+            // built, and a store deleted underneath it a moment later
+            // would race with the first sync.
+            Task.detached {
+                try? await SyncStore(modelContainer: container).deleteEverything()
+                semaphore.signal()
+            }
+
+            _ = semaphore.wait(timeout: .now() + 5)
+        }
+        #endif
+
         // A malformed keychain entry means onboarding, not a crash: it is
         // replaceable, and the user can sign in again.
         connect(to: try? credentials.load())

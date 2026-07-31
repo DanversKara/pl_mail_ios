@@ -16,6 +16,7 @@
 		AA0000000000000000000301 /* plMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = plMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AA0000000000000000000302 /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Debug.xcconfig; path = App/Config/Debug.xcconfig; sourceTree = "<group>"; };
 		AA0000000000000000000303 /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = Release.xcconfig; path = App/Config/Release.xcconfig; sourceTree = "<group>"; };
+		AA0000000000000000000304 /* plMailUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = plMailUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -25,6 +26,11 @@
 				AA0000000000000000000501 /* PBXFileSystemSynchronizedBuildFileExceptionSet */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000402 /* UITests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = UITests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -62,6 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000401 /* App */,
+				AA0000000000000000000402 /* UITests */,
 				AA0000000000000000000804 /* Configurations */,
 				AA0000000000000000000802 /* Products */,
 			);
@@ -71,6 +78,7 @@
 			isa = PBXGroup;
 			children = (
 				AA0000000000000000000301 /* plMail.app */,
+				AA0000000000000000000304 /* plMailUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -112,6 +120,27 @@
 			productReference = AA0000000000000000000301 /* plMail.app */;
 			productType = "com.apple.product-type.application";
 		};
+		AA0000000000000000000602 /* plMailUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000000000000000000A03 /* Build configuration list for PBXNativeTarget "plMailUITests" */;
+			buildPhases = (
+				AA0000000000000000000B02 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				AA0000000000000000000F01 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000000000000000000402 /* UITests */,
+			);
+			name = plMailUITests;
+			packageProductDependencies = (
+			);
+			productName = plMailUITests;
+			productReference = AA0000000000000000000304 /* plMailUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -124,6 +153,10 @@
 				TargetAttributes = {
 					AA0000000000000000000601 = {
 						CreatedOnToolsVersion = 26.0;
+					};
+					AA0000000000000000000602 = {
+						CreatedOnToolsVersion = 26.0;
+						TestTargetID = AA0000000000000000000601;
 					};
 				};
 			};
@@ -145,6 +178,7 @@
 			projectRoot = "";
 			targets = (
 				AA0000000000000000000601 /* plMail */,
+				AA0000000000000000000602 /* plMailUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -167,7 +201,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AA0000000000000000000B02 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		AA0000000000000000000F01 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AA0000000000000000000601 /* plMail */;
+			targetProxy = AA0000000000000000000F02 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin PBXContainerItemProxy section */
+		AA0000000000000000000F02 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = AA0000000000000000000D01 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AA0000000000000000000601;
+			remoteInfo = plMail;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin XCBuildConfiguration section */
 		AA0000000000000000000E01 /* Debug */ = {
@@ -218,6 +277,32 @@
 			};
 			name = Release;
 		};
+		AA0000000000000000000E05 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000302 /* Debug.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = de.plmail.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TEST_TARGET_NAME = plMail;
+			};
+			name = Debug;
+		};
+		AA0000000000000000000E06 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = AA0000000000000000000303 /* Release.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = de.plmail.UITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				TEST_TARGET_NAME = plMail;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -235,6 +320,15 @@
 			buildConfigurations = (
 				AA0000000000000000000E01 /* Debug */,
 				AA0000000000000000000E02 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA0000000000000000000A03 /* Build configuration list for PBXNativeTarget "plMailUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA0000000000000000000E05 /* Debug */,
+				AA0000000000000000000E06 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
