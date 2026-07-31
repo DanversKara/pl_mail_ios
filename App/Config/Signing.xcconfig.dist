@@ -1,0 +1,5 @@
+// Copy to Signing.xcconfig (gitignored) and fill in your team.
+// Simulator builds need neither line; device builds and TestFlight need both.
+
+DEVELOPMENT_TEAM =
+CODE_SIGN_IDENTITY = Apple Development

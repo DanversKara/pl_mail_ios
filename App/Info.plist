@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  plMail runs on machines people own, and a lot of them are only reachable
+	  over plain HTTP on a home network: a NAS at nas.local, a box at
+	  192.168.1.5, a container on localhost.
+
+	  NSAllowsLocalNetworking permits exactly those — unqualified hostnames,
+	  *.local, loopback and link-local addresses — and nothing else. Every
+	  route to the public internet still goes through full App Transport
+	  Security. The usual shortcut, NSAllowsArbitraryLoads, would instead turn
+	  validation off for every connection the app ever makes, which is not a
+	  trade worth making for the convenience of a first run.
+
+	  The app additionally requires the user to type http:// explicitly; a
+	  bare hostname is always resolved as https.
+	-->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+
+	<!-- Bonjour, so a server advertised on the LAN can be reached by name. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>plMail needs to reach your mail server, which may be on your local network.</string>
+</dict>
+</plist>
