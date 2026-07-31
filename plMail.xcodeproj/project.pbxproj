@@ -45,6 +45,7 @@
 				Config/Shared.xcconfig,
 				Config/Signing.xcconfig,
 				Config/Signing.xcconfig.dist,
+				plMail.entitlements,
 			);
 			target = AA0000000000000000000601 /* plMail */;
 		};

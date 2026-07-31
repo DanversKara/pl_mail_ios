@@ -55,10 +55,15 @@ extension Session {
         /// A plMail extension carrying the VAPID key. Advertised here, but
         /// **never declarable in `using`** — see ``Capability``.
         public var push: PushCapabilities?
+        /// Present only on a server that can send APNs pushes. Absent is the
+        /// normal case today and must stay unremarkable — a self-hosted
+        /// server has no Apple developer account of its own.
+        public var apns: APNsCapabilities?
 
         private enum CodingKeys: String, CodingKey {
             case core = "urn:ietf:params:jmap:core"
             case push = "urn:plmail:params:jmap:push"
+            case apns = "urn:de:plmail:params:jmap:apns"
         }
     }
 
@@ -79,6 +84,16 @@ extension Session {
         public var vapidPublicKey: String
 
         public var isConfigured: Bool { vapidPublicKey.isEmpty == false }
+    }
+
+    public struct APNsCapabilities: Hashable, Sendable, Decodable {
+        /// Which APNs environment the server's key is for. A token minted by
+        /// a debug build is a sandbox token, and sending it to production
+        /// APNs fails in a way that does not say so.
+        public var environment: String?
+        /// The topic the server pushes to — normally the app's bundle id.
+        /// Advertised so a mismatch can be spotted rather than debugged.
+        public var topic: String?
     }
 }
 

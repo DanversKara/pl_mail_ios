@@ -61,6 +61,11 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>fetch</string>
+		<!-- Silent pushes only. The payload never carries mail, so there is
+		     nothing to decrypt on arrival and no notification-service
+		     extension: the push says "something changed" and the app does an
+		     ordinary delta pull. -->
+		<string>remote-notification</string>
 	</array>
 
 	<key>NSLocalNetworkUsageDescription</key>

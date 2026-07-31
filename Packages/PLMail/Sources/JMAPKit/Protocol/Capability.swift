@@ -10,9 +10,17 @@ public enum Capability: String, Codable, CaseIterable, Sendable {
     case mail = "urn:ietf:params:jmap:mail"
     case submission = "urn:ietf:params:jmap:submission"
     case push = "urn:plmail:params:jmap:push"
+    /// APNs, which is a different thing to `push`.
+    ///
+    /// `push` is Web Push and carries a VAPID key; Web Push cannot reach a
+    /// native iOS app, so registering an APNs device token needs its own
+    /// capability and its own method. Unlike `push`, this one *is* declarable
+    /// in `using` — it has a method behind it — but only once the server has
+    /// advertised it, which is why ``PushRegistrar`` checks first.
+    case apns = "urn:de:plmail:params:jmap:apns"
 
     /// The capabilities a request may declare. Advertised ≠ usable.
-    public static let supportedInUsing: Set<Capability> = [.core, .mail, .submission]
+    public static let supportedInUsing: Set<Capability> = [.core, .mail, .submission, .apns]
 
     public var isSupportedInUsing: Bool {
         Self.supportedInUsing.contains(self)

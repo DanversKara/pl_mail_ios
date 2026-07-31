@@ -3,6 +3,7 @@ import Observation
 import PLMailCore
 import SwiftData
 import SwiftUI
+import UIKit
 
 /// Owns what outlives any one screen: the connection, the store, and the
 /// decision about when the app is allowed to hold a live connection open.
@@ -61,9 +62,17 @@ final class AppModel {
 
     func signedIn(_ connection: ServerConnection) {
         connect(to: connection)
+
+        Task { await requestPushIfUseful() }
     }
 
     func signOut() {
+        // Before the credential goes: a device that keeps its registration
+        // would go on being woken for a mailbox it can no longer read.
+        if let push {
+            Task { await push.unregister() }
+        }
+
         try? credentials.delete()
 
         Task { [container] in
@@ -82,6 +91,7 @@ final class AppModel {
         guard let connection else {
             sync = nil
             outbox = nil
+            push = nil
             return
         }
 
@@ -95,6 +105,7 @@ final class AppModel {
             store: store
         )
         outbox = sender
+        push = PushRegistrar(client: service.jmapClient)
 
         // Anything queued from a previous run goes out as soon as there is a
         // client to send it with. Someone who wrote a message on a train and
@@ -136,6 +147,33 @@ final class AppModel {
     /// Queued mail waiting to go out. Nil until there is a connection.
     private(set) var outbox: OutboxSender?
 
+    /// Push registration. Nil until there is a server to register with.
+    private var push: PushRegistrar?
+    private var pushDelegate: PushDelegate?
+
+    /// Wires the delegate's callbacks up.
+    ///
+    /// Registration is asked for here rather than at first launch: a
+    /// notification prompt before someone has seen a single message is the
+    /// prompt everyone denies, and a denial is effectively permanent.
+    func adopt(_ delegate: PushDelegate) {
+        guard pushDelegate == nil else { return }
+
+        pushDelegate = delegate
+
+        delegate.onToken = { [weak self] token in
+            await self?.push?.register(token: token, deviceName: UIDevice.current.name)
+        }
+
+        delegate.onSilentPush = { [weak self] in
+            // Exactly what a foreground refresh does. A push is a hint that
+            // it is worth pulling now, not a delivery mechanism.
+            await self?.sync?.refreshInBackground()
+        }
+
+        Task { await requestPushIfUseful() }
+    }
+
     func refreshInBackground() async {
         guard sync == nil else {
             await sync?.refreshInBackground()
@@ -145,6 +183,28 @@ final class AppModel {
         // Woken before any UI existed: rebuild just enough to do one pull.
         load()
         await sync?.refreshInBackground()
+    }
+
+    /// Registering and prompting are two different decisions.
+    ///
+    /// **Registering** for remote notifications needs no permission, shows
+    /// nothing, and is what lets a silent push wake the app to sync. It costs
+    /// a token. Do it whenever there is a server.
+    ///
+    /// **Prompting** for alerts spends a one-shot: refuse it and it never
+    /// appears again without a trip to Settings. That is spent only on a
+    /// server that advertises an APNs sender — against one without, granting
+    /// it would deliver precisely nothing.
+    ///
+    /// Conflating the two is what made the first version of this untestable:
+    /// gating registration behind the prompt meant an unsupported server
+    /// never registered, so nothing could be delivered even by hand.
+    private func requestPushIfUseful() async {
+        PushDelegate.registerForSilentPushes()
+
+        guard let push, await push.isSupported() else { return }
+
+        await PushDelegate.requestAuthorization()
     }
 
     /// Reachability is the one signal worth reopening a tripped circuit for —

@@ -30,3 +30,8 @@ INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPo
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
 
 CODE_SIGN_STYLE = Automatic
+
+// Push. The simulator accepts silent pushes via `xcrun simctl push` without
+// any of this, but a device build needs the entitlement and a matching APNs
+// key on the server side — see docs/PUSH.md.
+CODE_SIGN_ENTITLEMENTS = App/plMail.entitlements
