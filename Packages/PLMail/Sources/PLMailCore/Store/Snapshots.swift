@@ -123,6 +123,11 @@ public struct IdentitySnapshot: Hashable, Sendable, Identifiable {
         // than the data problem it is.
         guard name != email else { return email }
 
+        // An identity with no address at all renders as "Personal <>", which
+        // reads as a bug in the app rather than a gap in the account. My own
+        // test server returns exactly this for a second account.
+        guard email.trimmingCharacters(in: .whitespaces).isEmpty == false else { return name }
+
         return "\(name) <\(email)>"
     }
 }

@@ -84,6 +84,7 @@ Open `plMail.xcodeproj`, pick a simulator, and press Run. Simulator builds need 
 - Your app password is kept in the **iOS Keychain**, marked as non-syncing, so it stays on the one device it was issued to.
 - The local database is a **cache** holding nothing that couldn't be fetched again — which is why signing out simply deletes it.
 - **Remote images are blocked by default.** Loading one tells the sender you opened their message, roughly when, and roughly from where.
+- **Photos you attach lose their GPS tags.** A picture from your library carries the coordinates it was taken at, to a few metres. Blocking tracking pixels while silently sending your address in the other direction would be a strange line to draw.
 
 ---
 
@@ -92,7 +93,7 @@ Open `plMail.xcodeproj`, pick a simulator, and press Run. Simulator builds need 
 - **No push notifications.** New mail arrives when the app checks — on opening, and periodically in the background. The interface says "last checked N minutes ago" rather than implying it's live, because it isn't. The client side is built ([docs/PUSH.md](docs/PUSH.md)); what's missing is an APNs key, which needs a paid Apple developer account, and a sender on the plMail side.
 - **The widget needs a paid account too.** It runs in its own process and reads the app's numbers through an App Group, which a free Apple ID cannot grant. It says so rather than showing a zero it can't justify.
 - **A few error messages are English-only** even with the app in German. The interface is translated; some failure messages from the networking layer aren't yet.
-- **The attachment picker is lightly tested** — it works, but it hasn't been put through every document provider.
+- **The attachment picker is lightly tested** against unusual document providers, though the photo library and local files both work.
 - **This is a plMail client, not a general JMAP one.** Snooze, cross-account labels and search lean on plMail's own extensions. It won't work against Fastmail or a stock Cyrus server.
 
 ---

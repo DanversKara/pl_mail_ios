@@ -123,3 +123,6 @@
 "Show quoted history" = "Show quoted history";
 "Hide quoted history" = "Hide quoted history";
 "%lld earlier messages" = "%lld earlier messages";
+"Photo or video" = "Photo or video";
+"File" = "File";
+"That photo couldn't be loaded." = "That photo couldn't be loaded.";

@@ -128,8 +128,17 @@ public final class ComposeModel {
         recipients(from: to).isEmpty == false && status == .editing
     }
 
+    /// Adds a file to this message.
+    ///
+    /// Photos lose their GPS tags on the way in — see ``ImagePrivacy``. Done
+    /// here rather than at the picker so it applies however a file arrives:
+    /// the photo library, the document browser, and anything added later.
     public func attach(name: String, type: String, data: Data) {
-        attachments.append(PendingAttachment(name: name, type: type, data: data))
+        attachments.append(
+            PendingAttachment(
+                name: name,
+                type: type,
+                data: ImagePrivacy.strippingLocation(from: data, type: type)))
     }
 
     public func removeAttachment(_ id: PendingAttachment.ID) {

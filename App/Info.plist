@@ -26,6 +26,8 @@
 	  The app additionally requires the user to type http:// explicitly; a
 	  bare hostname is always resolved as https.
 	-->
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Attach photos and videos to messages you write.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>plMail uses the camera to scan the pairing code shown by your server, so you don't have to type a 71-character app password.</string>
 	<key>CFBundleURLTypes</key>

@@ -4,6 +4,7 @@ public import PLMailCore
 
 import JMAPKit
 import SwiftUI
+import PhotosUI
 import UniformTypeIdentifiers
 
 /// Writing a message.
@@ -20,6 +21,8 @@ public struct ComposeView: View {
     @State private var bodySelection = AttributedTextSelection()
     @State private var showsMoreRecipients = false
     @State private var isPickingFiles = false
+    @State private var pickedPhotos: [PhotosPickerItem] = []
+    @State private var isPickingPhotos = false
     @State private var attachmentError: String?
 
     /// Filled in by Shortcuts or Siri, applied once the model exists.
@@ -73,8 +76,25 @@ public struct ComposeView: View {
                 }
 
                 ToolbarItem(placement: .topBarLeading) {
-                    Button(.ui("Attach"), systemImage: "paperclip") { isPickingFiles = true }
-                        .disabled(model.isSending)
+                    // A menu rather than a single button: on a phone the thing
+                    // people attach is almost always a photo, and routing them
+                    // through the document browser to find one — where the
+                    // photo library is a sub-provider, several taps in — is the
+                    // kind of detour that makes an app feel like a port.
+                    Menu {
+                        // A `PhotosPicker` placed directly in a menu never
+                        // presents: the menu dismisses, and the sheet it was
+                        // about to show goes with it. The flag and the
+                        // modifier below are the arrangement that survives.
+                        Button(.ui("Photo or video"), systemImage: "photo.on.rectangle") {
+                            isPickingPhotos = true
+                        }
+
+                        Button(.ui("File"), systemImage: "folder") { isPickingFiles = true }
+                    } label: {
+                        Label(.ui("Attach"), systemImage: "paperclip")
+                    }
+                    .disabled(model.isSending)
                 }
             }
             .safeAreaInset(edge: .bottom) { sendingBar }
@@ -87,6 +107,20 @@ public struct ComposeView: View {
                 allowsMultipleSelection: true
             ) { result in
                 attach(result)
+            }
+            .photosPicker(
+                isPresented: $isPickingPhotos,
+                selection: $pickedPhotos,
+                maxSelectionCount: 10,
+                matching: .any(of: [.images, .videos])
+            )
+            // Loaded as transferable data rather than by URL: a `PhotosPickerItem`
+            // is a promise, and the asset it names may still be in iCloud. The
+            // transfer is what forces the download.
+            .onChange(of: pickedPhotos) { _, items in
+                guard items.isEmpty == false else { return }
+
+                Task { await attach(items) }
             }
             .alert(
                 Text(.ui("Couldn't attach that")),
@@ -140,6 +174,34 @@ public struct ComposeView: View {
 
             model.attach(name: url.lastPathComponent, type: type, data: data)
         }
+    }
+
+    /// Pulls the picked assets in, one at a time.
+    ///
+    /// Sequentially on purpose. Ten photos fetched from iCloud at once is a
+    /// spike of memory the size of all of them, on a device that may have been
+    /// running low enough to have evicted them in the first place.
+    private func attach(_ items: [PhotosPickerItem]) async {
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else {
+                attachmentError = String(localized: .ui("That photo couldn't be loaded."))
+                continue
+            }
+
+            let type = item.supportedContentTypes.first
+            let name =
+                type?.preferredFilenameExtension.map {
+                    "photo-\(UUID().uuidString.prefix(8)).\($0)"
+                }
+                ?? "attachment"
+
+            model.attach(
+                name: name,
+                type: type?.preferredMIMEType ?? "application/octet-stream",
+                data: data)
+        }
+
+        pickedPhotos = []
     }
 
     // MARK: - Fields

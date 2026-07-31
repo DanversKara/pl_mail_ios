@@ -124,4 +124,22 @@ struct AccountNamingTests {
 
         #expect(try await store.accounts().first?.displayName == "Mailbox 1119")
     }
+
+    /// The composer's From line.
+    @Test(
+        "An identity reads well however incomplete it is",
+        arguments: [
+            ("Ada", "ada@example.test", "Ada <ada@example.test>"),
+            (nil, "ada@example.test", "ada@example.test"),
+            // No address: "Personal <>" looks like a formatting bug.
+            ("Personal", "", "Personal"),
+            // Name and address identical, which some imports produce.
+            ("Work", "Work", "Work"),
+        ])
+    func identityDisplayName(name: String?, email: String, expected: String) {
+        let snapshot = IdentitySnapshot(
+            id: IdentityID(rawValue: "1"), name: name, email: email, textSignature: nil)
+
+        #expect(snapshot.displayName == expected)
+    }
 }
