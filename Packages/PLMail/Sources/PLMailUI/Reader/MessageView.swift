@@ -16,6 +16,14 @@ struct MessageView: View {
     let onAllowRemoteContent: () -> Void
     let onRemoteContentBlocked: () -> Void
     let onPreview: (URL) -> Void
+    /// Replying to *this* message rather than to the newest in the thread.
+    ///
+    /// The bar at the bottom always answers the last message, which is right
+    /// most of the time and wrong exactly when it matters: someone scrolls back
+    /// to the message that asked the question and answers that. Without this
+    /// their reply quotes the wrong thing and, on a thread with several
+    /// participants, may go to the wrong person.
+    let onCompose: (ComposeModel.Kind) -> Void
 
     /// Follows the system, so mail matches the rest of the phone rather than
     /// being the one screen that stays white at night.
@@ -111,6 +119,8 @@ struct MessageView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                if isExpanded { actions }
             }
             .padding(.horizontal, 16)
             .contentShape(.rect)
@@ -118,6 +128,41 @@ struct MessageView: View {
         .buttonStyle(.plain)
         .accessibilityHint(
             Text(isExpanded ? .ui("Collapses this message") : .ui("Expands this message")))
+    }
+
+    /// The per-message overflow.
+    ///
+    /// Only on an expanded message: a collapsed row is a summary, and hanging
+    /// a menu off it would put three of them on screen with nothing to say
+    /// which is which.
+    private var actions: some View {
+        Menu {
+            Button(.ui("Reply"), systemImage: "arrowshape.turn.up.left") {
+                onCompose(.reply(to: message, all: false))
+            }
+
+            if hasOtherRecipients {
+                Button(.ui("Reply all"), systemImage: "arrowshape.turn.up.left.2") {
+                    onCompose(.reply(to: message, all: true))
+                }
+            }
+
+            Button(.ui("Forward"), systemImage: "arrowshape.turn.up.right") {
+                onCompose(.forward(message))
+            }
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(width: 28, height: 28)
+                .contentShape(.rect)
+        }
+        .accessibilityLabel(Text(.ui("Actions for this message")))
+    }
+
+    /// Whether replying to everyone would reach anybody new.
+    private var hasOtherRecipients: Bool {
+        message.to.count + message.cc.count > 1
     }
 
     private var recipients: String {

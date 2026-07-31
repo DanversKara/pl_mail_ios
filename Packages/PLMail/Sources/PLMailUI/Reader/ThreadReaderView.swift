@@ -112,7 +112,8 @@ public struct ThreadReaderView: View {
                             onToggle: { toggle(message) },
                             onAllowRemoteContent: { allowRemoteContent(from: message) },
                             onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
-                            onPreview: { previewedAttachment = $0 }
+                            onPreview: { previewedAttachment = $0 },
+                            onCompose: { composing = $0 }
                         )
                         // The policy lives outside SwiftUI's observation, so
                         // trusting a sender has to invalidate the message that
