@@ -18,6 +18,7 @@ public struct ThreadReaderView: View {
     @State private var blockedRemoteContent: Set<String> = []
     @State private var previewedAttachment: URL?
     @State private var composing: ComposeModel.Kind?
+    @State private var isPickingLabels = false
     @Environment(\.dismiss) private var dismiss
 
     private let subject: String
@@ -27,6 +28,9 @@ public struct ThreadReaderView: View {
     private let accountID: AccountID
     private let client: JMAPClient
     private let store: SyncStore
+    /// Only for the label picker, which needs this account's labels. The
+    /// reader itself reads nothing from the sync service.
+    private let sync: MailSyncService
     private let actions: MailActions
     private let threadID: String
 
@@ -37,6 +41,7 @@ public struct ThreadReaderView: View {
         subject: String,
         client: JMAPClient,
         store: SyncStore,
+        sync: MailSyncService,
         blobs: BlobCache,
         actions: MailActions,
         credential: Credential
@@ -47,6 +52,7 @@ public struct ThreadReaderView: View {
         self.accountID = accountID
         self.client = client
         self.store = store
+        self.sync = sync
         self.actions = actions
         self.threadID = threadID
         downloadContext = DownloadContext(
@@ -101,6 +107,9 @@ public struct ThreadReaderView: View {
         .undoOverlay(actions)
         .overlay { statusOverlay }
         .quickLookPreview($previewedAttachment)
+        .sheet(isPresented: $isPickingLabels) {
+            LabelPickerView(target: target, sync: sync, actions: actions, store: store)
+        }
         .task {
             await loader.load()
             expandNewest()
@@ -164,6 +173,13 @@ public struct ThreadReaderView: View {
                 }
 
                 Divider()
+
+                Button {
+                    isPickingLabels = true
+                } label: {
+                    Label("Labels", systemImage: "tag")
+                }
+                .keyboardShortcut("l", modifiers: [])
 
                 Button {
                     Task { await actions.setSeen(false, target) }

@@ -75,6 +75,7 @@ public struct MailView: View {
                 subject: ref.subject,
                 client: sync.jmapClient,
                 store: store,
+                sync: sync,
                 blobs: blobs,
                 actions: actions,
                 credential: connection.credential
@@ -116,12 +117,20 @@ public struct MailView: View {
                 .shadow(radius: 6, y: 3)
         }
         .padding(.trailing, 20)
-        // Above the undo bar, which occupies the same corner.
-        .padding(.bottom, 80)
+        // Sits close to the bottom, where a thumb is, and steps up out of
+        // the way only while the undo bar is actually showing rather than
+        // reserving that space permanently for a toast that is usually
+        // absent.
+        .padding(.bottom, isUndoBarShowing ? 84 : 20)
+        .animation(.snappy(duration: 0.2), value: isUndoBarShowing)
         .accessibilityLabel("New message")
         // Gmail's "c", and ⌘N for anyone who expects the Mac convention.
         // Both reach the same button, so neither is a second code path.
         .keyboardShortcut("c", modifiers: [])
+    }
+
+    private var isUndoBarShowing: Bool {
+        actions.pending != nil || actions.failure != nil
     }
 
     private var isSearching: Bool {
@@ -160,7 +169,6 @@ public struct MailView: View {
                 feed: selectedFeed, sync: sync, actions: actions,
                 selection: $selectedThread
             )
-            .overlay(alignment: .bottomTrailing) { composeButton }
         } else {
             ContentUnavailableView(
                 "Pick a mailbox", systemImage: "tray.2",
@@ -216,6 +224,11 @@ public struct MailView: View {
             }
         }
         .navigationSplitViewStyle(.balanced)
+        // Over the whole split view rather than over the list column, so on a
+        // tablet it sits at the window's right edge instead of floating in the
+        // middle against a column divider. Collapsed on iPhone the two are the
+        // same place.
+        .overlay(alignment: .bottomTrailing) { composeButton }
         .task(id: searchText) {
             // 350ms: long enough that typing a word is one query rather than
             // five, short enough not to feel laggy.

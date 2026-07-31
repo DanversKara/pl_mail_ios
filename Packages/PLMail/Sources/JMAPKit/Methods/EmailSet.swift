@@ -149,6 +149,24 @@ extension EmailSet {
         return self.patch(patch, ids: ids, accountID: accountID)
     }
 
+    /// Applies or removes one label.
+    ///
+    /// A label *is* a mailbox here — plMail's model is labels throughout, and
+    /// JMAP's Mailbox is how they reach the wire — so this is the same patch
+    /// archiving uses, differing only in which binding it names and that it
+    /// does not touch the Inbox.
+    ///
+    /// Removing is the operation that can be refused: RFC 8621 requires an
+    /// Email to belong to at least one Mailbox, so taking away the last one
+    /// comes back as `invalidProperties`. That refusal is reported rather than
+    /// pre-empted — the client's cached view of which mailboxes a message is in
+    /// can be stale, and guessing would sometimes block a legal removal.
+    public static func setLabel(
+        _ isApplied: Bool, mailbox: MailboxID, ids: [EmailID], accountID: AccountID
+    ) -> EmailSet {
+        patch([Patch.mailbox(mailbox): isApplied ? .set : .remove], ids: ids, accountID: accountID)
+    }
+
     /// Moves to Trash. Recoverable: nothing in this product hard-deletes.
     public static func trash(ids: [EmailID], accountID: AccountID) -> EmailSet {
         EmailSet(accountID: accountID, destroy: ids)

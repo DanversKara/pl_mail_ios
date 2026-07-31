@@ -51,7 +51,10 @@ public final class MailSyncService {
 
     private let connection: ServerConnection
     private let client: JMAPClient
-    private let store: SyncStore
+    /// Exposed because views that mutate — the label picker — need to read
+    /// back what the store actually holds after an action, rather than
+    /// assuming their optimistic change stuck.
+    public let store: SyncStore
     private let delta: DeltaSync
     private let breaker: CircuitBreaker
     private let events: EventSourceClient

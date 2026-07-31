@@ -582,6 +582,67 @@ public actor SyncStore {
         try modelContext.save()
     }
 
+    /// Records a label having been applied to or taken off messages.
+    ///
+    /// Local only, and optimistic: the server is still the authority on which
+    /// mailboxes a message ends up in, and a refusal re-fetches over this.
+    public func setMailbox(
+        _ isApplied: Bool, mailboxID: String, emailIDs: [String], accountKey: String
+    ) throws {
+        for emailID in emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid) else { continue }
+
+            if isApplied {
+                // A set is idempotent on the wire; it has to be here too, or a
+                // second tap leaves the id in twice and the picker starts
+                // showing a label it can no longer take off.
+                if email.mailboxIDs.contains(mailboxID) == false {
+                    email.mailboxIDs.append(mailboxID)
+                }
+            } else {
+                email.mailboxIDs.removeAll { $0 == mailboxID }
+            }
+        }
+
+        try modelContext.save()
+    }
+
+    /// One message's mailbox ids, in the order they are stored.
+    ///
+    /// Internal because nothing in the app wants the order or the duplicates —
+    /// the UI asks about a whole thread and gets a set. It exists so a test can
+    /// see growth that a set would hide.
+    func storedMailboxIDs(emailID: String, accountKey: String) throws -> [String] {
+        let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+        return try existing(StoredEmail.self, uid: uid)?.mailboxIDs ?? []
+    }
+
+    /// Which mailboxes a thread's messages are in.
+    ///
+    /// The union, not the intersection: the picker shows a label as applied if
+    /// any message in the conversation carries it, matching how the list row
+    /// already treats starred and unread.
+    public func mailboxIDs(threadID: String, accountKey: String) throws -> Set<String> {
+        let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+        guard let thread = try existing(StoredThread.self, uid: uid) else { return [] }
+
+        var ids: Set<String> = []
+
+        for emailID in thread.emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid) else { continue }
+
+            ids.formUnion(email.mailboxIDs)
+        }
+
+        return ids
+    }
+
     // MARK: - Delta sync
 
     public func setEmailState(_ state: StateToken, accountKey: String) throws {

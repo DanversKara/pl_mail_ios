@@ -134,6 +134,36 @@ public final class MailActions {
         )
     }
 
+    /// Applies or removes a label across every message in a conversation.
+    ///
+    /// The whole thread, like every other action here: labelling one reply and
+    /// not the rest is not something anyone means from a conversation list.
+    ///
+    /// The label's name is passed in rather than looked up so the undo bar can
+    /// say which one — "Labelled Work" tells you what to undo; "Labelled" does
+    /// not.
+    public func setLabel(
+        _ isApplied: Bool, mailbox: MailboxID, named name: String, _ target: ActionTarget
+    ) async {
+        await apply(
+            target,
+            localChange: {
+                try await $0.setMailbox(
+                    isApplied,
+                    mailboxID: mailbox.rawValue,
+                    emailIDs: target.emailIDs.map(\.rawValue),
+                    accountKey: target.accountKey)
+                return []
+            },
+            request: EmailSet.setLabel(
+                isApplied, mailbox: mailbox, ids: target.emailIDs, accountID: target.accountID),
+            undoMessage: isApplied ? "Labelled \(name)" : "Removed \(name)",
+            undoRequest: EmailSet.setLabel(
+                isApplied == false, mailbox: mailbox, ids: target.emailIDs,
+                accountID: target.accountID)
+        )
+    }
+
     // MARK: - Undo
 
     public func undo() async {
@@ -229,9 +259,12 @@ public final class MailActions {
 
         return switch type {
         case "invalidProperties":
-            // The specific case that bites: an Email must belong to at least
-            // one Mailbox, so leaving the Inbox needs somewhere to go.
-            "This account has nowhere to archive to — it has no Archive mailbox."
+            // Almost always one rule: a message must be in at least one
+            // mailbox. Archiving hits it when the account has no Archive
+            // binding to move to, and removing a label hits it when that label
+            // was the last one. Both leave the message nowhere, so the copy
+            // names the rule rather than guessing which of the two it was.
+            "A message has to stay in at least one label, and that was the last one."
         case "forbidden", "accountReadOnly":
             "This account is read-only."
         default:
@@ -294,11 +327,14 @@ public final class MailActions {
 ///
 /// A whole thread rather than a message: archiving one reply and leaving the
 /// rest is not something anyone means, and the list is a list of conversations.
-public struct ActionTarget: Hashable, Sendable {
+public struct ActionTarget: Hashable, Sendable, Identifiable {
     public var threadID: String
     public var accountKey: String
     public var accountID: AccountID
     public var emailIDs: [EmailID]
+
+    /// Scoped by account: thread ids are unique only within one.
+    public var id: String { "\(accountKey)#\(threadID)" }
 
     public init(threadID: String, accountKey: String, accountID: AccountID, emailIDs: [EmailID]) {
         self.threadID = threadID

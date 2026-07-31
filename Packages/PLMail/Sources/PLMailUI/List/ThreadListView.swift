@@ -30,6 +30,9 @@ public struct ThreadListView: View {
     @Query private var threads: [StoredThread]
 
     @State private var isLoadingMore = false
+    /// The conversation whose labels are being edited. A target rather than a
+    /// Bool, so the sheet cannot outlive the row that opened it.
+    @State private var labelling: ActionTarget?
 
     public init(
         feed: FeedID,
@@ -117,6 +120,12 @@ public struct ThreadListView: View {
                     }
 
                     Button {
+                        labelling = target(for: row.thread)
+                    } label: {
+                        Label("Labels", systemImage: "tag")
+                    }
+
+                    Button {
                         act { await actions.archive(target(for: row.thread)) }
                     } label: {
                         Label("Archive", systemImage: "archivebox")
@@ -135,6 +144,9 @@ public struct ThreadListView: View {
             }
         }
         .listStyle(.plain)
+        .sheet(item: $labelling) { target in
+            LabelPickerView(target: target, sync: sync, actions: actions, store: sync.store)
+        }
         .undoOverlay(actions)
         .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         .refreshable { await sync.refresh(feed: feed) }
