@@ -24,6 +24,10 @@ It talks to plMail directly over **JMAP** — no scraping, no bridge, no account
 
 **The rest of what you'd expect.** Swipe to archive or delete, with undo. Star, mark read, move between labels. Snooze a conversation until tomorrow morning or a time you pick, and it leaves the inbox and returns unread. Select a dozen messages and act on them at once. Search with the same `from:`, `in:`, `has:attachment` operators as the web UI — matched quirk for quirk, so a query means the same thing in both.
 
+**Recipients complete from your address book** as well as from mail you've already synced, with people you actually write to ranked first. Contacts are read on the device and never leave it, and you're only asked for them the first time you type a recipient — not on first launch.
+
+**Hardware keyboards work.** `c` composes, `r` replies, `e` archives, `s` stars, `⌘N` and `⌘↩` and Escape do the platform-standard things.
+
 **Dark mode, iPad and German** are not afterthoughts: three columns on a tablet, a real back stack on a phone, and the whole interface in either language.
 
 **It works at large text sizes.** At the accessibility sizes the rows restack rather than truncating — a name you can read on two lines beats one you can't on one — and the reply bar drops to icons rather than hyphenating "Re-ply" inside a pill.

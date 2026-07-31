@@ -156,7 +156,16 @@ public struct MailView: View {
         .accessibilityLabel(Text(.ui("New message")))
         // Gmail's "c", and ⌘N for anyone who expects the Mac convention.
         // Both reach the same button, so neither is a second code path.
+        // Two bindings for one action. "c" is what someone arriving from
+        // Gmail will press; ⌘N is what someone arriving from the rest of the
+        // platform will press, and it is the one that appears in the shortcut
+        // overlay when the Command key is held.
         .keyboardShortcut("c", modifiers: [])
+        .background {
+            Button(.ui("New message")) { composing = .new }
+                .keyboardShortcut("n", modifiers: .command)
+                .hidden()
+        }
     }
 
     /// Panes are drawn as separate surfaces only where there is more than one

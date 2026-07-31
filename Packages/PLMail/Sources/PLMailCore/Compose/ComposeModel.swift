@@ -60,6 +60,14 @@ public final class ComposeModel {
     /// the mail already on the device.
     public private(set) var suggestions: [EmailAddress] = []
 
+    /// Matches from the address book for whatever is being typed right now.
+    ///
+    /// Separate from ``suggestions`` because it arrives asynchronously and per
+    /// keystroke, where the correspondents list is loaded once and then sits
+    /// still.
+    public private(set) var contactMatches: [EmailAddress] = []
+    private var contactLookup: Task<Void, Never>?
+
     /// The original being replied to or forwarded, as HTML, kept out of the
     /// editor.
     ///
@@ -92,6 +100,7 @@ public final class ComposeModel {
     private let client: JMAPClient
     private let store: SyncStore
     private let outbox: Outbox
+    private let contacts: any ContactSource
     /// Asks the sender to try now. Separate from the outbox itself because
     /// draining is main-actor work that touches observable state.
     private let onQueued: @MainActor () -> Void
@@ -111,6 +120,7 @@ public final class ComposeModel {
         client: JMAPClient,
         store: SyncStore,
         outbox: Outbox,
+        contacts: any ContactSource = SystemContacts(),
         onQueued: @escaping @MainActor () -> Void = {}
     ) {
         self.kind = kind
@@ -119,9 +129,47 @@ public final class ComposeModel {
         self.client = client
         self.store = store
         self.outbox = outbox
+        self.contacts = contacts
         self.onQueued = onQueued
 
         prefill()
+    }
+
+    /// The suggestions to show under a recipient field.
+    ///
+    /// Called as somebody types, so the address book lookup is debounced and
+    /// cancelled rather than fired per keystroke — and the correspondents half
+    /// is answered immediately from memory, so the list never feels like it is
+    /// waiting on permission.
+    public func suggestions(for fragment: String) -> [EmailAddress] {
+        RecipientSuggestions.merge(
+            correspondents: suggestions, contacts: contactMatches, matching: fragment)
+    }
+
+    /// Asks the address book about what is being typed.
+    public func lookUpContacts(for fragment: String) {
+        contactLookup?.cancel()
+
+        let trimmed = fragment.trimmingCharacters(in: .whitespaces)
+
+        guard trimmed.count >= 2 else {
+            contactMatches = []
+
+            return
+        }
+
+        contactLookup = Task { [contacts] in
+            // Long enough that typing a name is one lookup rather than eight.
+            try? await Task.sleep(for: .milliseconds(200))
+
+            guard Task.isCancelled == false else { return }
+
+            let found = await contacts.addresses(matching: trimmed)
+
+            guard Task.isCancelled == false else { return }
+
+            contactMatches = found
+        }
     }
 
     public var canSend: Bool {

@@ -38,6 +38,17 @@ final class SmokeTests: XCTestCase {
         // run, because the first one left an account behind, is worse than no
         // test.
         app.launchArguments += ["-plmail.resetForUITests", "YES"]
+
+        // English, explicitly. Every assertion below names a button by its
+        // English label, so on a German device — which is what this Mac
+        // produces after `simctl erase` — the test looked for "Connect" while
+        // the screen said "Verbinden". It passed for weeks only because the
+        // app happened to have been launched with a language override by hand.
+        //
+        // Pinned rather than translated: a smoke test should fail when a
+        // button disappears, not when it changes language.
+        app.launchArguments += ["-AppleLanguages", "(en)", "-AppleLocale", "en_GB"]
+
         app.launch()
     }
 
@@ -160,7 +171,13 @@ final class SmokeTests: XCTestCase {
         XCTAssertTrue(body.waitForExistence(timeout: 5), "The composer has no body field.")
 
         body.tap()
-        body.typeText("Written by the smoke test.")
+
+        // Typed at the app rather than the element. The rich `TextEditor` does
+        // not report keyboard focus on its own accessibility element the way a
+        // `TextField` does, so `body.typeText` fails with "neither element nor
+        // any descendant has keyboard focus" even though the caret is plainly
+        // in it. Typing at the app sends to whatever actually has focus.
+        app.typeText("Written by the smoke test.")
 
         // Deliberately not sent. This runs against a live server and a test
         // that mails a stranger every time it runs is a test people turn off.

@@ -67,12 +67,17 @@ public struct ComposeView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(.ui("Cancel")) { dismiss() }
+                        // What Escape does everywhere else on the platform.
+                        .keyboardShortcut(.cancelAction)
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button(.ui("Send"), action: model.send)
                         .disabled(model.canSend == false)
                         .fontWeight(.semibold)
+                        // ⌘↩, as in Mail. Deliberately not plain Return, which
+                        // is a newline in the body somebody is still writing.
+                        .keyboardShortcut(.return, modifiers: .command)
                 }
 
                 ToolbarItem(placement: .topBarLeading) {
@@ -220,15 +225,13 @@ public struct ComposeView: View {
                 LabeledContent(.ui("From"), value: identity.displayName)
             }
 
-            RecipientField(
-                label: .ui("To"), text: $model.to, suggestions: model.suggestions
-            )
-            .focused($focus, equals: .to)
+            RecipientField(label: .ui("To"), text: $model.to, model: model)
+                .focused($focus, equals: .to)
 
             if showsMoreRecipients {
-                RecipientField(label: .ui("Cc"), text: $model.cc, suggestions: model.suggestions)
+                RecipientField(label: .ui("Cc"), text: $model.cc, model: model)
                     .focused($focus, equals: .cc)
-                RecipientField(label: .ui("Bcc"), text: $model.bcc, suggestions: model.suggestions)
+                RecipientField(label: .ui("Bcc"), text: $model.bcc, model: model)
                     .focused($focus, equals: .bcc)
             } else {
                 Button(.ui("Cc / Bcc")) { showsMoreRecipients = true }
@@ -377,7 +380,7 @@ public struct ComposeView: View {
 private struct RecipientField: View {
     let label: LocalizedStringResource
     @Binding var text: String
-    let suggestions: [EmailAddress]
+    let model: ComposeModel
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -390,6 +393,12 @@ private struct RecipientField: View {
                     .keyboardType(.emailAddress)
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+            }
+
+            // The address book is consulted for what is being typed now, not
+            // loaded up front — see `lookUpContacts`.
+            .onChange(of: current) { _, fragment in
+                model.lookUpContacts(for: fragment)
             }
 
             if matches.isEmpty == false {
@@ -409,19 +418,12 @@ private struct RecipientField: View {
 
     /// Matches the fragment being typed, not the whole field, so a second
     /// recipient still gets suggestions.
+    ///
+    /// The ranking itself lives in the model, where it can be tested; this is
+    /// only responsible for working out which part of the field is being
+    /// edited.
     private var matches: [EmailAddress] {
-        let fragment = current.trimmingCharacters(in: .whitespaces).lowercased()
-
-        guard fragment.count >= 2 else { return [] }
-
-        return
-            suggestions
-            .filter {
-                $0.email.lowercased().contains(fragment)
-                    || ($0.name?.lowercased().contains(fragment) ?? false)
-            }
-            .prefix(5)
-            .map { $0 }
+        model.suggestions(for: current)
     }
 
     private var current: String {

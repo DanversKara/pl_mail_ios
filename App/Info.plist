@@ -26,6 +26,8 @@
 	  The app additionally requires the user to type http:// explicitly; a
 	  bare hostname is always resolved as https.
 	-->
+	<key>NSContactsUsageDescription</key>
+	<string>Suggest people to write to as you type a recipient. Your contacts are read on the device and never leave it.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach photos and videos to messages you write.</string>
 	<key>NSCameraUsageDescription</key>
