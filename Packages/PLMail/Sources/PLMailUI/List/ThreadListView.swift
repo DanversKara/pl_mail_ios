@@ -40,6 +40,15 @@ public struct ThreadListView: View {
     @State private var isPickingBulkLabel = false
     /// The conversation whose exact snooze time is being picked.
     @State private var snoozing: ActionTarget?
+    @State private var editingDraft: DraftRef?
+
+    /// Which draft the composer is continuing.
+    struct DraftRef: Identifiable, Hashable {
+        let emailID: String
+        let accountKey: String
+
+        var id: String { "\(accountKey)#\(emailID)" }
+    }
     /// The conversation whose labels are being edited. A target rather than a
     /// Bool, so the sheet cannot outlive the row that opened it.
     @State private var labelling: ActionTarget?
@@ -81,6 +90,11 @@ public struct ThreadListView: View {
 
                     if isSelecting {
                         toggle(ref)
+                    } else if row.thread.isDraft, let emailID = row.thread.newestEmailID {
+                        // A draft is unfinished writing, not something to read.
+                        // The web UI opens the composer here too.
+                        editingDraft = DraftRef(
+                            emailID: emailID, accountKey: row.thread.accountKey)
                     } else {
                         selection = ref
                     }
@@ -182,6 +196,16 @@ public struct ThreadListView: View {
                         Label(.ui("Archive"), systemImage: "archivebox")
                     }
 
+                    Button {
+                        act { await actions.setSpam(isJunkFeed == false, target(for: row.thread)) }
+                    } label: {
+                        Label(
+                            isJunkFeed ? .ui("Not spam") : .ui("Report spam"),
+                            systemImage: isJunkFeed
+                                ? "tray.and.arrow.down" : "exclamationmark.shield"
+                        )
+                    }
+
                     Button(role: .destructive) {
                         act { await actions.trash(target(for: row.thread)) }
                     } label: {
@@ -204,6 +228,17 @@ public struct ThreadListView: View {
         .sheet(isPresented: $isPickingBulkLabel) {
             BulkLabelPickerView(targets: checkedTargets, sync: sync, actions: actions) {
                 checked = []
+            }
+        }
+        .sheet(item: $editingDraft) { draft in
+            if let account = sync.accounts.first(where: { $0.accountKey == draft.accountKey }) {
+                ComposeView(
+                    kind: .editDraft(emailID: draft.emailID),
+                    accountKey: draft.accountKey,
+                    accountID: account.accountID,
+                    client: sync.jmapClient,
+                    store: sync.store
+                )
             }
         }
         .sheet(item: $snoozing) { target in
@@ -245,6 +280,20 @@ public struct ThreadListView: View {
     }
 
     // MARK: - Selection
+
+    /// In the Spam list the verb reverses: everything here is already spam,
+    /// and the useful action is rescuing it.
+    private var isJunkFeed: Bool {
+        if case .unified(.junk) = feed { return true }
+
+        if case .mailbox(let accountKey, let mailboxID) = feed {
+            return sync.mailboxes.contains {
+                $0.accountKey == accountKey && $0.mailboxID == mailboxID && $0.role == .junk
+            }
+        }
+
+        return false
+    }
 
     private var isSelecting: Bool { checked.isEmpty == false }
 

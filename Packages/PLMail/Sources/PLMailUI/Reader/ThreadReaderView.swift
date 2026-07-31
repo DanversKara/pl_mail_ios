@@ -14,7 +14,12 @@ import SwiftUI
 public struct ThreadReaderView: View {
     @State private var loader: ThreadLoader
     @State private var expanded: Set<String> = []
-    @State private var sendersAllowedRemoteContent: Set<String> = []
+    /// Persisted rather than view state: this is a decision the user made,
+    /// and as `@State` it did not survive walking back to the list.
+    private let remoteContent = RemoteContentPolicy()
+    /// Bumped when a sender is trusted, purely to re-render the messages that
+    /// were showing a blocked notice.
+    @State private var remoteContentRevision = 0
     @State private var blockedRemoteContent: Set<String> = []
     @State private var previewedAttachment: URL?
     @State private var composing: ComposeModel.Kind?
@@ -88,6 +93,10 @@ public struct ThreadReaderView: View {
                         onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
                         onPreview: { previewedAttachment = $0 }
                     )
+                    // The policy lives outside SwiftUI's observation, so
+                    // trusting a sender has to invalidate the message that was
+                    // showing the blocked notice.
+                    .id("\(message.id)-\(remoteContentRevision)")
 
                     // Between messages only. A rule under the last one is a
                     // line across empty space, which reads as content that
@@ -305,6 +314,13 @@ public struct ThreadReaderView: View {
                 }
 
                 Button {
+                    Task { await actions.setSpam(true, target) }
+                    dismiss()
+                } label: {
+                    Label(.ui("Report spam"), systemImage: "exclamationmark.shield")
+                }
+
+                Button {
                     isPickingLabels = true
                 } label: {
                     Label(.ui("Labels"), systemImage: "tag")
@@ -389,7 +405,7 @@ public struct ThreadReaderView: View {
 
     private func isRemoteContentAllowed(_ message: MessageSnapshot) -> Bool {
         guard let sender = message.fromAddress else { return false }
-        return sendersAllowedRemoteContent.contains(sender)
+        return remoteContent.isAllowed(sender: sender)
     }
 
     /// Allowing remote content is per sender, not per message: someone who
@@ -397,7 +413,8 @@ public struct ThreadReaderView: View {
     /// and asking every time trains people to always tap yes.
     private func allowRemoteContent(from message: MessageSnapshot) {
         guard let sender = message.fromAddress else { return }
-        sendersAllowedRemoteContent.insert(sender)
+        remoteContent.allow(sender: sender)
+        remoteContentRevision += 1
     }
 
     @ViewBuilder

@@ -16,6 +16,11 @@ public final class ComposeModel {
         case new
         case reply(to: MessageSnapshot, all: Bool)
         case forward(MessageSnapshot)
+        /// Carrying on with a draft. The id rather than a snapshot: the list
+        /// row knows which message it is but has not loaded its body, and a
+        /// composer that opened with an empty body and filled in a moment
+        /// later would look like it had lost the text.
+        case editDraft(emailID: String)
     }
 
     public enum Status: Equatable, Sendable {
@@ -68,6 +73,8 @@ public final class ComposeModel {
     private let store: SyncStore
     private let logger = Logger(subsystem: "de.plmail", category: "compose")
     private var sendTask: Task<Void, Never>?
+    /// Guards against a second identity refresh appending the signature twice.
+    private var hasSignature = false
 
     /// Long enough to catch the "wait, wrong person" moment, short enough that
     /// nobody wonders whether it went.
@@ -113,8 +120,14 @@ public final class ComposeModel {
     // MARK: - Setup
 
     public func load() async {
+        // Before the identity work: a draft carries its own recipients and
+        // body, and overwriting them with a prefill would be worse than a
+        // slow open.
+        await loadDraftIfNeeded()
+
         identities = (try? await store.identities(accountKey: accountKey)) ?? []
         selectedIdentity = selectedIdentity ?? identities.first
+        applySignature(of: selectedIdentity)
         suggestions = (try? await store.knownAddresses(accountKey: accountKey)) ?? []
 
         // Fetching is cheap and the list is small, but a stale identity list
@@ -134,9 +147,103 @@ public final class ComposeModel {
             identities = (try? await store.identities(accountKey: accountKey)) ?? identities
             selectedIdentity =
                 identities.first { $0.id == selectedIdentity?.id } ?? identities.first
+            applySignature(of: selectedIdentity)
         } catch {
             logger.error("Could not refresh identities: \(error, privacy: .public)")
         }
+    }
+
+    /// The draft being continued, once its body is in the store.
+    private var editingEmailID: String? {
+        guard case .editDraft(let emailID) = kind else { return nil }
+
+        return emailID
+    }
+
+    /// Reads an existing draft back into the composer.
+    ///
+    /// Goes through the reader's own loader path, so the body is fetched if it
+    /// is not cached — a draft written on another device has a row here long
+    /// before it has a body.
+    private func loadDraftIfNeeded() async {
+        guard let editingEmailID else { return }
+
+        if let cached = try? await store.message(emailID: editingEmailID, accountKey: accountKey),
+            cached.hasBody
+        {
+            apply(cached)
+
+            return
+        }
+
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let get = builder.add(
+                EmailGet(
+                    accountID: accountID,
+                    ids: .value([EmailID(editingEmailID)]),
+                    properties: EmailGet.readerProperties,
+                    fetchTextBodyValues: true,
+                    fetchHTMLBodyValues: true
+                )
+            )
+
+            let results = try await client.send(builder)
+
+            try await store.storeReaderContent(
+                try results.result(of: get).list, accountKey: accountKey)
+
+            if let loaded = try? await store.message(
+                emailID: editingEmailID, accountKey: accountKey)
+            {
+                apply(loaded)
+            }
+        } catch {
+            status = .failed("Couldn't open this draft.")
+            logger.error("Draft load failed: \(error, privacy: .public)")
+        }
+    }
+
+    /// Adds the identity's signature, once.
+    ///
+    /// Above the quoted original on a reply, which is where every mail client
+    /// puts it and where it is actually read; at the end of a new message.
+    /// Never on a draft being continued — that text already contains whatever
+    /// signature it was written with, and appending again would stack them.
+    private func applySignature(of identity: IdentitySnapshot?) {
+        guard hasSignature == false,
+            editingEmailID == nil,
+            let signature = identity?.textSignature,
+            signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+        else { return }
+
+        let block = "\n\n-- \n" + signature
+
+        switch kind {
+        case .new:
+            body += block
+
+        case .reply, .forward:
+            // `prefill` left the quoted original after two blank lines; the
+            // signature goes into that gap rather than after the quote.
+            if let quoteStart = body.range(of: "\n\n") {
+                body.insert(contentsOf: block, at: quoteStart.lowerBound)
+            } else {
+                body += block
+            }
+
+        case .editDraft:
+            break
+        }
+
+        hasSignature = true
+    }
+
+    private func apply(_ draft: MessageSnapshot) {
+        to = draft.to.map(\.email).joined(separator: ", ")
+        cc = draft.cc.map(\.email).joined(separator: ", ")
+        subject = draft.subject ?? ""
+        body = draft.textBody ?? draft.preview
     }
 
     /// Fills in what a reply or forward already knows.
@@ -165,6 +272,10 @@ public final class ComposeModel {
         case .forward(let message):
             subject = Self.forwardSubject(message.subject)
             body = "\n\n" + Self.quote(message)
+
+        case .editDraft:
+            // Nothing to guess: `load()` reads the real thing.
+            break
         }
     }
 
@@ -264,6 +375,49 @@ public final class ComposeModel {
 
         do {
             var builder = RequestBuilder(session: try await client.session())
+
+            // Continuing a draft rewrites the message that already exists.
+            // Creating a second one would leave the original sitting in Drafts
+            // forever, which is the classic way a mail client accumulates
+            // near-duplicate ghosts of everything ever sent.
+            if let editingEmailID {
+                let update = builder.add(
+                    EmailUpdateDraft(
+                        accountID: accountID,
+                        emailID: EmailID(editingEmailID),
+                        draft: draft
+                    )
+                )
+                let submit = builder.add(
+                    EmailSubmissionSet(
+                        accountID: accountID,
+                        emailID: editingEmailID,
+                        identityID: identity.id
+                    )
+                )
+
+                let results = try await client.send(builder)
+
+                if let error = results.failure(of: update) { throw error }
+
+                if let refused = try results.result(of: update).notUpdated, refused.isEmpty == false
+                {
+                    status = .failed("The server wouldn't accept this message.")
+                    return
+                }
+
+                if let error = results.failure(of: submit) { throw error }
+
+                if let refused = try results.result(of: submit).notCreated,
+                    refused.isEmpty == false
+                {
+                    status = .failed(Self.describe(refused))
+                    return
+                }
+
+                status = .sent
+                return
+            }
 
             let create = builder.add(EmailCreate(accountID: accountID, draft: draft))
             // The creation id from the call above: one round trip writes the
@@ -373,6 +527,7 @@ extension ComposeModel.Kind: Identifiable {
         case .new: "new"
         case .reply(let message, let all): "reply-\(all)-\(message.id)"
         case .forward(let message): "forward-\(message.id)"
+        case .editDraft(let emailID): "draft-\(emailID)"
         }
     }
 }

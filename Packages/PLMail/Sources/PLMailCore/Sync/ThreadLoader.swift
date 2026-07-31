@@ -65,6 +65,10 @@ public final class ThreadLoader {
     }
 
     private func readCache() async {
+        // Now that the whole thread is here, the row's guess at who is in it
+        // can be replaced with the answer.
+        try? await store.refreshParticipants(threadID: threadID, accountKey: accountKey)
+
         messages = (try? await store.messages(threadID: threadID, accountKey: accountKey)) ?? []
         snoozedUntil = try? await store.snoozedUntil(
             threadID: threadID, accountKey: accountKey)

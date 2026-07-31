@@ -155,6 +155,13 @@ public final class StoredThread {
     public var isUnread: Bool = false
     public var isFlagged: Bool = false
     public var hasAttachment: Bool = false
+    /// Whether the newest message is an unsent draft. Drives where a tap goes:
+    /// a draft opens the composer, not the reader, which is also what the web
+    /// UI does.
+    public var isDraft: Bool = false
+    /// The newest message's id, so a draft row can open exactly that message
+    /// without the list having to reason about thread ordering.
+    public var newestEmailID: String?
     /// When a snoozed conversation is due back, from plMail's Thread
     /// extension. The server nils an elapsed snooze, so a value here is always
     /// still pending — nothing has to re-check the clock to know that.
@@ -338,6 +345,10 @@ public final class StoredIdentity {
     public var identityID: String = ""
     public var name: String?
     public var email: String = ""
+    /// The plain-text signature, as the server holds it. Stored because the
+    /// composer needs it the moment it opens, and fetching identities is a
+    /// round trip a composer should not wait on.
+    public var textSignature: String?
 
     public init(uid: String, accountKey: String, identityID: String, email: String) {
         self.uid = uid

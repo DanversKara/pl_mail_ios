@@ -91,6 +91,7 @@ public struct IdentitySnapshot: Hashable, Sendable, Identifiable {
     public var id: IdentityID
     public var name: String?
     public var email: String
+    public var textSignature: String?
 
     public var address: EmailAddress { EmailAddress(name: name, email: email) }
 

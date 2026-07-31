@@ -249,6 +249,34 @@ public final class MailActions {
         return "until " + until.formatted(.dateTime.weekday(.abbreviated).hour().minute())
     }
 
+    /// Reports a conversation as spam, or rescues it.
+    ///
+    /// Both directions are undoable, which matters more here than elsewhere:
+    /// a mis-tap on Spam trains the provider's filter against someone the user
+    /// actually wanted to hear from.
+    public func setSpam(_ isSpam: Bool, _ target: ActionTarget) async {
+        guard let inbox = try? await store.mailbox(role: .inbox, accountKey: target.accountKey),
+            let junk = try? await store.mailbox(role: .junk, accountKey: target.accountKey)
+        else {
+            failure = "This account has no Spam mailbox."
+            return
+        }
+
+        await apply(
+            target,
+            localChange: {
+                try await $0.removeFromFeeds(target.threadID, accountKey: target.accountKey)
+            },
+            request: EmailSet.setSpam(
+                isSpam, ids: target.emailIDs, inbox: inbox, junk: junk,
+                accountID: target.accountID),
+            undoMessage: isSpam ? "Reported as spam" : "Moved to Inbox",
+            undoRequest: EmailSet.setSpam(
+                isSpam == false, ids: target.emailIDs, inbox: inbox, junk: junk,
+                accountID: target.accountID)
+        )
+    }
+
     // MARK: - Bulk
 
     /// What a selection can be acted on with.

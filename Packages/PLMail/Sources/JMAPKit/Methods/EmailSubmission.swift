@@ -199,3 +199,63 @@ public struct EmailSubmissionSet: JMAPMethod {
         )
     }
 }
+
+/// Rewriting a draft that already exists.
+///
+/// The same fields `EmailCreate.Draft` carries, sent as an update rather than a
+/// create so a draft edited on three devices stays one draft. plMail accepts
+/// content patches only on a message flagged as a draft — a received message's
+/// body is a record of what arrived, and a mailbox whose contents could be
+/// rewritten afterwards would not be one.
+///
+/// `mailboxIds` and `keywords` are deliberately not resent: the draft is
+/// already in Drafts and already flagged, and naming them again would be two
+/// more things that could disagree with the server.
+public struct EmailUpdateDraft: JMAPMethod {
+    public static let name = "Email/set"
+    public static let capability = Capability.mail
+
+    public struct Arguments: Encodable, Sendable {
+        public var accountID: AccountID
+        public var update: [EmailID: Patch]
+
+        private enum CodingKeys: String, CodingKey {
+            case accountID = "accountId"
+            case update
+        }
+    }
+
+    public struct Patch: Encodable, Sendable {
+        public var from: [EmailAddress]?
+        public var to: [EmailAddress]?
+        public var cc: [EmailAddress]?
+        public var bcc: [EmailAddress]?
+        public var subject: String?
+        public var inReplyTo: [String]?
+        public var references: [String]?
+        public var textBody: [BodyPart]?
+        public var bodyValues: [String: BodyValue]?
+        public var attachments: [EmailCreate.Draft.Attachment]?
+
+        init(_ draft: EmailCreate.Draft) {
+            from = draft.from
+            to = draft.to
+            cc = draft.cc
+            bcc = draft.bcc
+            subject = draft.subject
+            inReplyTo = draft.inReplyTo
+            references = draft.references
+            textBody = draft.textBody
+            bodyValues = draft.bodyValues
+            attachments = draft.attachments
+        }
+    }
+
+    public typealias Result = EmailSet.Result
+
+    public var arguments: Arguments
+
+    public init(accountID: AccountID, emailID: EmailID, draft: EmailCreate.Draft) {
+        arguments = Arguments(accountID: accountID, update: [emailID: Patch(draft)])
+    }
+}

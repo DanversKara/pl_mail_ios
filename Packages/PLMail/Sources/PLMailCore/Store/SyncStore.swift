@@ -305,6 +305,8 @@ public actor SyncStore {
         // which is right for the single-message threads that dominate a list.
         thread.participantsSummary = email.fromName ?? email.fromAddress ?? ""
         thread.participantsAddress = email.fromAddress
+        thread.isDraft = email.isDraft
+        thread.newestEmailID = email.emailID
     }
 
     /// Writes the parts of an Email that only the reader needs.
@@ -402,6 +404,55 @@ public actor SyncStore {
     }
 
     /// Every message in a thread, oldest first, as values.
+    /// Recomputes a thread's participant summary from every message of it the
+    /// store actually holds.
+    ///
+    /// The list sync only ever sees the newest message per thread — that is
+    /// what `collapseThreads` returns — so the row is initially summarised by
+    /// its newest sender, which makes every conversation you have answered look
+    /// like it came from you. The web UI shows participants oldest-first, and
+    /// the reader is the first moment this client has the whole thread.
+    ///
+    /// So it corrects on read rather than guessing on write: open a
+    /// conversation once and its row is right from then on. That is a
+    /// deliberate trade against fetching every sender up front, which would
+    /// cost an `Email/get` per thread on a list nobody may scroll.
+    public func refreshParticipants(threadID: String, accountKey: String) throws {
+        let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+        guard let thread = try existing(StoredThread.self, uid: uid) else { return }
+
+        var names: [String] = []
+        var seen: Set<String> = []
+
+        for emailID in thread.emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid),
+                let address = email.fromAddress
+            else { continue }
+
+            // Keyed on the address so one person who has changed how their
+            // client spells their name is still one participant.
+            guard seen.insert(address.lowercased()).inserted else { continue }
+
+            names.append(email.fromName ?? address)
+        }
+
+        guard names.isEmpty == false else { return }
+
+        thread.participantsSummary = names.joined(separator: ", ")
+
+        try modelContext.save()
+    }
+
+    /// One message, for the composer continuing a draft.
+    public func message(emailID: String, accountKey: String) throws -> MessageSnapshot? {
+        let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+        return try existing(StoredEmail.self, uid: uid).map(snapshot(of:))
+    }
+
     public func messages(threadID: String, accountKey: String) throws -> [MessageSnapshot] {
         let uid = StoreKey.object(accountKey: accountKey, id: threadID)
 
@@ -478,6 +529,7 @@ public actor SyncStore {
                 email: email
             )
             stored.name = identity.name
+            stored.textSignature = identity.textSignature
             modelContext.insert(stored)
         }
 
@@ -491,7 +543,8 @@ public actor SyncStore {
         )
         .map {
             IdentitySnapshot(
-                id: IdentityID(rawValue: $0.identityID), name: $0.name, email: $0.email)
+                id: IdentityID(rawValue: $0.identityID), name: $0.name, email: $0.email,
+                textSignature: $0.textSignature)
         }
     }
 

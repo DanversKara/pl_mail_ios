@@ -167,6 +167,30 @@ extension EmailSet {
         patch([Patch.mailbox(mailbox): isApplied ? .set : .remove], ids: ids, accountID: accountID)
     }
 
+    /// Reports as spam, or takes it back out.
+    ///
+    /// Inbox off and Junk on, in one patch, for the same reason archiving
+    /// needs both: a message must belong to at least one mailbox. Reversing it
+    /// puts the message back in the Inbox rather than merely dropping Junk,
+    /// because a message that is not spam and not anywhere else is a message
+    /// nobody will ever see again.
+    ///
+    /// The provider does the learning. plMail propagates the label change
+    /// outward, and Gmail or the IMAP server draws its own conclusions — which
+    /// is the point of reporting rather than just filing.
+    public static func setSpam(
+        _ isSpam: Bool, ids: [EmailID], inbox: MailboxID, junk: MailboxID, accountID: AccountID
+    ) -> EmailSet {
+        patch(
+            [
+                Patch.mailbox(junk): isSpam ? .set : .remove,
+                Patch.mailbox(inbox): isSpam ? .remove : .set,
+            ],
+            ids: ids,
+            accountID: accountID
+        )
+    }
+
     /// Moves to Trash. Recoverable: nothing in this product hard-deletes.
     public static func trash(ids: [EmailID], accountID: AccountID) -> EmailSet {
         EmailSet(accountID: accountID, destroy: ids)

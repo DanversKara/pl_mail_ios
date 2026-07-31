@@ -86,3 +86,5 @@
 "%@ · %@" = "%@ · %@";
 "%@ total" = "%@ gesamt";
 "%@. Double tap Undo to reverse." = "%@. Doppeltippen auf „Widerrufen“ macht es rückgängig.";
+"Report spam" = "Als Spam melden";
+"Not spam" = "Kein Spam";

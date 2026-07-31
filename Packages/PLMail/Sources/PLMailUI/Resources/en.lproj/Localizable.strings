@@ -81,3 +81,5 @@
 "%@ · %@" = "%@ · %@";
 "%@ total" = "%@ total";
 "%@. Double tap Undo to reverse." = "%@. Double tap Undo to reverse.";
+"Report spam" = "Report spam";
+"Not spam" = "Not spam";
