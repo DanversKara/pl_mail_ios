@@ -33,7 +33,7 @@ struct UndoToast: View {
 
                 Spacer(minLength: 8)
 
-                Button("OK") { actions.dismissFailure() }
+                Button(.ui("OK")) { actions.dismissFailure() }
                     .font(.subheadline.weight(.semibold))
             }
             .padding(.horizontal, 16)
@@ -50,7 +50,7 @@ struct UndoToast: View {
 
                 Spacer(minLength: 8)
 
-                Button("Undo") {
+                Button(.ui("Undo")) {
                     Task { await actions.undo() }
                 }
                 .font(.subheadline.weight(.semibold))
@@ -63,7 +63,7 @@ struct UndoToast: View {
             .padding(.bottom, 8)
             .transition(.move(edge: .bottom).combined(with: .opacity))
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(pending.message). Double tap Undo to reverse.")
+            .accessibilityLabel(Text(.ui("\(pending.message). Double tap Undo to reverse.")))
         }
     }
 }

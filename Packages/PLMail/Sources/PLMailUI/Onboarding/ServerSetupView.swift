@@ -38,14 +38,14 @@ public struct ServerSetupView: View {
             // cap is above any iPhone's width, so nothing changes there.
             .frame(maxWidth: 560)
             .frame(maxWidth: .infinity)
-            .navigationTitle("Connect to plMail")
+            .navigationTitle(.ui("Connect to plMail"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     if model.isBusy {
                         ProgressView()
                     } else {
-                        Button("Connect") {
+                        Button(.ui("Connect")) {
                             Task { await model.connect() }
                         }
                         .disabled(model.canConnect == false)
@@ -70,11 +70,12 @@ public struct ServerSetupView: View {
                 .submitLabel(.next)
                 .onSubmit { focus = .secret }
         } header: {
-            Text("Server")
+            Text(.ui("Server"))
         } footer: {
             Text(
-                "The address you use to open plMail in a browser. https is assumed unless you type otherwise."
-            )
+                .ui(
+                    "The address you use to open plMail in a browser. https is assumed unless you type otherwise."
+                ))
         }
     }
 
@@ -94,14 +95,14 @@ public struct ServerSetupView: View {
 
             if model.secretLooksWrong {
                 Label(
-                    "An app password starts with plmail_ and is 64 characters after that.",
+                    .ui("An app password starts with plmail_ and is 64 characters after that."),
                     systemImage: "exclamationmark.triangle"
                 )
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             }
 
-            DisclosureGroup("Where do I get one?") {
+            DisclosureGroup(.ui("Where do I get one?")) {
                 VStack(alignment: .leading, spacing: 12) {
                     Text(
                         """
@@ -115,13 +116,13 @@ public struct ServerSetupView: View {
                     // App passwords are created in the web UI and there is no
                     // JMAP method for it. Rather than pretend otherwise, hand
                     // the user straight there.
-                    Button("Open plMail in a browser") { isShowingWebUI = true }
+                    Button(.ui("Open plMail in a browser")) { isShowingWebUI = true }
                         .disabled(model.addressText.isEmpty)
                 }
                 .padding(.vertical, 4)
             }
         } header: {
-            Text("App password")
+            Text(.ui("App password"))
         }
     }
 
@@ -133,20 +134,20 @@ public struct ServerSetupView: View {
 
         case .confirming(let username, let accounts):
             Section {
-                LabeledContent("Signed in as", value: username)
+                LabeledContent(.ui("Signed in as"), value: username)
 
                 ForEach(accounts, id: \.self) { account in
                     Label(account, systemImage: "tray")
                 }
 
-                Button("Use this server") { model.save() }
+                Button(.ui("Use this server")) { model.save() }
                     .fontWeight(.semibold)
             } header: {
-                Text("Connected")
+                Text(.ui("Connected"))
             } footer: {
                 // Shown before anything is written: someone with two NASes
                 // should be able to tell which one they just reached.
-                Text("Check this is the right mailbox before continuing.")
+                Text(.ui("Check this is the right mailbox before continuing."))
             }
 
         case .untrusted(let host, let fingerprint):
@@ -160,23 +161,26 @@ public struct ServerSetupView: View {
                 )
                 .font(.footnote)
 
-                LabeledContent("Key fingerprint") {
+                LabeledContent(.ui("Key fingerprint")) {
                     Text(fingerprint.description)
                         .font(.caption.monospaced())
                         .multilineTextAlignment(.trailing)
                 }
 
-                Button("Trust this certificate") {
+                Button(.ui("Trust this certificate")) {
                     Task { await model.trustAndRetry() }
                 }
 
-                Button("Cancel", role: .cancel) { model.editAgain() }
+                Button(.ui("Cancel"), role: .cancel) { model.editAgain() }
             } header: {
-                Label("Unrecognised certificate", systemImage: "lock.trianglebadge.exclamationmark")
+                Label(
+                    .ui("Unrecognised certificate"),
+                    systemImage: "lock.trianglebadge.exclamationmark")
             } footer: {
                 Text(
-                    "Compare it against the server before trusting it. This app will refuse to connect if it ever changes."
-                )
+                    .ui(
+                        "Compare it against the server before trusting it. This app will refuse to connect if it ever changes."
+                    ))
             }
 
         case .failed(let message):
@@ -184,9 +188,9 @@ public struct ServerSetupView: View {
                 Text(message)
                     .font(.footnote)
 
-                Button("Try again") { model.editAgain() }
+                Button(.ui("Try again")) { model.editAgain() }
             } header: {
-                Label("Couldn't connect", systemImage: "exclamationmark.triangle")
+                Label(.ui("Couldn't connect"), systemImage: "exclamationmark.triangle")
             }
         }
     }
@@ -198,9 +202,9 @@ public struct ServerSetupView: View {
                 .ignoresSafeArea()
         } else {
             ContentUnavailableView(
-                "Enter an address first",
+                .ui("Enter an address first"),
                 systemImage: "network",
-                description: Text("Type your server's address above, then try again.")
+                description: Text(.ui("Type your server's address above, then try again."))
             )
         }
     }

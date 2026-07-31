@@ -35,9 +35,9 @@ struct LabelPickerView: View {
             List {
                 if labels.isEmpty {
                     ContentUnavailableView {
-                        Label("No labels yet", systemImage: "tag")
+                        Label(.ui("No labels yet"), systemImage: "tag")
                     } description: {
-                        Text("Labels you create in plMail's web UI appear here.")
+                        Text(.ui("Labels you create in plMail's web UI appear here."))
                     }
                 } else {
                     ForEach(labels, id: \.mailboxID) { label in
@@ -45,12 +45,12 @@ struct LabelPickerView: View {
                     }
                 }
             }
-            .navigationTitle("Labels")
+            .navigationTitle(.ui("Labels"))
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Filter labels")
+            .searchable(text: $query, prompt: Text(.ui("Filter labels")))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(.ui("Done")) { dismiss() }
                 }
             }
             .task {

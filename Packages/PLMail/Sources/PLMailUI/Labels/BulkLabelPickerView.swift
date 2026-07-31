@@ -32,9 +32,9 @@ struct BulkLabelPickerView: View {
             List {
                 if labels.isEmpty {
                     ContentUnavailableView {
-                        Label("No labels yet", systemImage: "tag")
+                        Label(.ui("No labels yet"), systemImage: "tag")
                     } description: {
-                        Text("Labels you create in plMail's web UI appear here.")
+                        Text(.ui("Labels you create in plMail's web UI appear here."))
                     }
                 } else {
                     ForEach(labels) { label in
@@ -42,13 +42,13 @@ struct BulkLabelPickerView: View {
                             Button {
                                 apply(true, label)
                             } label: {
-                                Label("Apply", systemImage: "plus.circle")
+                                Label(.ui("Apply"), systemImage: "plus.circle")
                             }
 
                             Button(role: .destructive) {
                                 apply(false, label)
                             } label: {
-                                Label("Remove", systemImage: "minus.circle")
+                                Label(.ui("Remove"), systemImage: "minus.circle")
                             }
                         } header: {
                             HStack(spacing: 8) {
@@ -60,12 +60,12 @@ struct BulkLabelPickerView: View {
                     }
                 }
             }
-            .navigationTitle("Label \(targets.count) selected")
+            .navigationTitle(.ui("Label \(targets.count) selected"))
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: "Filter labels")
+            .searchable(text: $query, prompt: Text(.ui("Filter labels")))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(.ui("Cancel")) { dismiss() }
                 }
             }
         }

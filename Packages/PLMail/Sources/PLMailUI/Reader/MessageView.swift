@@ -65,7 +65,7 @@ struct MessageView: View {
                             .lineLimit(1)
 
                         if message.isDraft {
-                            Text("Draft")
+                            Text(.ui("Draft"))
                                 .font(.caption2)
                                 .foregroundStyle(.red)
                         }
@@ -102,7 +102,8 @@ struct MessageView: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .accessibilityHint(isExpanded ? "Collapses this message" : "Expands this message")
+        .accessibilityHint(
+            Text(isExpanded ? .ui("Collapses this message") : .ui("Expands this message")))
     }
 
     private var recipients: String {
@@ -150,7 +151,7 @@ struct MessageView: View {
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 24)
         } else {
-            Text("This message has no content.")
+            Text(.ui("This message has no content."))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 16)
@@ -199,13 +200,13 @@ struct MessageView: View {
             Image(systemName: "eye.slash")
                 .foregroundStyle(.secondary)
 
-            Text("Remote images blocked")
+            Text(.ui("Remote images blocked"))
                 .font(.footnote)
                 .foregroundStyle(.secondary)
 
             Spacer(minLength: 4)
 
-            Button("Load", action: onAllowRemoteContent)
+            Button(.ui("Load"), action: onAllowRemoteContent)
                 .font(.footnote.weight(.medium))
         }
         .padding(.horizontal, 16)

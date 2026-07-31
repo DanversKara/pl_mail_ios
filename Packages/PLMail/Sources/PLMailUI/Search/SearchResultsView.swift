@@ -24,7 +24,7 @@ struct SearchResultsView: View {
         Group {
             if parsed.isEmpty {
                 ContentUnavailableView {
-                    Label("Search your mail", systemImage: "magnifyingglass")
+                    Label(.ui("Search your mail"), systemImage: "magnifyingglass")
                 } description: {
                     Text(Self.help)
                 }

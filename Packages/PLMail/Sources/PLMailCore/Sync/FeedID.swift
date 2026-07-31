@@ -60,18 +60,28 @@ public enum FeedID: Hashable, Sendable {
 }
 
 extension MailboxRole {
+    /// Localised, and against **this module's** bundle.
+    ///
+    /// These are the most-read words in the app — they name every row in the
+    /// sidebar and title every list — and they live in PLMailCore rather than
+    /// in the view layer, so the UI module's catalogue never sees them. A
+    /// `String(localized:)` without the bundle would look up in the app, miss,
+    /// and silently return the English literal.
+    ///
+    /// `other` is a label the user named themselves; translating it would be
+    /// translating their data.
     public var displayName: String {
         switch self {
-        case .inbox: "Inbox"
-        case .sent: "Sent"
-        case .drafts: "Drafts"
-        case .junk: "Spam"
-        case .trash: "Trash"
-        case .archive: "Archive"
-        case .snoozed: "Snoozed"
-        case .flagged: "Starred"
-        case .important: "Important"
-        case .all: "All mail"
+        case .inbox: String(localized: "Inbox", bundle: .module)
+        case .sent: String(localized: "Sent", bundle: .module)
+        case .drafts: String(localized: "Drafts", bundle: .module)
+        case .junk: String(localized: "Spam", bundle: .module)
+        case .trash: String(localized: "Trash", bundle: .module)
+        case .archive: String(localized: "Archive", bundle: .module)
+        case .snoozed: String(localized: "Snoozed", bundle: .module)
+        case .flagged: String(localized: "Starred", bundle: .module)
+        case .important: String(localized: "Important", bundle: .module)
+        case .all: String(localized: "All mail", bundle: .module)
         case .other(let name): name.capitalized
         }
     }

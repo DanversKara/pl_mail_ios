@@ -24,7 +24,7 @@ struct SnoozeMenu: View {
                     // The time as well as the name: "Tomorrow" is only useful
                     // if you know when tomorrow starts, and that is a choice
                     // this app made rather than one the user set.
-                    Text("\(entry.preset.title) · \(Self.shortTime(entry.date))")
+                    Text(.ui("\(entry.preset.title) · \(Self.shortTime(entry.date))"))
                 } icon: {
                     Image(systemName: entry.preset.symbolName)
                 }
@@ -34,14 +34,14 @@ struct SnoozeMenu: View {
         Divider()
 
         Button(action: onPickExact) {
-            Label("Pick a date and time…", systemImage: "calendar.badge.clock")
+            Label(.ui("Pick a date and time…"), systemImage: "calendar.badge.clock")
         }
 
         if isSnoozed {
             Button {
                 onPick(nil)
             } label: {
-                Label("Wake now", systemImage: "bell")
+                Label(.ui("Wake now"), systemImage: "bell")
             }
         }
     }

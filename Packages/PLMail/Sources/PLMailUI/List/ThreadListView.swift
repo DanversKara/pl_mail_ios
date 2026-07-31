@@ -115,7 +115,7 @@ public struct ThreadListView: View {
                     Button {
                         act { await actions.archive(target(for: row.thread)) }
                     } label: {
-                        Label("Archive", systemImage: "archivebox")
+                        Label(.ui("Archive"), systemImage: "archivebox")
                     }
                     .tint(.green)
                 }
@@ -123,7 +123,7 @@ public struct ThreadListView: View {
                     Button(role: .destructive) {
                         act { await actions.trash(target(for: row.thread)) }
                     } label: {
-                        Label("Trash", systemImage: "trash")
+                        Label(.ui("Trash"), systemImage: "trash")
                     }
 
                     Button {
@@ -161,7 +161,7 @@ public struct ThreadListView: View {
                     Button {
                         labelling = target(for: row.thread)
                     } label: {
-                        Label("Labels", systemImage: "tag")
+                        Label(.ui("Labels"), systemImage: "tag")
                     }
 
                     Menu {
@@ -173,19 +173,19 @@ public struct ThreadListView: View {
                             onPickExact: { snoozing = target(for: row.thread) }
                         )
                     } label: {
-                        Label("Snooze", systemImage: "clock")
+                        Label(.ui("Snooze"), systemImage: "clock")
                     }
 
                     Button {
                         act { await actions.archive(target(for: row.thread)) }
                     } label: {
-                        Label("Archive", systemImage: "archivebox")
+                        Label(.ui("Archive"), systemImage: "archivebox")
                     }
 
                     Button(role: .destructive) {
                         act { await actions.trash(target(for: row.thread)) }
                     } label: {
-                        Label("Move to Trash", systemImage: "trash")
+                        Label(.ui("Move to Trash"), systemImage: "trash")
                     }
                 }
             }
@@ -227,7 +227,7 @@ public struct ThreadListView: View {
         .toolbar {
             if isSelecting {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Cancel") { checked = [] }
+                    Button(.ui("Cancel")) { checked = [] }
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
@@ -455,7 +455,7 @@ public struct ThreadListView: View {
             // "try again" for it would send someone to check their wifi.
             case .unauthenticated:
                 ContentUnavailableView {
-                    Label("Sign in again", systemImage: "key.slash")
+                    Label(.ui("Sign in again"), systemImage: "key.slash")
                 } description: {
                     Text(
                         """
@@ -464,24 +464,25 @@ public struct ThreadListView: View {
                         """
                     )
                 } actions: {
-                    Button("Sign out", role: .destructive) { sync.requestReauthentication() }
+                    Button(.ui("Sign out"), role: .destructive) { sync.requestReauthentication() }
                 }
 
             case .failed(let message):
                 ContentUnavailableView {
-                    Label("Can't reach your server", systemImage: "wifi.slash")
+                    Label(.ui("Can't reach your server"), systemImage: "wifi.slash")
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try again") { Task { await sync.refresh(feed: feed) } }
+                    Button(.ui("Try again")) { Task { await sync.refresh(feed: feed) } }
                 }
             case .idle:
                 ContentUnavailableView(
-                    "No mail here",
+                    .ui("No mail here"),
                     systemImage: "tray",
                     description: Text(
-                        "This list covers mail plMail has synced. Older mail arrives as the sync window widens."
-                    )
+                        .ui(
+                            "This list covers mail plMail has synced. Older mail arrives as the sync window widens."
+                        ))
                 )
             }
         }
@@ -504,7 +505,7 @@ public struct ThreadListView: View {
                 }
             }
         } header: {
-            Text("Some accounts didn't sync")
+            Text(.ui("Some accounts didn't sync"))
         }
     }
 

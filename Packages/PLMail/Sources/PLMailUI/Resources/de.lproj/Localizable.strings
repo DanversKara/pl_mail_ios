@@ -1,0 +1,88 @@
+/* German. Two conventions worth stating because they are easy to get wrong
+   and invisible once wrong:
+
+   - Duzen throughout, and mostly avoided: German UI reads better as a noun
+     phrase than as an instruction ("Postfach wählen", not "Wähle ein
+     Postfach"). Apple's own German follows the same rule.
+   - "E-Mail" keeps its hyphen and stays feminine. "Mail" alone is common in
+     speech but looks like an English leftover in an interface. */
+
+"Accounts" = "Konten";
+"Address" = "Adresse";
+"App password" = "App-Passwort";
+"Apply" = "Hinzufügen";
+"Archive" = "Archivieren";
+"Attach" = "Anhängen";
+"Attachments" = "Anhänge";
+"Can't reach your server" = "Server nicht erreichbar";
+"Cancel" = "Abbrechen";
+"Cc / Bcc" = "Cc / Bcc";
+"Certificate pinned" = "Zertifikat gespeichert";
+"Check this is the right mailbox before continuing." = "Prüfe vor dem Fortfahren, ob das das richtige Postfach ist.";
+"Choose a list from the sidebar." = "Wähle eine Liste in der Seitenleiste.";
+"Collapses this message" = "Klappt diese Nachricht zu";
+"Compare it against the server before trusting it. This app will refuse to connect if it ever changes." = "Vergleiche ihn mit dem Server, bevor du ihm vertraust. Diese App verweigert die Verbindung, falls er sich jemals ändert.";
+"Connect" = "Verbinden";
+"Connect to plMail" = "Mit plMail verbinden";
+"Connected" = "Verbunden";
+"Couldn't attach that" = "Anhang nicht möglich";
+"Couldn't connect" = "Verbindung fehlgeschlagen";
+"Done" = "Fertig";
+"Draft" = "Entwurf";
+"Enter an address first" = "Zuerst eine Adresse eingeben";
+"Expands this message" = "Klappt diese Nachricht auf";
+"Filter labels" = "Labels filtern";
+"Forward" = "Weiterleiten";
+"From" = "Von";
+"Key fingerprint" = "Schlüssel-Fingerabdruck";
+"Label %lld selected" = "%lld Ausgewählte beschriften";
+"Labels" = "Labels";
+"Labels you create in plMail's web UI appear here." = "Labels, die du in der plMail-Weboberfläche anlegst, erscheinen hier.";
+"Load" = "Laden";
+"Mail accounts" = "E-Mail-Konten";
+"Mark as unread" = "Als ungelesen markieren";
+"More" = "Mehr";
+"Move to Trash" = "In den Papierkorb";
+"New message" = "Neue Nachricht";
+"No conversation selected" = "Keine Konversation ausgewählt";
+"No labels yet" = "Noch keine Labels";
+"No mail here" = "Keine E-Mails";
+"OK" = "OK";
+"Open plMail in a browser" = "plMail im Browser öffnen";
+"Pick a date and time…" = "Datum und Uhrzeit wählen…";
+"Pick a mailbox" = "Postfach wählen";
+"Pick a message to read it here." = "Wähle eine Nachricht, um sie hier zu lesen.";
+"Remote images blocked" = "Externe Bilder blockiert";
+"Remove" = "Entfernen";
+"Removes the app password from this device and deletes cached mail." = "Entfernt das App-Passwort von diesem Gerät und löscht die zwischengespeicherten E-Mails.";
+"Reply" = "Antworten";
+"Reply all" = "Allen antworten";
+"Search mail" = "E-Mails durchsuchen";
+"Search your mail" = "Durchsuche deine E-Mails";
+"Send" = "Senden";
+"Sending in %lld…" = "Senden in %lld…";
+"Server" = "Server";
+"Sign in again" = "Erneut anmelden";
+"Sign out" = "Abmelden";
+"Signed in as" = "Angemeldet als";
+"Snooze" = "Zurückstellen";
+"Snooze until" = "Zurückstellen bis";
+"Some accounts didn't sync" = "Einige Konten wurden nicht synchronisiert";
+"The address you use to open plMail in a browser. https is assumed unless you type otherwise." = "Die Adresse, unter der du plMail im Browser öffnest. Ohne Angabe wird https angenommen.";
+"This list covers mail plMail has synced. Older mail arrives as the sync window widens." = "Diese Liste zeigt E-Mails, die plMail synchronisiert hat. Ältere kommen dazu, sobald sich der Synchronisierungszeitraum erweitert.";
+"This mailbox is no longer connected" = "Dieses Postfach ist nicht mehr verbunden";
+"This message has no content." = "Diese Nachricht hat keinen Inhalt.";
+"Trash" = "Papierkorb";
+"Trust this certificate" = "Diesem Zertifikat vertrauen";
+"Try again" = "Erneut versuchen";
+"Type your server's address above, then try again." = "Gib oben die Adresse deines Servers ein und versuche es erneut.";
+"Undo" = "Widerrufen";
+"Unencrypted connection" = "Unverschlüsselte Verbindung";
+"Unrecognised certificate" = "Unbekanntes Zertifikat";
+"Use this server" = "Diesen Server verwenden";
+"Wake now" = "Jetzt zurückholen";
+"Wake up" = "Zurückholen am";
+"Where do I get one?" = "Wo bekomme ich eins?";
+"%@ · %@" = "%@ · %@";
+"%@ total" = "%@ gesamt";
+"%@. Double tap Undo to reverse." = "%@. Doppeltippen auf „Widerrufen“ macht es rückgängig.";

@@ -85,7 +85,7 @@ public struct MailView: View {
             // The account went away between the row rendering and the push —
             // a disconnected mailbox, or a sign-out mid-navigation.
             ContentUnavailableView(
-                "This mailbox is no longer connected",
+                .ui("This mailbox is no longer connected"),
                 systemImage: "tray.slash"
             )
         }
@@ -109,7 +109,7 @@ public struct MailView: View {
         Button {
             composing = .new
         } label: {
-            Label("New message", systemImage: "square.and.pencil")
+            Label(.ui("New message"), systemImage: "square.and.pencil")
                 .labelStyle(.iconOnly)
                 .font(.title3)
                 .frame(width: 56, height: 56)
@@ -127,7 +127,7 @@ public struct MailView: View {
         // absent.
         .padding(.bottom, isUndoBarShowing ? 84 : 20)
         .animation(.snappy(duration: 0.2), value: isUndoBarShowing)
-        .accessibilityLabel("New message")
+        .accessibilityLabel(Text(.ui("New message")))
         // Gmail's "c", and ⌘N for anyone who expects the Mac convention.
         // Both reach the same button, so neither is a second code path.
         .keyboardShortcut("c", modifiers: [])
@@ -180,8 +180,8 @@ public struct MailView: View {
             )
         } else {
             ContentUnavailableView(
-                "Pick a mailbox", systemImage: "tray.2",
-                description: Text("Choose a list from the sidebar."))
+                .ui("Pick a mailbox"), systemImage: "tray.2",
+                description: Text(.ui("Choose a list from the sidebar.")))
         }
     }
 
@@ -195,14 +195,14 @@ public struct MailView: View {
                 .searchable(
                     text: $searchText,
                     placement: .navigationBarDrawer(displayMode: .always),
-                    prompt: "Search mail"
+                    prompt: Text(.ui("Search mail"))
                 )
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .navigationTitle("plMail")
+                .navigationTitle(Text(verbatim: "plMail"))
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button("Server", systemImage: "gearshape") {
+                        Button(.ui("Server"), systemImage: "gearshape") {
                             isShowingDiagnostics = true
                         }
                     }
@@ -232,8 +232,8 @@ public struct MailView: View {
                     reader(for: selectedThread)
                 } else {
                     ContentUnavailableView(
-                        "No conversation selected", systemImage: "envelope",
-                        description: Text("Pick a message to read it here."))
+                        .ui("No conversation selected"), systemImage: "envelope",
+                        description: Text(.ui("Pick a message to read it here.")))
                 }
             }
             .mailPane(isSeparated: isSeparated)

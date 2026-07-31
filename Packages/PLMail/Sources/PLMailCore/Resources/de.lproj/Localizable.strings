@@ -1,0 +1,14 @@
+/* Die Rollennamen der Postfächer — die meistgelesenen Wörter der App.
+   Bewusst an Apple Mail angelehnt, damit Vokabular nicht zwischen zwei
+   Mail-Apps auf demselben Gerät auseinanderläuft. */
+
+"Inbox" = "Posteingang";
+"Sent" = "Gesendet";
+"Drafts" = "Entwürfe";
+"Spam" = "Werbung";
+"Trash" = "Papierkorb";
+"Archive" = "Archiv";
+"Snoozed" = "Zurückgestellt";
+"Starred" = "Markiert";
+"Important" = "Wichtig";
+"All mail" = "Alle E-Mails";

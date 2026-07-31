@@ -2,6 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- Without this the app advertises English only, the system resolves the
+	     process language to English no matter what the device is set to, and
+	     every bundle in it — including the package's — follows. The
+	     translations exist and simply never get consulted. -->
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>de</string>
+	</array>
 	<!--
 	  plMail runs on machines people own, and a lot of them are only reachable
 	  over plain HTTP on a home network: a NAS at nas.local, a box at

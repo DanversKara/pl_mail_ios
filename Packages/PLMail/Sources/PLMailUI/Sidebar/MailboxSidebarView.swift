@@ -40,7 +40,7 @@ public struct MailboxSidebarView: View {
             }
 
             if labels.isEmpty == false {
-                Section("Labels") {
+                Section(.ui("Labels")) {
                     ForEach(labels, id: \.id) { label in
                         Label {
                             Text(label.name)
@@ -59,7 +59,7 @@ public struct MailboxSidebarView: View {
             }
 
             if sync.accounts.count > 1 {
-                Section("Accounts") {
+                Section(.ui("Accounts")) {
                     ForEach(sync.accounts) { account in
                         HStack(spacing: 10) {
                             SenderAvatar(

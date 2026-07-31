@@ -109,7 +109,7 @@ public struct ThreadReaderView: View {
         // Empty on purpose: the subject is the headline at the top of the
         // content, at the size a subject deserves. Repeating it in the bar,
         // truncated to a column's width, says the same thing twice and worse.
-        .navigationTitle("")
+        .navigationTitle(.ui(""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(item: $composing) { kind in
@@ -206,7 +206,7 @@ public struct ThreadReaderView: View {
                     Button {
                         composing = .reply(to: newest, all: false)
                     } label: {
-                        Label("Reply", systemImage: "arrowshape.turn.up.left")
+                        Label(.ui("Reply"), systemImage: "arrowshape.turn.up.left")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                     }
@@ -219,7 +219,7 @@ public struct ThreadReaderView: View {
                         Button {
                             composing = .reply(to: newest, all: true)
                         } label: {
-                            Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
+                            Label(.ui("Reply all"), systemImage: "arrowshape.turn.up.left.2")
                                 .labelStyle(.iconOnly)
                                 .padding(12)
                         }
@@ -229,7 +229,7 @@ public struct ThreadReaderView: View {
                     Button {
                         composing = .forward(newest)
                     } label: {
-                        Label("Forward", systemImage: "arrowshape.turn.up.right")
+                        Label(.ui("Forward"), systemImage: "arrowshape.turn.up.right")
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 10)
                     }
@@ -269,7 +269,7 @@ public struct ThreadReaderView: View {
                 Task { await actions.archive(target) }
                 dismiss()
             } label: {
-                Label("Archive", systemImage: "archivebox")
+                Label(.ui("Archive"), systemImage: "archivebox")
             }
             // Gmail's own letters throughout, so anyone arriving from it
             // keeps their muscle memory. Unmodified keys: a hardware
@@ -281,7 +281,7 @@ public struct ThreadReaderView: View {
                 Task { await actions.trash(target) }
                 dismiss()
             } label: {
-                Label("Trash", systemImage: "trash")
+                Label(.ui("Trash"), systemImage: "trash")
             }
             // Not Gmail's "#": it needs shift on most layouts, so the plain
             // keypress would never arrive. ⌘⌫ is what a Mac keyboard user
@@ -295,11 +295,11 @@ public struct ThreadReaderView: View {
                 // buttons are not in a menu the shortcut system can reach.
                 if let newest = loader.messages.last {
                     Section {
-                        Button("Reply") { composing = .reply(to: newest, all: false) }
+                        Button(.ui("Reply")) { composing = .reply(to: newest, all: false) }
                             .keyboardShortcut("r", modifiers: [])
-                        Button("Reply all") { composing = .reply(to: newest, all: true) }
+                        Button(.ui("Reply all")) { composing = .reply(to: newest, all: true) }
                             .keyboardShortcut("a", modifiers: [])
-                        Button("Forward") { composing = .forward(newest) }
+                        Button(.ui("Forward")) { composing = .forward(newest) }
                             .keyboardShortcut("f", modifiers: [])
                     }
                 }
@@ -307,7 +307,7 @@ public struct ThreadReaderView: View {
                 Button {
                     isPickingLabels = true
                 } label: {
-                    Label("Labels", systemImage: "tag")
+                    Label(.ui("Labels"), systemImage: "tag")
                 }
                 .keyboardShortcut("l", modifiers: [])
 
@@ -323,14 +323,14 @@ public struct ThreadReaderView: View {
                         onPickExact: { isPickingSnoozeDate = true }
                     )
                 } label: {
-                    Label("Snooze", systemImage: "clock")
+                    Label(.ui("Snooze"), systemImage: "clock")
                 }
 
                 Button {
                     Task { await actions.setSeen(false, target) }
                     dismiss()
                 } label: {
-                    Label("Mark as unread", systemImage: "envelope.badge")
+                    Label(.ui("Mark as unread"), systemImage: "envelope.badge")
                 }
                 .keyboardShortcut("u", modifiers: [])
 
@@ -341,7 +341,7 @@ public struct ThreadReaderView: View {
                 }
                 .keyboardShortcut("s", modifiers: [])
             } label: {
-                Label("More", systemImage: "ellipsis.circle")
+                Label(.ui("More"), systemImage: "ellipsis.circle")
             }
         }
     }
@@ -412,7 +412,7 @@ public struct ThreadReaderView: View {
                 } description: {
                     Text(message)
                 } actions: {
-                    Button("Try again") { Task { await loader.load() } }
+                    Button(.ui("Try again")) { Task { await loader.load() } }
                 }
             }
         }

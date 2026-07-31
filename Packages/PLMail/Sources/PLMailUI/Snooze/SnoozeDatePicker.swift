@@ -29,7 +29,7 @@ struct SnoozeDatePicker: View {
         NavigationStack {
             Form {
                 DatePicker(
-                    "Wake up",
+                    .ui("Wake up"),
                     selection: $date,
                     // Nothing earlier than a minute out. The sweep runs every
                     // minute, so a time inside that window would come straight
@@ -39,15 +39,15 @@ struct SnoozeDatePicker: View {
                 )
                 .datePickerStyle(.graphical)
             }
-            .navigationTitle("Snooze until")
+            .navigationTitle(.ui("Snooze until"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(.ui("Cancel")) { dismiss() }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Snooze") {
+                    Button(.ui("Snooze")) {
                         onPick(date)
                         dismiss()
                     }

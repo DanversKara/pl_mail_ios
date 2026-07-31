@@ -60,7 +60,7 @@ struct AttachmentRow: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(attachment.displayName), \(sizeDescription)")
+        .accessibilityLabel(Text("\(attachment.displayName), \(sizeDescription)"))
         .accessibilityHint("Downloads and opens this attachment")
     }
 

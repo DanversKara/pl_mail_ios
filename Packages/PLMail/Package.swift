@@ -11,6 +11,10 @@ import PackageDescription
 // without a simulator.
 let package = Package(
     name: "PLMail",
+    // Declaring this is what makes SwiftUI resolve a `Text("…")` in this
+    // package against the package's own bundle instead of the app's. Without
+    // it every string in every view would need an explicit `bundle: .module`.
+    defaultLocalization: "en",
     // macOS is declared so `swift test` runs on the host: the JMAP codec and
     // the search parser are pure logic, and booting a simulator to assert on
     // JSON would make the tightest loop in the project the slowest. The app
@@ -23,8 +27,16 @@ let package = Package(
     ],
     targets: [
         .target(name: "JMAPKit"),
-        .target(name: "PLMailCore", dependencies: ["JMAPKit"]),
-        .target(name: "PLMailUI", dependencies: ["PLMailCore"]),
+        .target(
+            name: "PLMailCore",
+            dependencies: ["JMAPKit"],
+            resources: [.process("Resources")]
+        ),
+        .target(
+            name: "PLMailUI",
+            dependencies: ["PLMailCore"],
+            resources: [.process("Resources")]
+        ),
 
         // Not a product, and nothing but test targets depends on it, so it is
         // never linked into the app. It exists because the sync engine can

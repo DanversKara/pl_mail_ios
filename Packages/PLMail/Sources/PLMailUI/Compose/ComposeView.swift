@@ -50,17 +50,17 @@ public struct ComposeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
+                    Button(.ui("Cancel")) { dismiss() }
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Send", action: model.send)
+                    Button(.ui("Send"), action: model.send)
                         .disabled(model.canSend == false)
                         .fontWeight(.semibold)
                 }
 
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Attach", systemImage: "paperclip") { isPickingFiles = true }
+                    Button(.ui("Attach"), systemImage: "paperclip") { isPickingFiles = true }
                         .disabled(model.isSending)
                 }
             }
@@ -76,12 +76,12 @@ public struct ComposeView: View {
                 attach(result)
             }
             .alert(
-                "Couldn't attach that",
+                Text(.ui("Couldn't attach that")),
                 isPresented: .init(
                     get: { attachmentError != nil },
                     set: { if $0 == false { attachmentError = nil } })
             ) {
-                Button("OK", role: .cancel) { attachmentError = nil }
+                Button(.ui("OK"), role: .cancel) { attachmentError = nil }
             } message: {
                 Text(attachmentError ?? "")
             }
@@ -126,13 +126,13 @@ public struct ComposeView: View {
             // Always shown, even with one identity: sending as the wrong
             // alias is invisible until someone replies to the wrong place.
             if model.identities.count > 1 {
-                Picker("From", selection: $model.selectedIdentity) {
+                Picker(.ui("From"), selection: $model.selectedIdentity) {
                     ForEach(model.identities) { identity in
                         Text(identity.displayName).tag(Optional(identity))
                     }
                 }
             } else if let identity = model.selectedIdentity {
-                LabeledContent("From", value: identity.displayName)
+                LabeledContent(.ui("From"), value: identity.displayName)
             }
 
             RecipientField(
@@ -146,7 +146,7 @@ public struct ComposeView: View {
                 RecipientField(label: "Bcc", text: $model.bcc, suggestions: model.suggestions)
                     .focused($focus, equals: .bcc)
             } else {
-                Button("Cc / Bcc") { showsMoreRecipients = true }
+                Button(.ui("Cc / Bcc")) { showsMoreRecipients = true }
                     .font(.footnote)
             }
         }
@@ -187,7 +187,7 @@ public struct ComposeView: View {
 
                         Spacer(minLength: 0)
 
-                        Button("Remove", systemImage: "xmark.circle.fill") {
+                        Button(.ui("Remove"), systemImage: "xmark.circle.fill") {
                             model.removeAttachment(attachment.id)
                         }
                         .labelStyle(.iconOnly)
@@ -197,11 +197,11 @@ public struct ComposeView: View {
                     .accessibilityElement(children: .combine)
                 }
             } header: {
-                Text("Attachments")
+                Text(.ui("Attachments"))
             } footer: {
                 // Stated because it is the number that gets a send refused,
                 // and the ceiling is the server's rather than the app's.
-                Text("\(model.attachmentsSize.formatted(.byteCount(style: .file))) total")
+                Text(.ui("\(model.attachmentsSize.formatted(.byteCount(style: .file))) total"))
             }
         }
     }
@@ -217,12 +217,12 @@ public struct ComposeView: View {
         case .sending(let remaining):
             HStack {
                 ProgressView()
-                Text("Sending in \(remaining)…")
+                Text(.ui("Sending in \(remaining)…"))
                     .font(.subheadline)
 
                 Spacer()
 
-                Button("Undo", action: model.undoSend)
+                Button(.ui("Undo"), action: model.undoSend)
                     .fontWeight(.semibold)
             }
             .padding(.horizontal, 16)

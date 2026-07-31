@@ -31,24 +31,24 @@ public struct ServerDiagnosticsView: View {
     public var body: some View {
         NavigationStack {
             List {
-                Section("Server") {
-                    LabeledContent("Address", value: connection.host)
-                    LabeledContent("Signed in as", value: connection.username ?? "—")
+                Section(.ui("Server")) {
+                    LabeledContent(.ui("Address"), value: connection.host)
+                    LabeledContent(.ui("Signed in as"), value: connection.username ?? "—")
 
                     if connection.pinnedFingerprint != nil {
-                        Label("Certificate pinned", systemImage: "lock.fill")
+                        Label(.ui("Certificate pinned"), systemImage: "lock.fill")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     }
 
                     if connection.address.isCleartext {
-                        Label("Unencrypted connection", systemImage: "lock.open")
+                        Label(.ui("Unencrypted connection"), systemImage: "lock.open")
                             .font(.footnote)
                             .foregroundStyle(.orange)
                     }
                 }
 
-                Section("Mail accounts") {
+                Section(.ui("Mail accounts")) {
                     ForEach(sync.accounts) { account in
                         VStack(alignment: .leading, spacing: 2) {
                             Text(account.name)
@@ -63,19 +63,19 @@ public struct ServerDiagnosticsView: View {
                 }
 
                 Section {
-                    Button("Sign out", role: .destructive) {
+                    Button(.ui("Sign out"), role: .destructive) {
                         onSignOut()
                         dismiss()
                     }
                 } footer: {
-                    Text("Removes the app password from this device and deletes cached mail.")
+                    Text(.ui("Removes the app password from this device and deletes cached mail."))
                 }
             }
-            .navigationTitle("Server")
+            .navigationTitle(.ui("Server"))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
+                    Button(.ui("Done")) { dismiss() }
                 }
             }
         }

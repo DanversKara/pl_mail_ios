@@ -1,0 +1,13 @@
+/* Mailbox role names. The most-read words in the app: every sidebar row and
+   every list title. */
+
+"Inbox" = "Inbox";
+"Sent" = "Sent";
+"Drafts" = "Drafts";
+"Spam" = "Spam";
+"Trash" = "Trash";
+"Archive" = "Archive";
+"Snoozed" = "Snoozed";
+"Starred" = "Starred";
+"Important" = "Important";
+"All mail" = "All mail";
