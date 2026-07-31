@@ -20,6 +20,7 @@ public struct MailView: View {
     /// the split view is collapsed and this is ignored.
     @State private var columns = NavigationSplitViewVisibility.all
     @State private var isShowingDiagnostics = false
+    @State private var isSelectionActive = false
     @State private var composing: ComposeModel.Kind?
     @State private var searchText = ""
     /// Debounced separately from `searchText`, so a keystroke does not start a
@@ -167,7 +168,7 @@ public struct MailView: View {
             // bug.
             ThreadListView(
                 feed: selectedFeed, sync: sync, actions: actions,
-                selection: $selectedThread
+                selection: $selectedThread, isSelectionActive: $isSelectionActive
             )
         } else {
             ContentUnavailableView(
@@ -228,7 +229,12 @@ public struct MailView: View {
         // tablet it sits at the window's right edge instead of floating in the
         // middle against a column divider. Collapsed on iPhone the two are the
         // same place.
-        .overlay(alignment: .bottomTrailing) { composeButton }
+        .overlay(alignment: .bottomTrailing) {
+            // The bulk action bar occupies this corner while a selection is
+            // up, and composing is not something anyone reaches for
+            // mid-selection anyway.
+            if isSelectionActive == false { composeButton }
+        }
         .task(id: searchText) {
             // 350ms: long enough that typing a word is one query rather than
             // five, short enough not to feel laggy.

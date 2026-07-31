@@ -25,11 +25,19 @@ public struct ThreadListView: View {
     /// keeps the open thread open across a rotation or a Stage Manager
     /// resize instead of dumping the reader.
     @Binding private var selection: ThreadRef?
+    /// Raised while a bulk selection is up, so the compose button can get out
+    /// of the way — it occupies the same corner as the action bar's last
+    /// button and would sit on top of Trash.
+    @Binding private var isSelectionActive: Bool
 
     @Query private var entries: [StoredFeedEntry]
     @Query private var threads: [StoredThread]
 
     @State private var isLoadingMore = false
+    /// Conversations picked out for a bulk action. Non-empty *is* selection
+    /// mode: there is no separate toggle to get out of sync with it.
+    @State private var checked: Set<ThreadRef> = []
+    @State private var isPickingBulkLabel = false
     /// The conversation whose labels are being edited. A target rather than a
     /// Bool, so the sheet cannot outlive the row that opened it.
     @State private var labelling: ActionTarget?
@@ -38,12 +46,14 @@ public struct ThreadListView: View {
         feed: FeedID,
         sync: MailSyncService,
         actions: MailActions,
-        selection: Binding<ThreadRef?>
+        selection: Binding<ThreadRef?>,
+        isSelectionActive: Binding<Bool> = .constant(false)
     ) {
         self.feed = feed
         self.sync = sync
         self.actions = actions
         _selection = selection
+        _isSelectionActive = isSelectionActive
 
         let feedID = feed.rawValue
 
@@ -60,13 +70,16 @@ public struct ThreadListView: View {
             ForEach(rows, id: \.entry.uid) { row in
                 ThreadRowView(
                     thread: row.thread,
-                    accountLabel: accountLabel(for: row.entry)
-                ) {
-                    act {
-                        await actions.setFlagged(
-                            row.thread.isFlagged == false, target(for: row.thread))
-                    }
-                }
+                    accountLabel: accountLabel(for: row.entry),
+                    isSelected: checked.contains(ThreadRef(thread: row.thread)),
+                    onToggleStar: {
+                        act {
+                            await actions.setFlagged(
+                                row.thread.isFlagged == false, target(for: row.thread))
+                        }
+                    },
+                    onToggleSelection: { toggle(ThreadRef(thread: row.thread)) }
+                )
                 .tag(ThreadRef(thread: row.thread))
                 .task { await loadMoreIfNeeded(at: row.entry) }
                 // Both directions, both undoable, and everything a swipe does
@@ -144,6 +157,24 @@ public struct ThreadListView: View {
             }
         }
         .listStyle(.plain)
+        // While a selection is up, a row tap picks it out rather than opening
+        // it. Done by intercepting the navigation binding rather than by
+        // swapping in a second List in edit mode: swapping would reset the
+        // scroll position every time selection starts, which on a long list
+        // loses the reader's place for no reason.
+        .onChange(of: selection) { _, new in
+            guard isSelecting, let new else { return }
+
+            selection = nil
+            toggle(new)
+        }
+        .safeAreaInset(edge: .bottom) { bulkBar }
+        .onChange(of: isSelecting) { _, active in isSelectionActive = active }
+        .sheet(isPresented: $isPickingBulkLabel) {
+            BulkLabelPickerView(targets: checkedTargets, sync: sync, actions: actions) {
+                checked = []
+            }
+        }
         .sheet(item: $labelling) { target in
             LabelPickerView(target: target, sync: sync, actions: actions, store: sync.store)
         }
@@ -151,12 +182,147 @@ public struct ThreadListView: View {
         .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         .refreshable { await sync.refresh(feed: feed) }
         .overlay { emptyState }
-        .navigationTitle(feed.title(mailboxes: sync.mailboxes))
+        // The title carries the count while selecting, so the number is where
+        // the eye already is rather than in a second bar.
+        .navigationTitle(
+            isSelecting
+                ? "\(checked.count) selected" : feed.title(mailboxes: sync.mailboxes)
+        )
+        .toolbar {
+            if isSelecting {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button("Cancel") { checked = [] }
+                }
+
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button(allChecked ? "Deselect all" : "Select all") {
+                        checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+                    }
+                }
+            }
+        }
         // Inline, not large. A large title silently fails to render when
         // the split view restores its detail column rather than pushing
         // it, which is exactly the cold-launch path — and an untitled list
         // reads as a bug. Inline also matches the list-then-reader flow.
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Selection
+
+    private var isSelecting: Bool { checked.isEmpty == false }
+
+    private func toggle(_ ref: ThreadRef) {
+        if checked.contains(ref) {
+            checked.remove(ref)
+        } else {
+            checked.insert(ref)
+        }
+    }
+
+    /// The selected conversations, as things an action can be applied to.
+    ///
+    /// Resolved from the rows on screen rather than stored alongside the
+    /// selection: a thread that gained a reply since it was ticked should be
+    /// acted on whole, and a thread that vanished should drop out silently
+    /// rather than sending ids the server no longer has.
+    private var checkedTargets: [ActionTarget] {
+        rows
+            .filter { checked.contains(ThreadRef(thread: $0.thread)) }
+            .map { target(for: $0.thread) }
+    }
+
+    /// The bulk action bar.
+    ///
+    /// Only the four actions that make sense on a heap of conversations, plus
+    /// labels. Reply is deliberately absent — replying to forty threads at once
+    /// is not an operation.
+    @ViewBuilder
+    private var bulkBar: some View {
+        if isSelecting {
+            VStack(spacing: 0) {
+                Divider()
+
+                HStack(spacing: 0) {
+                    bulkButton("Archive", "archivebox") { .archive }
+                    bulkButton("Labels", "tag", action: nil) { isPickingBulkLabel = true }
+                    bulkButton(
+                        anyUnread ? "Read" : "Unread",
+                        anyUnread ? "envelope.open" : "envelope.badge"
+                    ) {
+                        .setSeen(anyUnread)
+                    }
+                    bulkButton(
+                        anyUnstarred ? "Star" : "Unstar", anyUnstarred ? "star" : "star.slash"
+                    ) {
+                        .setFlagged(anyUnstarred)
+                    }
+                    bulkButton("Trash", "trash", role: .destructive) { .trash }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+            }
+            .background(.bar)
+            .transition(.move(edge: .bottom))
+        }
+    }
+
+    private func bulkButton(
+        _ title: String,
+        _ symbol: String,
+        role: ButtonRole? = nil,
+        action: (() -> MailActions.BulkAction)? = nil,
+        perform: (() -> Void)? = nil
+    ) -> some View {
+        Button(role: role) {
+            if let action {
+                // Both resolved *before* the selection is cleared. The action
+                // is a closure over `checked` — `anyUnstarred` and friends read
+                // it — so evaluating it afterwards computes the verb against an
+                // empty set and sends the opposite of what the button said.
+                let targets = checkedTargets
+                let resolved = action()
+
+                // Cleared before the request, not after: leaving rows ticked
+                // while an archive is in flight invites a second tap on a
+                // selection that is already on its way out.
+                checked = []
+                Task { await actions.perform(resolved, on: targets) }
+            } else {
+                perform?()
+            }
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: symbol)
+                    .font(.body)
+                Text(title)
+                    .font(.caption2)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(role == .destructive ? Color.red : Color.accentColor)
+    }
+
+    /// Mixed selections get the action that changes the most rows: ticking a
+    /// read and an unread message and pressing Read should leave both read,
+    /// not flip each one.
+    private var anyUnread: Bool {
+        rows.contains { checked.contains(ThreadRef(thread: $0.thread)) && $0.thread.isUnread }
+    }
+
+    /// Only the rows actually loaded. "Select all" cannot mean the whole
+    /// mailbox: the list is paged, and acting on messages nobody has seen is
+    /// not something a button should quietly offer.
+    private var allChecked: Bool {
+        rows.isEmpty == false && checked.count >= rows.count
+    }
+
+    private var anyUnstarred: Bool {
+        rows.contains {
+            checked.contains(ThreadRef(thread: $0.thread)) && $0.thread.isFlagged == false
+        }
     }
 
     // MARK: - Rows

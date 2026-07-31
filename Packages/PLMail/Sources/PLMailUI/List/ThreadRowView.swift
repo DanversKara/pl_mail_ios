@@ -23,27 +23,32 @@ public struct ThreadRowView: View {
     /// Absent in previews and in any list where starring is not offered; the
     /// star then falls back to an indicator.
     var onToggleStar: (() -> Void)?
+    var isSelected = false
+    /// Tapping the avatar picks the row out for a bulk action. Absent where
+    /// multi-select is not offered, in which case the avatar is inert.
+    var onToggleSelection: (() -> Void)?
 
     public init(
         thread: StoredThread,
         accountLabel: String? = nil,
-        onToggleStar: (() -> Void)? = nil
+        isSelected: Bool = false,
+        onToggleStar: (() -> Void)? = nil,
+        onToggleSelection: (() -> Void)? = nil
     ) {
         self.thread = thread
         self.accountLabel = accountLabel
+        self.isSelected = isSelected
         self.onToggleStar = onToggleStar
+        self.onToggleSelection = onToggleSelection
     }
 
     public var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            SenderAvatar(
-                name: thread.participantsSummary,
-                address: thread.participantsAddress,
-                isUnread: thread.isUnread
-            )
-            // Optically aligned with the first line of text rather than its
-            // box: the cap height sits a little below the top of the line.
-            .padding(.top, 2)
+            avatar
+                // Optically aligned with the first line of text rather than
+                // its box: the cap height sits a little below the top of the
+                // line.
+                .padding(.top, 2)
 
             VStack(alignment: .leading, spacing: 2) {
                 topLine
@@ -59,6 +64,30 @@ public struct ThreadRowView: View {
         .accessibilityAddTraits(.isButton)
         .accessibilityAction(named: thread.isFlagged ? "Unstar" : "Star") {
             onToggleStar?()
+        }
+        .accessibilityAction(named: isSelected ? "Deselect" : "Select") {
+            onToggleSelection?()
+        }
+    }
+
+    @ViewBuilder
+    private var avatar: some View {
+        let circle = SenderAvatar(
+            name: thread.participantsSummary,
+            address: thread.participantsAddress,
+            isUnread: thread.isUnread,
+            isSelected: isSelected
+        )
+
+        if let onToggleSelection {
+            Button(action: onToggleSelection) { circle }
+                .buttonStyle(.plain)
+                // The circle is 40pt; the tap target has to clear 44.
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+                .accessibilityHidden(true)
+        } else {
+            circle
         }
     }
 
@@ -202,6 +231,7 @@ public struct ThreadRowView: View {
     private var accessibilityDescription: String {
         var parts: [String] = []
 
+        if isSelected { parts.append("Selected") }
         if thread.isUnread { parts.append("Unread") }
         if thread.isFlagged { parts.append("Starred") }
 

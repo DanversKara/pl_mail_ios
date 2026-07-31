@@ -164,6 +164,199 @@ public final class MailActions {
         )
     }
 
+    // MARK: - Bulk
+
+    /// What a selection can be acted on with.
+    ///
+    /// A label is named by its **user-scoped** ``LabelID`` rather than a
+    /// mailbox id, because a selection can span accounts and a mailbox id
+    /// belongs to exactly one of them. The binding is resolved per account on
+    /// the way out — which is the whole reason the server exposes `labelId`.
+    public enum BulkAction: Sendable {
+        case archive
+        case trash
+        case setSeen(Bool)
+        case setFlagged(Bool)
+        case setLabel(Bool, LabelID, name: String)
+    }
+
+    /// Applies one action to many conversations at once.
+    ///
+    /// Every account's changes go out in a **single** batch — one `Email/set`
+    /// per account, all in one POST — rather than a request per conversation.
+    /// Selecting forty messages and archiving them is one round trip, which
+    /// over a home uplink is the difference between instant and a progress
+    /// spinner.
+    ///
+    /// One undo covers the whole selection, because that is what was done: an
+    /// undo bar per conversation would be forty toasts for one gesture.
+    public func perform(_ action: BulkAction, on targets: [ActionTarget]) async {
+        guard targets.isEmpty == false else { return }
+
+        failure = nil
+
+        let byAccount = Dictionary(grouping: targets, by: \.accountKey)
+        var requests: [(target: ActionTarget, request: EmailSet, undo: EmailSet)] = []
+
+        for (accountKey, group) in byAccount {
+            guard let pair = await self.requests(for: action, accountKey: accountKey, group: group)
+            else { continue }
+
+            // One target per account stands in for the group when a refetch is
+            // needed; it carries every email id in that account's selection.
+            let combined = ActionTarget(
+                threadID: group[0].threadID,
+                accountKey: accountKey,
+                accountID: group[0].accountID,
+                emailIDs: group.flatMap(\.emailIDs)
+            )
+
+            requests.append((combined, pair.request, pair.undo))
+        }
+
+        guard requests.isEmpty == false else { return }
+
+        var removedRows: [RemovedFeedRow] = []
+
+        for target in targets {
+            removedRows += (try? await localChange(for: action, target: target)) ?? []
+        }
+
+        let undoRequests = requests.map { (target: $0.target, request: $0.undo) }
+        let restored = removedRows
+
+        offerUndo(Self.describe(action, count: targets.count)) { [weak self] in
+            guard let self else { return }
+
+            for pair in undoRequests {
+                _ = await send(pair.request, target: pair.target)
+                await refetch(pair.target)
+            }
+        }
+
+        // Sent as one batch, then inspected per call: one account being
+        // read-only must not silently discard the others' changes.
+        var accepted = true
+
+        for pair in requests where await send(pair.request, target: pair.target) == false {
+            accepted = false
+        }
+
+        guard accepted else {
+            dismissUndo()
+            try? await store.restoreFeedRows(restored)
+
+            for pair in requests {
+                await refetch(pair.target)
+            }
+
+            return
+        }
+    }
+
+    /// The wire pair for one account's share of a bulk action.
+    private func requests(
+        for action: BulkAction, accountKey: String, group: [ActionTarget]
+    ) async -> (request: EmailSet, undo: EmailSet)? {
+        let ids = group.flatMap(\.emailIDs)
+        let accountID = group[0].accountID
+
+        switch action {
+        case .archive:
+            guard let inbox = try? await store.mailbox(role: .inbox, accountKey: accountKey)
+            else { return nil }
+
+            let archive = try? await store.mailbox(role: .archive, accountKey: accountKey)
+
+            return (
+                EmailSet.archive(ids: ids, inbox: inbox, archive: archive, accountID: accountID),
+                EmailSet.moveToInbox(
+                    ids: ids, inbox: inbox, leaving: archive, accountID: accountID)
+            )
+
+        case .trash:
+            guard let inbox = try? await store.mailbox(role: .inbox, accountKey: accountKey)
+            else { return nil }
+
+            return (
+                EmailSet.trash(ids: ids, accountID: accountID),
+                EmailSet.moveToInbox(ids: ids, inbox: inbox, accountID: accountID)
+            )
+
+        case .setSeen(let isSeen):
+            return (
+                EmailSet.setSeen(isSeen, ids: ids, accountID: accountID),
+                EmailSet.setSeen(isSeen == false, ids: ids, accountID: accountID)
+            )
+
+        case .setFlagged(let isFlagged):
+            return (
+                EmailSet.setFlagged(isFlagged, ids: ids, accountID: accountID),
+                EmailSet.setFlagged(isFlagged == false, ids: ids, accountID: accountID)
+            )
+
+        case .setLabel(let isApplied, let labelID, _):
+            // An account with no binding for this label is skipped rather than
+            // failed: labels are user-scoped and a selection spanning accounts
+            // will routinely include one that has never seen this label.
+            guard
+                let mailbox = try? await store.mailbox(labelID: labelID, accountKey: accountKey)
+            else { return nil }
+
+            return (
+                EmailSet.setLabel(isApplied, mailbox: mailbox, ids: ids, accountID: accountID),
+                EmailSet.setLabel(
+                    isApplied == false, mailbox: mailbox, ids: ids, accountID: accountID)
+            )
+        }
+    }
+
+    private func localChange(
+        for action: BulkAction, target: ActionTarget
+    ) async throws
+        -> [RemovedFeedRow]
+    {
+        let emailIDs = target.emailIDs.map(\.rawValue)
+
+        switch action {
+        case .archive, .trash:
+            return try await store.removeFromFeeds(target.threadID, accountKey: target.accountKey)
+
+        case .setSeen(let isSeen):
+            try await store.setSeen(isSeen, emailIDs: emailIDs, accountKey: target.accountKey)
+
+        case .setFlagged(let isFlagged):
+            try await store.setFlagged(
+                isFlagged, emailIDs: emailIDs, accountKey: target.accountKey)
+
+        case .setLabel(let isApplied, let labelID, _):
+            guard
+                let mailbox = try? await store.mailbox(
+                    labelID: labelID, accountKey: target.accountKey)
+            else { return [] }
+
+            try await store.setMailbox(
+                isApplied, mailboxID: mailbox.rawValue, emailIDs: emailIDs,
+                accountKey: target.accountKey)
+        }
+
+        return []
+    }
+
+    private static func describe(_ action: BulkAction, count: Int) -> String {
+        let noun = count == 1 ? "conversation" : "conversations"
+
+        return switch action {
+        case .archive: "Archived \(count) \(noun)"
+        case .trash: "Moved \(count) \(noun) to Trash"
+        case .setSeen(let isSeen): "Marked \(count) \(noun) \(isSeen ? "read" : "unread")"
+        case .setFlagged(let isFlagged): "\(isFlagged ? "Starred" : "Unstarred") \(count) \(noun)"
+        case .setLabel(let isApplied, _, let name):
+            isApplied
+                ? "Labelled \(count) \(noun) \(name)" : "Removed \(name) from \(count) \(noun)"
+        }
+    }
+
     // MARK: - Undo
 
     public func undo() async {

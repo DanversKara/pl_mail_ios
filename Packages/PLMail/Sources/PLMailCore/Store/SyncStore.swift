@@ -127,6 +127,21 @@ public actor SyncStore {
             .map { MailboxID($0.mailboxID) }
     }
 
+    /// This account's binding for a user-scoped label.
+    ///
+    /// The translation the `labelId` extension exists for: one label spans
+    /// every account, but the id that may be sent to the server is the
+    /// per-account binding. Nil when this account has no binding for it, which
+    /// is normal rather than exceptional — a label the user only ever applied
+    /// in one mailbox has no binding in the others.
+    public func mailbox(labelID: LabelID, accountKey: String) throws -> MailboxID? {
+        let wanted = labelID.rawValue
+
+        return try mailboxRows(accountKey: accountKey)
+            .first { $0.labelID == wanted }
+            .map { MailboxID($0.mailboxID) }
+    }
+
     public func mailboxes(accountKey: String) throws -> [MailboxSnapshot] {
         try mailboxRows(accountKey: accountKey).map(snapshot(of:))
     }

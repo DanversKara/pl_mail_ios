@@ -18,15 +18,29 @@ struct SenderAvatar: View {
     /// a coloured dot spends a whole column on one bit.
     var isUnread = false
 
+    /// Replaces the initials with a checkmark while the row is selected.
+    ///
+    /// The avatar doubles as the selection control because it is already the
+    /// leading element of every row and already circular — Gmail does the same,
+    /// and it means multi-select costs no extra column and no mode switch that
+    /// reflows the list.
+    var isSelected = false
+
     var body: some View {
         Circle()
-            .fill(AvatarPalette.color(for: seed))
+            .fill(isSelected ? Color.accentColor : AvatarPalette.color(for: seed))
             .frame(width: diameter, height: diameter)
             .overlay {
-                Text(initials)
-                    .font(.system(size: diameter * 0.4, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.white)
-                    .minimumScaleFactor(0.6)
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: diameter * 0.42, weight: .bold))
+                        .foregroundStyle(.white)
+                } else {
+                    Text(initials)
+                        .font(.system(size: diameter * 0.4, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .minimumScaleFactor(0.6)
+                }
             }
             .overlay {
                 if isUnread {
@@ -35,6 +49,7 @@ struct SenderAvatar: View {
                         .padding(-3)
                 }
             }
+            .animation(.snappy(duration: 0.15), value: isSelected)
             .accessibilityHidden(true)
     }
 
