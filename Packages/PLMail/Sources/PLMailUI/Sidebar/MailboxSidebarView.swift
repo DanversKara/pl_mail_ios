@@ -90,9 +90,10 @@ public struct MailboxSidebarView: View {
                     ForEach(sync.accounts) { account in
                         HStack(spacing: 10) {
                             SenderAvatar(
-                                name: account.name, address: account.name, diameter: 24)
+                                name: account.displayName, address: account.displayName,
+                                diameter: 24)
 
-                            Text(account.name)
+                            Text(account.displayName)
                                 .font(.subheadline)
                                 .lineLimit(1)
                         }

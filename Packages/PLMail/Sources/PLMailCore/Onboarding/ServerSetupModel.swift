@@ -195,7 +195,17 @@ public final class ServerSetupModel {
 
             phase = .confirming(
                 username: session.username,
-                accounts: session.orderedAccounts.map(\.account.name)
+                // Named, even when the server didn't name it. This list is
+                // the "check this is the right mailbox" step, and a blank
+                // row there is the one place a blank row is least
+                // affordable — it is the moment someone is being asked to
+                // confirm something.
+                accounts: session.orderedAccounts.map { entry in
+                    let name = entry.account.name.trimmingCharacters(
+                        in: .whitespacesAndNewlines)
+
+                    return name.isEmpty ? "Mailbox \(entry.id.rawValue)" : name
+                }
             )
         } catch let error as JMAPError {
             phase = Self.phase(for: error, host: address.host)

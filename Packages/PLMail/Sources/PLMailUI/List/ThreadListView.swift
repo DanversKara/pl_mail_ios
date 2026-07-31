@@ -508,7 +508,7 @@ public struct ThreadListView: View {
     private func accountLabel(for entry: StoredFeedEntry) -> String? {
         guard sync.accounts.count > 1 else { return nil }
 
-        return sync.accounts.first { $0.accountKey == entry.accountKey }?.name
+        return sync.accounts.first { $0.accountKey == entry.accountKey }?.displayName
     }
 
     // MARK: - Paging
@@ -619,7 +619,7 @@ public struct ThreadListView: View {
     }
 
     private func accountName(_ accountKey: String) -> String {
-        sync.accounts.first { $0.accountKey == accountKey }?.name ?? accountKey
+        sync.accounts.first { $0.accountKey == accountKey }?.displayName ?? accountKey
     }
 }
 

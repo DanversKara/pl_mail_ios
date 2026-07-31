@@ -10,12 +10,30 @@ import JMAPKit
 public struct AccountSnapshot: Hashable, Sendable, Identifiable {
     public var accountKey: String
     public var accountID: AccountID
+    /// Whatever the server called it, which may be nothing at all.
     public var name: String
     public var emailState: StateToken?
     public var threadState: StateToken?
     public var mailboxState: StateToken?
 
     public var id: String { accountKey }
+
+    /// Never empty.
+    ///
+    /// A JMAP account name is not required to be set, and a real server was
+    /// found serving one that wasn't: the result was a blank row in the
+    /// "is this the right mailbox?" list during sign-in, and an empty grey
+    /// pill on every message from that account. Both read as a rendering bug
+    /// rather than as missing data, which is the worst of both — it looks
+    /// broken *and* tells you nothing.
+    ///
+    /// Falls back to the account id, which is at least stable and
+    /// distinguishes one nameless account from another.
+    public var displayName: String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return trimmed.isEmpty ? "Mailbox \(accountID.rawValue)" : trimmed
+    }
 }
 
 public struct MailboxSnapshot: Hashable, Sendable, Identifiable {
