@@ -101,3 +101,12 @@
 "Sending…" = "Wird gesendet …";
 "Discard" = "Verwerfen";
 "(no subject)" = "(kein Betreff)";
+"Bold" = "Fett";
+"Italic" = "Kursiv";
+"Underline" = "Unterstrichen";
+"Strikethrough" = "Durchgestrichen";
+"Add link" = "Link hinzufügen";
+"Add" = "Hinzufügen";
+"The selected text will link here." = "Der markierte Text verlinkt hierhin.";
+"Quoted message included" = "Zitierte Nachricht enthalten";
+"New message" = "Neue Nachricht";

@@ -125,6 +125,7 @@ public final class OutboxSender {
             bcc: message.bcc,
             subject: message.subject,
             text: message.body,
+            html: message.html,
             inReplyTo: message.inReplyTo,
             references: message.references,
             attachments: uploaded

@@ -37,7 +37,11 @@ public final class ComposeModel {
     public var cc: String = ""
     public var bcc: String = ""
     public var subject: String = ""
-    public var body: String = ""
+    /// What someone actually typed, formatting and all.
+    ///
+    /// The quoted original is deliberately **not** in here — see
+    /// ``quotedHTML``.
+    public var body = AttributedString()
     public var selectedIdentity: IdentitySnapshot?
     public private(set) var identities: [IdentitySnapshot] = []
     public private(set) var status: Status = .editing
@@ -55,6 +59,22 @@ public final class ComposeModel {
     /// JMAP Contacts, and the addresses someone actually writes to are all in
     /// the mail already on the device.
     public private(set) var suggestions: [EmailAddress] = []
+
+    /// The original being replied to or forwarded, as HTML, kept out of the
+    /// editor.
+    ///
+    /// Gmail's arrangement, and for Gmail's reason: a real message's HTML is
+    /// tables, inline styles and images, and parsing it into an editable
+    /// rich-text buffer to put it on screen would mangle it — every quote would
+    /// come back subtly worse than it went in. Held aside verbatim, it is
+    /// appended untouched at send time, so what the recipient sees quoted is
+    /// byte-for-byte what arrived.
+    public private(set) var quotedHTML: String?
+
+    /// Drops the quoted original.
+    public func removeQuote() {
+        quotedHTML = nil
+    }
 
     /// A file waiting to be sent.
     public struct PendingAttachment: Identifiable, Sendable, Hashable {
@@ -225,24 +245,9 @@ public final class ComposeModel {
             signature.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
         else { return }
 
-        let block = "\n\n-- \n" + signature
-
-        switch kind {
-        case .new:
-            body += block
-
-        case .reply, .forward:
-            // `prefill` left the quoted original after two blank lines; the
-            // signature goes into that gap rather than after the quote.
-            if let quoteStart = body.range(of: "\n\n") {
-                body.insert(contentsOf: block, at: quoteStart.lowerBound)
-            } else {
-                body += block
-            }
-
-        case .editDraft:
-            break
-        }
+        // Always at the end of what was typed. On a reply that is still above
+        // the quote, because the quote is not in the editor at all.
+        body.append(AttributedString("\n\n-- \n" + signature))
 
         hasSignature = true
     }
@@ -251,7 +256,18 @@ public final class ComposeModel {
         to = draft.to.map(\.email).joined(separator: ", ")
         cc = draft.cc.map(\.email).joined(separator: ", ")
         subject = draft.subject ?? ""
-        body = draft.textBody ?? draft.preview
+
+        // HTML first: a draft written here or in the web composer is HTML, and
+        // reading its text alternative back would quietly strip the formatting
+        // every time someone reopened it.
+        if let html = draft.htmlBody {
+            let split = MailHTML.splitQuote(fromHTML: html)
+
+            body = MailHTML.attributedString(fromHTML: split.body)
+            quotedHTML = split.quote
+        } else {
+            body = AttributedString(draft.textBody ?? draft.preview)
+        }
     }
 
     /// Fills in what a reply or forward already knows.
@@ -275,11 +291,11 @@ public final class ComposeModel {
             }
 
             subject = Self.replySubject(message.subject)
-            body = "\n\n" + Self.quote(message)
+            quotedHTML = Self.quote(message)
 
         case .forward(let message):
             subject = Self.forwardSubject(message.subject)
-            body = "\n\n" + Self.quote(message)
+            quotedHTML = Self.quote(message)
 
         case .editDraft:
             // Nothing to guess: `load()` reads the real thing.
@@ -306,17 +322,21 @@ public final class ComposeModel {
 
     /// The quoted original, in the convention every mail client understands.
     static func quote(_ message: MessageSnapshot) -> String {
-        let when = message.receivedAt?.formatted(date: .long, time: .shortened) ?? ""
-        let header = "On \(when), \(message.displayName) wrote:"
-        let text = message.textBody ?? message.preview
+        MailHTML.quote(
+            author: message.displayName,
+            date: message.receivedAt,
+            html: message.htmlBody,
+            text: message.textBody ?? message.preview
+        )
+    }
 
-        let quoted =
-            text
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .map { "> \($0)" }
-            .joined(separator: "\n")
+    /// What goes on the wire: what was typed, then the quote.
+    var outgoingHTML: String {
+        let written = MailHTML.html(from: body)
 
-        return "\(header)\n\(quoted)"
+        guard let quotedHTML else { return written }
+
+        return written + "<div><br></div>" + quotedHTML
     }
 
     // MARK: - Sending
@@ -370,7 +390,8 @@ public final class ComposeModel {
             cc: recipients(from: cc),
             bcc: recipients(from: bcc),
             subject: subject,
-            body: body,
+            body: MailHTML.plainText(from: body),
+            html: outgoingHTML,
             inReplyTo: replyTargets?.inReplyTo,
             references: replyTargets?.references,
             editingEmailID: editingEmailID,

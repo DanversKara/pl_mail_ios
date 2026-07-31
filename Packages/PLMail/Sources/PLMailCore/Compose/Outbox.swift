@@ -136,6 +136,10 @@ public actor Outbox {
         var bcc: [EmailAddress]
         var subject: String
         var body: String
+        /// Optional so a queue written before formatting existed still
+        /// decodes. Those messages send as plain text, which is what they
+        /// were.
+        var html: String?
         var inReplyTo: [String]?
         var references: [String]?
         var editingEmailID: String?
@@ -162,6 +166,7 @@ public actor Outbox {
             bcc = message.bcc
             subject = message.subject
             body = message.body
+            html = message.html
             inReplyTo = message.inReplyTo
             references = message.references
             editingEmailID = message.editingEmailID
@@ -186,6 +191,7 @@ public actor Outbox {
                 bcc: bcc,
                 subject: subject,
                 body: body,
+                html: html,
                 inReplyTo: inReplyTo,
                 references: references,
                 editingEmailID: editingEmailID,
@@ -231,7 +237,13 @@ extension Outbox {
         public var cc: [EmailAddress] = []
         public var bcc: [EmailAddress] = []
         public var subject: String
+        /// The plain-text alternative.
         public var body: String
+        /// The formatted body, already serialised. Serialised at queue time
+        /// rather than at send time so the bytes on disk are exactly what will
+        /// go out — a message that renders differently after a relaunch would
+        /// be impossible to reason about.
+        public var html: String?
         public var inReplyTo: [String]?
         public var references: [String]?
         /// Set when this began as an existing draft, so sending rewrites that

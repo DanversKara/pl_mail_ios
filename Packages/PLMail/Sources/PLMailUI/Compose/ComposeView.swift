@@ -17,6 +17,7 @@ public struct ComposeView: View {
 
     private enum Field: Hashable { case to, cc, bcc, subject, body }
 
+    @State private var bodySelection = AttributedTextSelection()
     @State private var showsMoreRecipients = false
     @State private var isPickingFiles = false
     @State private var attachmentError: String?
@@ -43,13 +44,16 @@ public struct ComposeView: View {
                 recipients
                 subjectField
                 bodyField
+                quotedSection
                 attachmentsSection
             }
             // Same reasoning as the reader: a composer stretched across an
             // iPad puts the send button a hand's width from the text.
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
-            .navigationTitle(model.subject.isEmpty ? "New message" : model.subject)
+            .navigationTitle(
+                model.subject.isEmpty ? String(localized: .ui("New message")) : model.subject
+            )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -164,9 +168,51 @@ public struct ComposeView: View {
 
     private var bodyField: some View {
         Section {
-            TextField("Write your message…", text: $model.body, axis: .vertical)
-                .lineLimit(10...40)
+            RichTextEditor(text: $model.body, selection: $bodySelection)
+                // A form row sizes to its content; a text editor has none until
+                // there is text, so without a floor the field opens as a
+                // one-line slot that nobody reads as "write here".
+                .frame(minHeight: 220)
                 .focused($focus, equals: .body)
+
+            // Under the field rather than on the keyboard's accessory bar.
+            // `placement: .keyboard` renders nothing when a hardware keyboard
+            // is attached — which is every iPad with a Magic Keyboard, and
+            // exactly the setup where someone is most likely to be writing
+            // something worth formatting.
+            FormattingBar(text: $model.body, selection: $bodySelection)
+                .listRowInsets(.init(top: 4, leading: 12, bottom: 4, trailing: 12))
+        }
+    }
+
+    /// The quoted original, collapsed.
+    ///
+    /// Shown as one row rather than as text in the editor: the quote is not
+    /// editable here — it is kept verbatim so it arrives exactly as it was
+    /// received — and pretending otherwise by dropping it into the body would
+    /// invite edits that get thrown away on send.
+    @ViewBuilder
+    private var quotedSection: some View {
+        if model.quotedHTML != nil {
+            Section {
+                HStack(spacing: 10) {
+                    Image(systemName: "quote.opening")
+                        .foregroundStyle(.secondary)
+
+                    Text(.ui("Quoted message included"))
+                        .font(.subheadline)
+
+                    Spacer(minLength: 0)
+
+                    Button(.ui("Remove"), systemImage: "xmark.circle.fill") {
+                        model.removeQuote()
+                    }
+                    .labelStyle(.iconOnly)
+                    .foregroundStyle(.secondary)
+                    .buttonStyle(.plain)
+                }
+                .accessibilityElement(children: .combine)
+            }
         }
     }
 

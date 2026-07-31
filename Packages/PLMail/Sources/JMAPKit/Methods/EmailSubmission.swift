@@ -26,6 +26,14 @@ public struct EmailCreate: JMAPMethod {
         /// with everything else intact and no body at all, which looks like
         /// the text was lost rather than never read.
         public var textBody: [BodyPart]?
+        /// The formatted body, when there is one.
+        ///
+        /// The server's draft writer prefers `htmlBody` and falls back to
+        /// `textBody`. Verified against a live server: when both are sent,
+        /// plMail keeps the HTML and **regenerates** the plain text from it,
+        /// discarding what was sent — so `textBody` here is for other JMAP
+        /// clients that might read the draft, not for plMail.
+        public var htmlBody: [BodyPart]?
         public var bodyValues: [String: BodyValue]?
         /// Files, named by the blob ids a prior upload returned. Omitted
         /// entirely when there are none — an empty array is a different thing
@@ -35,7 +43,7 @@ public struct EmailCreate: JMAPMethod {
         private enum CodingKeys: String, CodingKey {
             case mailboxIDs = "mailboxIds"
             case keywords, from, to, cc, bcc, subject, inReplyTo, references
-            case textBody, bodyValues, attachments
+            case textBody, htmlBody, bodyValues, attachments
         }
 
         /// One file on a draft.
@@ -69,6 +77,7 @@ public struct EmailCreate: JMAPMethod {
             bcc: [EmailAddress] = [],
             subject: String,
             text: String,
+            html: String? = nil,
             inReplyTo: [String]? = nil,
             references: [String]? = nil,
             attachments: [Attachment] = []
@@ -85,11 +94,22 @@ public struct EmailCreate: JMAPMethod {
             self.inReplyTo = inReplyTo
             self.references = references
 
-            var part = BodyPart()
-            part.partID = "text"
-            part.type = "text/plain"
-            textBody = [part]
-            bodyValues = ["text": BodyValue(value: text)]
+            var plain = BodyPart()
+            plain.partID = "text"
+            plain.type = "text/plain"
+            textBody = [plain]
+
+            var values = ["text": BodyValue(value: text)]
+
+            if let html {
+                var rich = BodyPart()
+                rich.partID = "html"
+                rich.type = "text/html"
+                htmlBody = [rich]
+                values["html"] = BodyValue(value: html)
+            }
+
+            bodyValues = values
             self.attachments = attachments.isEmpty ? nil : attachments
         }
     }
@@ -234,6 +254,7 @@ public struct EmailUpdateDraft: JMAPMethod {
         public var inReplyTo: [String]?
         public var references: [String]?
         public var textBody: [BodyPart]?
+        public var htmlBody: [BodyPart]?
         public var bodyValues: [String: BodyValue]?
         public var attachments: [EmailCreate.Draft.Attachment]?
 
@@ -246,6 +267,7 @@ public struct EmailUpdateDraft: JMAPMethod {
             inReplyTo = draft.inReplyTo
             references = draft.references
             textBody = draft.textBody
+            htmlBody = draft.htmlBody
             bodyValues = draft.bodyValues
             attachments = draft.attachments
         }

@@ -96,3 +96,11 @@
 "Sending…" = "Sending…";
 "Discard" = "Discard";
 "(no subject)" = "(no subject)";
+"Bold" = "Bold";
+"Italic" = "Italic";
+"Underline" = "Underline";
+"Strikethrough" = "Strikethrough";
+"Add link" = "Add link";
+"Add" = "Add";
+"The selected text will link here." = "The selected text will link here.";
+"Quoted message included" = "Quoted message included";
