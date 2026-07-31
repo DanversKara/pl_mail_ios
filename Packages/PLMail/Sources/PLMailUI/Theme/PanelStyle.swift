@@ -21,6 +21,18 @@ enum PanelStyle {
     /// Space between panes, and between a pane and the window edge. Enough to
     /// read as a gap at arm's length without wasting a column's worth of width.
     static let inset: CGFloat = 10
+
+    /// The pane itself, and the window behind it.
+    ///
+    /// The grouped pair rather than the plain one, and in this order, because
+    /// the plain pair inverts in light mode: `background.secondary` is the
+    /// *grey* there and the window is white, so the gutter between two panes
+    /// comes out brighter than the panes and reads as a drawn divider — the
+    /// one thing this layout is trying not to look like. The grouped pair is
+    /// card-on-grey in light and card-on-black in dark, which is the way round
+    /// every other grouped surface on the platform works.
+    static let surface = Color(.secondarySystemGroupedBackground)
+    static let window = Color(.systemGroupedBackground)
 }
 
 extension View {
@@ -40,24 +52,36 @@ extension View {
                 // title — which reads as a layout bug rather than a card.
                 .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
                 .background {
-                    // The shape is inset and *then* told to ignore the safe
-                    // area, so the card reaches up behind the bar and out to
-                    // the window edge while keeping its margin. Padding the
-                    // content instead would leave the bar stranded outside.
-                    RoundedRectangle(
-                        cornerRadius: PanelStyle.cornerRadius, style: .continuous
-                    )
-                    .fill(.background.secondary)
-                    // A hairline, because in dark mode a raised surface is
-                    // only a few percent lighter than the window behind it and
-                    // the edge otherwise dissolves. Drawn from the separator
-                    // colour so it tracks increased-contrast settings.
-                    .strokeBorder(.separator.opacity(0.6), lineWidth: 0.5)
-                    .padding(PanelStyle.inset)
-                    // Halved on the leading edge: the gap between two panes is
-                    // the sum of their facing margins, so a full inset on both
-                    // would make the gutters twice the window margin.
-                    .padding(.leading, -PanelStyle.inset / 2)
+                    ZStack {
+                        // Painted per column, edge to edge. A background set on
+                        // the split view itself never shows: each column draws
+                        // its own opaque fill over it, so the gutter comes out
+                        // the colour of the panes and the split view's 1px
+                        // column separator is the only thing visible in it —
+                        // which is the vertical rule this layout is trying not
+                        // to have. Filling the column's own bounds puts the
+                        // window colour where that rule was.
+                        PanelStyle.window
+
+                        // The shape is inset and *then* told to ignore the safe
+                        // area, so the card reaches up behind the bar and out
+                        // to the window edge while keeping its margin. Padding
+                        // the content instead would leave the bar stranded
+                        // outside.
+                        RoundedRectangle(
+                            cornerRadius: PanelStyle.cornerRadius, style: .continuous
+                        )
+                        // No border. With the surface reading lighter than the
+                        // window, the edge carries itself; a stroke on top of
+                        // that draws the rule back in.
+                        .fill(PanelStyle.surface)
+                        .padding(PanelStyle.inset)
+                        // Halved on the leading edge: the gap between two panes
+                        // is the sum of their facing margins, so a full inset
+                        // on both would make the gutters twice the window
+                        // margin.
+                        .padding(.leading, -PanelStyle.inset / 2)
+                    }
                     .ignoresSafeArea()
                 }
         } else {

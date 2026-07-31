@@ -16,6 +16,11 @@ public final class ThreadLoader {
     /// anyone else to include — replying to everyone on a message addressed
     /// only to you is the same as replying.
     public private(set) var ownAddresses: [String] = []
+    /// The labels this conversation carries, for the reader's header. Whole
+    /// snapshots rather than names, because a role label wants the colour its
+    /// role has everywhere else and a custom one wants its hashed colour —
+    /// which the name alone cannot tell them apart by.
+    public private(set) var labels: [MailboxSnapshot] = []
     public private(set) var isLoading = false
     public private(set) var errorMessage: String?
 
@@ -65,6 +70,21 @@ public final class ThreadLoader {
             threadID: threadID, accountKey: accountKey)
         ownAddresses = ((try? await store.identities(accountKey: accountKey)) ?? [])
             .map(\.email)
+
+        let carried =
+            (try? await store.mailboxIDs(threadID: threadID, accountKey: accountKey)) ?? []
+        let mailboxes = (try? await store.mailboxes(accountKey: accountKey)) ?? []
+
+        labels =
+            mailboxes
+            .filter { carried.contains($0.mailboxID.rawValue) }
+            // Roles first, then custom labels alphabetically: where a
+            // conversation lives is a more useful first word than what it is
+            // tagged with.
+            .sorted {
+                ($0.role == nil ? 1 : 0, $0.name.lowercased())
+                    < ($1.role == nil ? 1 : 0, $1.name.lowercased())
+            }
     }
 
     /// One round trip: the thread's message ids, then those messages with

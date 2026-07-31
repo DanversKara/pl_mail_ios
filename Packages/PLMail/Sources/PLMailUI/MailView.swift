@@ -239,6 +239,11 @@ public struct MailView: View {
             .mailPane(isSeparated: isSeparated)
         }
         .navigationSplitViewStyle(.balanced)
+        // Zero-sized and hidden; it exists only to reach the split view
+        // controller and switch its column separator off. See the type.
+        .background {
+            if isSeparated { SplitSeparatorHider().frame(width: 0, height: 0) }
+        }
         // Over the whole split view rather than over the list column, so on a
         // tablet it sits at the window's right edge instead of floating in the
         // middle against a column divider. Collapsed on iPhone the two are the

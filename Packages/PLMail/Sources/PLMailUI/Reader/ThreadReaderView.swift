@@ -72,6 +72,8 @@ public struct ThreadReaderView: View {
     public var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
+                header
+
                 ForEach(Array(loader.messages.enumerated()), id: \.element.id) { index, message in
                     MessageView(
                         message: message,
@@ -94,7 +96,7 @@ public struct ThreadReaderView: View {
                     }
                 }
             }
-            .padding(.top, 4)
+
             // A line of text is readable up to roughly 75 characters and
             // painful past it. On a 13" iPad the detail column is wide enough
             // to run to twice that, so the measure is capped and centred
@@ -103,7 +105,10 @@ public struct ThreadReaderView: View {
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
-        .navigationTitle(subject)
+        // Empty on purpose: the subject is the headline at the top of the
+        // content, at the size a subject deserves. Repeating it in the bar,
+        // truncated to a column's width, says the same thing twice and worse.
+        .navigationTitle("")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(item: $composing) { kind in
@@ -127,6 +132,57 @@ public struct ThreadReaderView: View {
             // loses someone's place.
             await loader.markRead()
         }
+    }
+
+    /// The subject, at the size a subject deserves.
+    ///
+    /// The navigation bar has it too, but truncated to a column's width and at
+    /// caption weight — which for the one line that says what a conversation is
+    /// about is the wrong place to put it. Here it wraps, and the labels the
+    /// conversation carries sit under it, so "where is this filed" is answered
+    /// without opening a menu.
+    @ViewBuilder
+    private var header: some View {
+        if loader.messages.isEmpty == false {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(subject)
+                    .font(.title2.weight(.semibold))
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if loader.labels.isEmpty == false || loader.snoozedUntil != nil {
+                    HStack(spacing: 6) {
+                        if let snoozedUntil = loader.snoozedUntil {
+                            chip(
+                                SnoozeMenu.badge(for: snoozedUntil), systemImage: "clock",
+                                tint: .accentColor)
+                        }
+
+                        ForEach(loader.labels) { label in
+                            chip(
+                                label.name,
+                                systemImage: label.role == nil ? "tag.fill" : "tray.fill",
+                                tint: MailboxSidebarView.tint(for: label.role)
+                                    ?? AvatarPalette.color(
+                                        for: label.labelID?.rawValue ?? label.name)
+                            )
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    private func chip(_ text: String, systemImage: String, tint: Color) -> some View {
+        Label(text, systemImage: systemImage)
+            .font(.caption2.weight(.medium))
+            .foregroundStyle(tint)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(tint.opacity(0.14), in: Capsule())
     }
 
     /// Reply and forward, where a thumb is.

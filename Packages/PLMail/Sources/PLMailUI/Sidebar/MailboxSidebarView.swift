@@ -83,8 +83,12 @@ public struct MailboxSidebarView: View {
     /// words are read. These follow the platform's own conventions — trash is
     /// never green, spam is never blue — rather than the app's accent, which
     /// would make every row identical.
-    private static func tint(for role: MailboxRole) -> Color {
+    /// Nil for a custom label, which has no role and takes a hashed colour
+    /// instead. Shared with the reader's chips so one label is one colour
+    /// wherever it appears.
+    static func tint(for role: MailboxRole?) -> Color? {
         switch role {
+        case .none: nil
         case .inbox: .accentColor
         case .flagged: .orange
         case .drafts: .gray
@@ -95,6 +99,10 @@ public struct MailboxSidebarView: View {
         case .trash: .red
         default: .secondary
         }
+    }
+
+    private static func tint(for role: MailboxRole) -> Color {
+        tint(for: Optional(role)) ?? .secondary
     }
 
     // MARK: - Contents
