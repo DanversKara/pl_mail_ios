@@ -30,6 +30,14 @@ public struct MailboxSnapshot: Hashable, Sendable, Identifiable {
     public var id: String { "\(accountKey)#\(mailboxID.rawValue)" }
 }
 
+/// One row of a materialised feed.
+public struct FeedEntrySnapshot: Hashable, Sendable {
+    public var accountKey: String
+    public var threadID: String
+    public var emailID: String
+    public var sortDate: Date
+}
+
 /// Where one account's paging has reached within one feed.
 public struct FeedCursorSnapshot: Hashable, Sendable {
     public var lastSortDate: Date?

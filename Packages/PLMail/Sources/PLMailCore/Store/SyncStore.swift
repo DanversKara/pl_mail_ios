@@ -321,6 +321,72 @@ public actor SyncStore {
         try modelContext.save()
     }
 
+    /// Splices a freshly-fetched head onto an existing feed.
+    ///
+    /// Rows at or newer than `from` are replaced; everything older is left
+    /// alone. That is what makes a refresh cheap and what keeps scroll
+    /// position: re-running the whole feed on every foreground is exactly the
+    /// aggressive-polling behaviour a self-hosted server cannot afford.
+    ///
+    /// - Returns: Whether the fresh head overlapped what was already stored.
+    ///   No overlap means the list has moved further than one page — more mail
+    ///   arrived than a page holds — and the caller should rebuild rather than
+    ///   splice, because the gap between the two is unknown.
+    @discardableResult
+    public func spliceFeedHead(
+        _ rows: [FeedRow],
+        feedID: String,
+        accountKey: String,
+        from boundary: Date
+    ) throws -> Bool {
+        let stored = try feedEntries(feedID: feedID, accountKey: accountKey)
+        let existingThreadIDs = Set(stored.map(\.threadID))
+        let incomingThreadIDs = Set(rows.map(\.threadID))
+
+        let overlaps =
+            stored.isEmpty || incomingThreadIDs.isEmpty
+            || existingThreadIDs.isDisjoint(with: incomingThreadIDs) == false
+
+        for stale in stored where stale.sortDate >= boundary {
+            modelContext.delete(stale)
+        }
+
+        for row in rows {
+            let uid = "\(feedID)#\(accountKey)#\(row.threadID)"
+
+            if let entry = try existing(StoredFeedEntry.self, uid: uid) {
+                entry.sortDate = row.sortDate
+                entry.emailID = row.emailID
+                continue
+            }
+
+            modelContext.insert(
+                StoredFeedEntry(
+                    uid: uid, feedID: feedID, sortDate: row.sortDate,
+                    accountKey: accountKey, threadID: row.threadID, emailID: row.emailID
+                )
+            )
+        }
+
+        try modelContext.save()
+
+        return overlaps
+    }
+
+    /// Drops one account's slice of a feed and its cursor, so the next page
+    /// starts from the top.
+    public func resetFeed(feedID: String, accountKey: String) throws {
+        for entry in try feedEntries(feedID: feedID, accountKey: accountKey) {
+            modelContext.delete(entry)
+        }
+
+        if let cursor = try existing(StoredFeedCursor.self, uid: "\(feedID)#\(accountKey)") {
+            modelContext.delete(cursor)
+        }
+
+        try modelContext.save()
+    }
+
     public func cursor(feedID: String, accountKey: String) throws -> FeedCursorSnapshot {
         let uid = "\(feedID)#\(accountKey)"
 
@@ -353,6 +419,28 @@ public actor SyncStore {
         stored.lastSortDate = cursor.lastSortDate
         stored.boundaryIDs = Array(cursor.boundaryIDs)
         stored.isExhausted = cursor.isExhausted
+    }
+
+    /// Every row of a feed, newest first, as values.
+    ///
+    /// Snapshots rather than models because `@Model` types are not `Sendable`
+    /// and must not leave the actor that owns their context. Exists for tests
+    /// and diagnostics: the app itself reads the feed through `@Query`.
+    public func feedRows(feedID: String) throws -> [FeedEntrySnapshot] {
+        try modelContext.fetch(
+            FetchDescriptor<StoredFeedEntry>(
+                predicate: #Predicate { $0.feedID == feedID },
+                sortBy: [SortDescriptor(\.sortDate, order: .reverse)]
+            )
+        )
+        .map {
+            FeedEntrySnapshot(
+                accountKey: $0.accountKey,
+                threadID: $0.threadID,
+                emailID: $0.emailID,
+                sortDate: $0.sortDate
+            )
+        }
     }
 
     // MARK: - Deletion

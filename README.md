@@ -40,11 +40,16 @@ Formatting is `swift-format`, which ships with the toolchain. Run it without
 swift format lint --strict --recursive App Packages
 ```
 
-`Packages/PLMail/Tests/.swift-format` relaxes `NeverForceUnwrap` and
-`NeverUseForceTry`. Force-unwrapping a literal URL, or a fixture the test itself
-just wrote, is not the hazard those rules exist to catch — a wrong one fails the
-test loudly at the line that caused it, and wrapping each in `#require` adds
-noise without adding signal. Shipping code still forbids both.
+`Packages/PLMail/Tests/.swift-format` and the matching file in
+`Sources/JMAPTestSupport` relax `NeverForceUnwrap` and `NeverUseForceTry`.
+Force-unwrapping a literal URL, or a fixture the test itself just wrote, is not
+the hazard those rules exist to catch — a wrong one fails the test loudly at the
+line that caused it, and wrapping each in `#require` adds noise without adding
+signal. Shipping code still forbids both.
+
+`JMAPTestSupport` lives under `Sources/` only so that two test targets can share
+it; it is not a product and nothing but tests depends on it, so it never links
+into the app.
 
 Device builds need a signing identity. Copy `App/Config/Signing.xcconfig.dist` to
 `Signing.xcconfig` (gitignored) and fill in your team. Simulator builds need neither line.

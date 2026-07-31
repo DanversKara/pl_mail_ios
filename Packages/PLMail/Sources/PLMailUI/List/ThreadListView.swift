@@ -128,6 +128,23 @@ public struct ThreadListView: View {
             switch sync.status {
             case .syncing:
                 ProgressView()
+
+            // A rejected credential is not a network problem, and offering
+            // "try again" for it would send someone to check their wifi.
+            case .unauthenticated:
+                ContentUnavailableView {
+                    Label("Sign in again", systemImage: "key.slash")
+                } description: {
+                    Text(
+                        """
+                        \(sync.serverID) rejected this app password. It may have been revoked in \
+                        Settings → App passwords, or the account may have been removed.
+                        """
+                    )
+                } actions: {
+                    Button("Sign out", role: .destructive) { sync.requestReauthentication() }
+                }
+
             case .failed(let message):
                 ContentUnavailableView {
                     Label("Can't reach your server", systemImage: "wifi.slash")

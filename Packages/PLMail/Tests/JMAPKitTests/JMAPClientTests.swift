@@ -1,4 +1,5 @@
 import Foundation
+import JMAPTestSupport
 import Testing
 
 @testable import JMAPKit

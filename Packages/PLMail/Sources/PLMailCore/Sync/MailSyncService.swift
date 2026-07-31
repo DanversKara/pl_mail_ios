@@ -5,17 +5,23 @@ import Observation
 
 /// Drives syncing for the connected server.
 ///
-/// Phase-4 scope: accounts, mailboxes, and paging one feed per account. The
-/// k-way merge that turns several accounts into one ordered list, and delta
-/// sync through `Email/changes`, build on this rather than replacing it — an
-/// ``AccountPager`` per account is already the shape the merge needs.
+/// Owns the account and mailbox structure, and one ``UnifiedFeed`` per list.
+/// The merge is what makes several accounts read as one inbox; this type is
+/// what decides which accounts and which mailboxes go into it.
+///
+/// Delta sync through `Email/changes` slots in alongside: it updates objects,
+/// where the merge owns ordering.
 @MainActor
 @Observable
 public final class MailSyncService {
     public enum Status: Equatable, Sendable {
         case idle
         case syncing
-        /// Reachable again after a failure, or never failed.
+        /// The server answered, and said no. Distinct from `failed` because
+        /// the remedy is different: a revoked app password is not something
+        /// retrying fixes, and presenting it as a network problem sends the
+        /// user to check their wifi instead of their credential.
+        case unauthenticated
         case failed(message: String)
     }
 
@@ -30,6 +36,12 @@ public final class MailSyncService {
     /// down" and "the app is broken".
     public private(set) var degradedAccounts: [String: String] = [:]
 
+    /// One merge per feed, so each keeps its own buffers and cursors.
+    private var merges: [FeedID: UnifiedFeed] = [:]
+    /// Which accounts each merge was built for. A change means it has to be
+    /// rebuilt — an account added or removed changes what is being merged.
+    private var mergedAccounts: [FeedID: Set<String>] = [:]
+
     private let connection: ServerConnection
     private let client: JMAPClient
     private let store: SyncStore
@@ -42,6 +54,26 @@ public final class MailSyncService {
     }
 
     public var serverID: String { connection.host }
+
+    /// Called when the stored credential is no longer accepted, so the app can
+    /// return to onboarding. Set by whoever owns the sign-out path.
+    public var onReauthenticationNeeded: (() -> Void)?
+
+    public func requestReauthentication() {
+        onReauthenticationNeeded?()
+    }
+
+    /// What to say over a list that still has cached mail in it.
+    ///
+    /// Nil when there is nothing worth interrupting for — a successful sync,
+    /// or one still in flight.
+    public var bannerMessage: String? {
+        switch status {
+        case .idle, .syncing: nil
+        case .unauthenticated: "\(serverID) rejected this app password."
+        case .failed(let message): message
+        }
+    }
 
     /// Loads whatever is cached, then refreshes from the server.
     ///
@@ -70,6 +102,12 @@ public final class MailSyncService {
         do {
             let session = try await client.verify()
             accounts = try await store.syncAccounts(session: session, serverID: serverID)
+        } catch JMAPError.notAuthenticated {
+            // Never retried and never backed off: a revoked app password stays
+            // revoked, and hammering a home server over it helps nobody.
+            status = .unauthenticated
+            logger.error("Credential rejected by \(self.serverID, privacy: .public)")
+            return
         } catch {
             status = .failed(message: describe(error))
             logger.error("Session refresh failed: \(error, privacy: .public)")
@@ -77,6 +115,10 @@ public final class MailSyncService {
         }
 
         degradedAccounts = [:]
+        // Rebuilt on next use: the mailbox ids a role maps to may have moved,
+        // and a merge holds those in its pagers' filters.
+        merges = [:]
+        mergedAccounts = [:]
 
         // Structure first: a feed for a role cannot be built before the
         // mailbox ids that role maps to in each account are known.
@@ -111,65 +153,53 @@ public final class MailSyncService {
 
     // MARK: - Feed paging
 
+    /// Brings `feed` up to date and makes sure it has a first screenful.
     public func loadFirstPage(of feed: FeedID) async {
-        for account in accounts {
-            guard let pager = await pager(for: feed, account: account) else { continue }
+        let merge = await merge(for: feed)
 
-            do {
-                let page = try await pager.page(after: FeedCursorSnapshot(), using: client)
+        await merge.refreshHead()
+        await merge.loadMore()
 
-                try await store.upsert(
-                    emails: page.emails,
-                    threads: page.threads,
-                    accountKey: account.accountKey,
-                    emailState: page.emailState
-                )
-                // Replace rather than append: this is page one, and a thread
-                // that has since moved out of the mailbox must not linger.
-                try await store.replaceFeedSlice(
-                    page.rows,
-                    feedID: feed.rawValue,
-                    accountKey: account.accountKey,
-                    cursor: page.cursor
-                )
-            } catch {
-                await degrade(account, error: error)
-            }
-        }
+        degradedAccounts = await merge.failures
     }
 
-    /// Fetches the next page for every account that has one.
+    /// Extends `feed` by one screenful, interleaved across every account.
     public func loadMore(of feed: FeedID) async {
+        let merge = await merge(for: feed)
+
+        await merge.loadMore()
+
+        degradedAccounts = await merge.failures
+    }
+
+    /// The merge for a feed, built once and kept.
+    ///
+    /// Kept rather than rebuilt per call because it holds each account's
+    /// buffer: discarding that between scrolls would re-fetch a page per
+    /// account every time the list reached its end.
+    private func merge(for feed: FeedID) async -> UnifiedFeed {
+        if let existing = merges[feed], mergedAccounts[feed] == accountKeys {
+            return existing
+        }
+
+        let merge = UnifiedFeed(feedID: feed, client: client, store: store)
+        var pagers: [AccountPager] = []
+
         for account in accounts {
-            guard let pager = await pager(for: feed, account: account) else { continue }
-
-            do {
-                let cursor = try await store.cursor(
-                    feedID: feed.rawValue, accountKey: account.accountKey)
-
-                guard cursor.isExhausted == false else { continue }
-
-                let page = try await pager.page(after: cursor, using: client)
-
-                guard page.rows.isEmpty == false || page.cursor.isExhausted else { continue }
-
-                try await store.upsert(
-                    emails: page.emails,
-                    threads: page.threads,
-                    accountKey: account.accountKey,
-                    emailState: page.emailState
-                )
-                try await store.appendFeedRows(
-                    page.rows,
-                    feedID: feed.rawValue,
-                    accountKey: account.accountKey,
-                    cursor: page.cursor
-                )
-            } catch {
-                await degrade(account, error: error)
+            if let pager = await pager(for: feed, account: account) {
+                pagers.append(pager)
             }
         }
+
+        await merge.prepare(pagers: pagers)
+
+        merges[feed] = merge
+        mergedAccounts[feed] = accountKeys
+
+        return merge
     }
+
+    private var accountKeys: Set<String> { Set(accounts.map(\.accountKey)) }
 
     /// Builds the filter that selects `feed` within one account.
     ///

@@ -26,12 +26,21 @@ let package = Package(
         .target(name: "PLMailCore", dependencies: ["JMAPKit"]),
         .target(name: "PLMailUI", dependencies: ["PLMailCore"]),
 
+        // Not a product, and nothing but test targets depends on it, so it is
+        // never linked into the app. It exists because the sync engine can
+        // only be tested against something that actually pages — a canned
+        // response cannot produce a duplicate at a page boundary.
+        .target(name: "JMAPTestSupport", dependencies: ["JMAPKit"]),
+
         .testTarget(
             name: "JMAPKitTests",
-            dependencies: ["JMAPKit"],
+            dependencies: ["JMAPKit", "JMAPTestSupport"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "PLMailCoreTests", dependencies: ["PLMailCore"]),
+        .testTarget(
+            name: "PLMailCoreTests",
+            dependencies: ["PLMailCore", "JMAPTestSupport"]
+        ),
     ],
     swiftLanguageModes: [.v6]
 )
