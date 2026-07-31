@@ -88,3 +88,9 @@
 "%@. Double tap Undo to reverse." = "%@. Doppeltippen auf „Widerrufen“ macht es rückgängig.";
 "Report spam" = "Als Spam melden";
 "Not spam" = "Kein Spam";
+"Scan a pairing code" = "Kopplungscode scannen";
+"In plMail: Settings → App passwords → Pair a device" = "In plMail: Einstellungen → App-Passwörter → Gerät koppeln";
+"Or enter the address and an app password by hand." = "Oder Adresse und App-Passwort von Hand eingeben.";
+"Scan pairing code" = "Code scannen";
+"Camera unavailable" = "Kamera nicht verfügbar";
+"In plMail, open Settings → App passwords and choose Pair a device." = "Öffne in plMail Einstellungen → App-Passwörter und wähle „Gerät koppeln“.";

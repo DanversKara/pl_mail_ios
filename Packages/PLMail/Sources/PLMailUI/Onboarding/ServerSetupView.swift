@@ -6,6 +6,7 @@ public import PLMailCore
 
 import SafariServices
 import SwiftUI
+import UIKit
 
 /// Connecting to a server, first run.
 ///
@@ -15,19 +16,32 @@ import SwiftUI
 /// different device — so the field is paste-first, monospaced, and never
 /// autocorrected.
 public struct ServerSetupView: View {
+    /// A `plmail://pair` link the app was opened with.
+    ///
+    /// Handed in rather than observed here so the shell owns URL handling:
+    /// this view exists only while signed out, and a link that arrived a
+    /// moment before it appeared would otherwise be dropped.
+    public var pairingLink: URL?
+
     @State private var model: ServerSetupModel
     @State private var isShowingWebUI = false
+    @State private var isScanning = false
     @FocusState private var focus: Field?
 
     private enum Field { case address, secret }
 
-    public init(onConnected: @escaping @MainActor (ServerConnection) -> Void) {
+    public init(
+        pairingLink: URL? = nil,
+        onConnected: @escaping @MainActor (ServerConnection) -> Void
+    ) {
+        self.pairingLink = pairingLink
         _model = State(wrappedValue: ServerSetupModel(onConnected: onConnected))
     }
 
     public var body: some View {
         NavigationStack {
             Form {
+                pairingSection
                 serverSection
                 credentialSection
                 statusSection
@@ -53,11 +67,50 @@ public struct ServerSetupView: View {
                 }
             }
             .sheet(isPresented: $isShowingWebUI) { webUISheet }
+            .sheet(isPresented: $isScanning) {
+                PairingScannerSheet { scanned in
+                    Task { await model.pair(with: scanned, deviceName: UIDevice.current.name) }
+                }
+            }
             .disabled(model.isBusy)
+            .task(id: pairingLink) {
+                guard let pairingLink else { return }
+
+                await model.pair(
+                    with: pairingLink.absoluteString, deviceName: UIDevice.current.name)
+            }
         }
     }
 
     // MARK: - Sections
+
+    /// The way in that does not involve retyping 71 characters of hex from one
+    /// screen onto another. Offered first, and prominently, because it is the
+    /// path that works — the typed one exists for servers whose web UI cannot
+    /// be reached from this device.
+    private var pairingSection: some View {
+        Section {
+            Button {
+                isScanning = true
+            } label: {
+                Label {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(.ui("Scan a pairing code"))
+                            .font(.body.weight(.medium))
+                        Text(.ui("In plMail: Settings → App passwords → Pair a device"))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } icon: {
+                    Image(systemName: "qrcode.viewfinder")
+                        .font(.title2)
+                }
+            }
+            .disabled(model.isBusy)
+        } footer: {
+            Text(.ui("Or enter the address and an app password by hand."))
+        }
+    }
 
     private var serverSection: some View {
         Section {

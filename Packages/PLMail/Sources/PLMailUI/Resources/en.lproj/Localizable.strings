@@ -83,3 +83,9 @@
 "%@. Double tap Undo to reverse." = "%@. Double tap Undo to reverse.";
 "Report spam" = "Report spam";
 "Not spam" = "Not spam";
+"Scan a pairing code" = "Scan a pairing code";
+"In plMail: Settings → App passwords → Pair a device" = "In plMail: Settings → App passwords → Pair a device";
+"Or enter the address and an app password by hand." = "Or enter the address and an app password by hand.";
+"Scan pairing code" = "Scan pairing code";
+"Camera unavailable" = "Camera unavailable";
+"In plMail, open Settings → App passwords and choose Pair a device." = "In plMail, open Settings → App passwords and choose Pair a device.";

@@ -28,6 +28,19 @@ public final class ServerSetupModel {
     public private(set) var phase: Phase = .editing
 
     private var verifiedConnection: ServerConnection?
+    /// A scanned pairing code waiting to be exchanged.
+    ///
+    /// Held rather than redeemed on the spot because the exchange has to
+    /// happen *inside* the connect flow: a self-hosted server usually presents
+    /// a certificate this device has never seen, and the request that trips
+    /// over that has to be one the trust prompt can retry. Redeeming before
+    /// `attempt` would hit the same wall with nowhere to put the question.
+    private var pendingPairingCode: String?
+    /// What the minted credential will be called in the user's app-password
+    /// list. Passed in from the view rather than read here: this module builds
+    /// for macOS so the test suite can run without a simulator, and `UIDevice`
+    /// does not exist there.
+    private var pendingDeviceName = "Paired device"
     private let store: CredentialStore
     private let onConnected: @MainActor (ServerConnection) -> Void
 
@@ -62,6 +75,30 @@ public final class ServerSetupModel {
 
     public func connect() async {
         await attempt(pinning: nil)
+    }
+
+    /// Enrols this device from a scanned pairing code.
+    ///
+    /// Fills the address and then runs the ordinary connect, rather than
+    /// taking a shortcut past it. Everything that flow does still has to
+    /// happen — the certificate question, the session probe, showing which
+    /// mailbox was reached before anything is written — and a second route to
+    /// a saved credential would be a second route to get those wrong.
+    public func pair(with scanned: String, deviceName: String) async {
+        do {
+            let request = try DevicePairing.parse(scanned)
+
+            addressText = request.address.baseURL.absoluteString
+            pendingPairingCode = request.code
+            pendingDeviceName = deviceName
+            secretText = ""
+
+            await attempt(pinning: nil)
+        } catch let failure as DevicePairing.Failure {
+            phase = .failed(message: failure.message)
+        } catch {
+            phase = .failed(message: "That pairing code couldn't be read.")
+        }
     }
 
     /// Retries, trusting the certificate the user was just shown.
@@ -102,9 +139,50 @@ public final class ServerSetupModel {
             return
         }
 
+        // The exchange runs here, under the same trust policy the session probe
+        // will use, so an unrecognised certificate surfaces as the question the
+        // user can answer rather than as a dead end.
+        var secret = trimmedSecret
+
+        if let code = pendingPairingCode {
+            do {
+                let paired = try await DevicePairing().redeem(
+                    DevicePairing.Request(address: address, code: code),
+                    deviceName: pendingDeviceName,
+                    transport: URLSessionTransport(
+                        host: address.host,
+                        trust: ServerTrust(pinned: fingerprint)
+                    )
+                )
+
+                guard case .appPassword(let issued) = paired.credential else { return }
+
+                secret = issued
+                secretText = issued
+                // Burned only once it has been exchanged: a certificate prompt
+                // between here and there has to be able to retry with the same
+                // code, which is still unused.
+                pendingPairingCode = nil
+            } catch DevicePairing.Failure.untrustedCertificate(let host, let fingerprint) {
+                phase =
+                    KeyFingerprint(hex: fingerprint).map { .untrusted(host: host, fingerprint: $0) }
+                    ?? .failed(message: "\(host) presented a certificate that couldn't be read.")
+
+                return
+            } catch let failure as DevicePairing.Failure {
+                phase = .failed(message: failure.message)
+
+                return
+            } catch {
+                phase = .failed(message: "That pairing code didn't work.")
+
+                return
+            }
+        }
+
         let connection = ServerConnection(
             address: address,
-            credential: .appPassword(trimmedSecret),
+            credential: .appPassword(secret),
             pinnedFingerprint: fingerprint
         )
 

@@ -26,6 +26,22 @@
 	  The app additionally requires the user to type http:// explicitly; a
 	  bare hostname is always resolved as https.
 	-->
+	<key>NSCameraUsageDescription</key>
+	<string>plMail uses the camera to scan the pairing code shown by your server, so you don't have to type a 71-character app password.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<!-- Lets a plmail://pair link enrol the device when the code is on
+			     the same device the app is on — tapping it is the whole flow,
+			     with no camera involved. -->
+			<key>CFBundleURLName</key>
+			<string>de.plmail.pairing</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>plmail</string>
+			</array>
+		</dict>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
