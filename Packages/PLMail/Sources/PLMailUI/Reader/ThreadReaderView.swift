@@ -122,6 +122,11 @@ public struct ThreadReaderView: View {
             } label: {
                 Label("Archive", systemImage: "archivebox")
             }
+            // Gmail's own letters throughout, so anyone arriving from it
+            // keeps their muscle memory. Unmodified keys: a hardware
+            // keyboard is the only way to reach them, and nothing here is
+            // typing into a field.
+            .keyboardShortcut("e", modifiers: [])
 
             Button {
                 Task { await actions.trash(target) }
@@ -129,6 +134,10 @@ public struct ThreadReaderView: View {
             } label: {
                 Label("Trash", systemImage: "trash")
             }
+            // Not Gmail's "#": it needs shift on most layouts, so the plain
+            // keypress would never arrive. ⌘⌫ is what a Mac keyboard user
+            // reaches for to delete anyway.
+            .keyboardShortcut(.delete, modifiers: .command)
 
             Menu {
                 if let newest = loader.messages.last {
@@ -137,18 +146,21 @@ public struct ThreadReaderView: View {
                     } label: {
                         Label("Reply", systemImage: "arrowshape.turn.up.left")
                     }
+                    .keyboardShortcut("r", modifiers: [])
 
                     Button {
                         composing = .reply(to: newest, all: true)
                     } label: {
                         Label("Reply all", systemImage: "arrowshape.turn.up.left.2")
                     }
+                    .keyboardShortcut("a", modifiers: [])
 
                     Button {
                         composing = .forward(newest)
                     } label: {
                         Label("Forward", systemImage: "arrowshape.turn.up.right")
                     }
+                    .keyboardShortcut("f", modifiers: [])
                 }
 
                 Divider()
@@ -159,12 +171,14 @@ public struct ThreadReaderView: View {
                 } label: {
                     Label("Mark as unread", systemImage: "envelope.badge")
                 }
+                .keyboardShortcut("u", modifiers: [])
 
                 Button {
                     Task { await actions.setFlagged(isFlagged == false, target) }
                 } label: {
                     Label(isFlagged ? "Remove star" : "Star", systemImage: "star")
                 }
+                .keyboardShortcut("s", modifiers: [])
             } label: {
                 Label("More", systemImage: "ellipsis.circle")
             }

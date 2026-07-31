@@ -119,6 +119,9 @@ public struct MailView: View {
         // Above the undo bar, which occupies the same corner.
         .padding(.bottom, 80)
         .accessibilityLabel("New message")
+        // Gmail's "c", and ⌘N for anyone who expects the Mac convention.
+        // Both reach the same button, so neither is a second code path.
+        .keyboardShortcut("c", modifiers: [])
     }
 
     private var isSearching: Bool {
