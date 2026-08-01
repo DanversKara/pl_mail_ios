@@ -86,3 +86,9 @@
 "Past week" = "Letzte Woche";
 "Past month" = "Letzter Monat";
 "Past year" = "Letztes Jahr";
+
+/* Suchen in einer geöffneten Konversation. Die Zählung ist der eigentliche
+   Zweck der Leiste, deshalb „von“ statt eines nackten Bruchs. */
+
+"No matches" = "Keine Treffer";
+"%lld of %lld" = "%lld von %lld";

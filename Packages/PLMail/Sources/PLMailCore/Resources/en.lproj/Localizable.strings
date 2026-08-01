@@ -82,3 +82,9 @@
 "Past week" = "Past week";
 "Past month" = "Past month";
 "Past year" = "Past year";
+
+/* Find within an open conversation. The count is the whole point of the bar,
+   so it is a sentence about position rather than a bare fraction. */
+
+"No matches" = "No matches";
+"%lld of %lld" = "%lld of %lld";
