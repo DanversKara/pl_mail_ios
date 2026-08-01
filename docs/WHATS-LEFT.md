@@ -32,16 +32,14 @@ account exists.
 ## Unfinished, in a worktree
 
 The reader agent was stopped mid-task. Its two finished commits are merged —
-find-in-thread with a match count, and the header "show details" — but it left
-uncommitted work in
-`.claude/worktrees/agent-a40b911e6cef28b10`:
+find-in-thread with a match count, and the header "show details" — but the work it had in
+flight is on the branch **`worktree-agent-a40b911e6cef28b10`**, as a single
+commit marked WIP. Its worktree has been removed; the branch is the only copy.
 
-- `PLMailCore/Reader/ThreadFind.swift` and `ThreadFindBar.swift` — modified
-- `UITests/ReaderSmokeTests.swift` — new, untracked
-
-It was in the middle of exercising find-in-thread against the seeded "Roof
-repair quote" thread when it stopped. Either finish that or discard the
-worktree; do not merge it blind.
+It touches `PLMailCore/Reader/ThreadFind.swift`, `ThreadFindBar.swift` and an
+untracked `UITests/ReaderSmokeTests.swift`, and it stopped midway through
+exercising find-in-thread against a seeded thread. Finish it or delete the
+branch — do not merge it unread.
 
 **Not started from that brief:** the attachment grid. `AttachmentRow` still
 lists filenames where Gmail shows thumbnails, and there is no save or share
@@ -113,8 +111,7 @@ once. Always run both.
 
 **A git conflict marker in a `.strings` file is not a syntax error.** The parser
 stops at the marker and every key after it silently falls back to English. Line
-counts look fine. Use
-`scratchpad/resolve_catalogues.py`, or at minimum
+counts look fine. Use `scripts/resolve-catalogues.py`, or at minimum
 `plutil -convert json -o - <file>` and compare *parsed* key counts.
 
 **`String(localized:locale:)` does not choose the translation.** The locale
