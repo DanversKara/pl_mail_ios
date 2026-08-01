@@ -35,6 +35,8 @@ public struct ThreadReaderView: View {
     @State private var composing: ComposeModel.Kind?
     @State private var isPickingLabels = false
     @State private var isPickingSnoozeDate = false
+    @State private var find = ThreadFindModel()
+    @State private var isFinding = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.horizontalSizeClass) private var sizeClass
 
@@ -89,6 +91,19 @@ public struct ThreadReaderView: View {
     }
 
     public var body: some View {
+        ScrollViewReader { scroller in
+            reader(scroller)
+                // Navigating the find moves the thread to the match. Driven
+                // from here rather than from the bar, because the scroll view
+                // this has to move is the one wrapped above.
+                .onChange(of: find.current) { _, match in
+                    guard let match else { return }
+                    reveal(match, with: scroller)
+                }
+        }
+    }
+
+    private func reader(_ scroller: ScrollViewProxy) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 header
@@ -102,24 +117,7 @@ public struct ThreadReaderView: View {
                     }
 
                     if collapsedRange?.contains(index) != true {
-                        MessageView(
-                            message: message,
-                            isExpanded: isExpanded(message),
-                            isRemoteContentAllowed: isRemoteContentAllowed(message),
-                            wasRemoteContentBlocked: blockedRemoteContent.contains(message.id),
-                            blobs: blobs,
-                            downloadContext: downloadContext,
-                            onToggle: { toggle(message) },
-                            onAllowRemoteContent: { allowRemoteContent(from: message) },
-                            onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
-                            onPreview: { previewedAttachment = $0 },
-                            onCompose: { composing = $0 }
-                        )
-                        // The policy lives outside SwiftUI's observation, so
-                        // trusting a sender has to invalidate the message that
-                        // was showing the blocked notice.
-                        .id("\(message.id)-\(remoteContentRevision)")
-                        .messageCard()
+                        row(for: message, with: scroller)
                     }
                 }
             }
@@ -146,6 +144,12 @@ public struct ThreadReaderView: View {
         .navigationTitle(.ui(""))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
+        .safeAreaInset(edge: .top) {
+            if isFinding {
+                ThreadFindBar(model: find, onClose: closeFind)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
         .sheet(item: $composing) { kind in
             ComposeView(
                 kind: kind, accountKey: accountKey, accountID: accountID,
@@ -164,6 +168,12 @@ public struct ThreadReaderView: View {
         .sheet(isPresented: $isPickingLabels) {
             LabelPickerView(target: target, sync: sync, actions: actions, store: store)
         }
+        // Whatever the loader publishes is what gets searched, so a reply that
+        // lands mid-search is searched too rather than being the one message
+        // the count does not know about.
+        .onChange(of: loader.messages) { _, messages in
+            find.update(messages: messages)
+        }
         .task {
             await loader.load()
             expandNewest()
@@ -173,6 +183,39 @@ public struct ThreadReaderView: View {
             // loses someone's place.
             await loader.markRead()
         }
+    }
+
+    /// One message, as its own card.
+    ///
+    /// Its own function rather than inline in the `ForEach`: with the find's
+    /// two extra arguments the closure stopped type-checking in reasonable
+    /// time, and the compiler said so.
+    private func row(for message: MessageSnapshot, with scroller: ScrollViewProxy) -> some View {
+        MessageView(
+            message: message,
+            isExpanded: isExpanded(message),
+            isRemoteContentAllowed: isRemoteContentAllowed(message),
+            wasRemoteContentBlocked: blockedRemoteContent.contains(message.id),
+            blobs: blobs,
+            downloadContext: downloadContext,
+            onToggle: { toggle(message) },
+            onAllowRemoteContent: { allowRemoteContent(from: message) },
+            onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
+            onPreview: { previewedAttachment = $0 },
+            onCompose: { composing = $0 },
+            find: isFinding ? find : nil,
+            onCurrentMatchPositioned: { fraction in
+                settle(on: message, at: fraction, with: scroller)
+            }
+        )
+        // The policy lives outside SwiftUI's observation, so trusting a sender
+        // has to invalidate the message that was showing the blocked notice.
+        .id("\(message.id)-\(remoteContentRevision)")
+        .messageCard()
+        // A stable handle for the find to scroll to. The one above changes
+        // whenever a sender is trusted, which is exactly what a scroll target
+        // must not do.
+        .id(message.id)
     }
 
     /// The subject, at the size a subject deserves.
@@ -354,6 +397,14 @@ public struct ThreadReaderView: View {
                 }
                 .keyboardShortcut("l", modifiers: [])
 
+                Button(action: openFind) {
+                    Label(.ui("Find in conversation"), systemImage: "magnifyingglass")
+                }
+                // ⌘F everywhere, rather than Gmail's "/": the bar it opens is
+                // a text field, and a bare letter that opens a text field is
+                // one keystroke away from being typed into it.
+                .keyboardShortcut("f", modifiers: .command)
+
                 Menu {
                     SnoozeMenu(
                         isSnoozed: loader.snoozedUntil != nil,
@@ -401,6 +452,66 @@ public struct ThreadReaderView: View {
             emailIDs: loader.messages.map { EmailID(rawValue: $0.emailID) }
         )
     }
+
+    // MARK: - Find
+
+    private func openFind() {
+        find.update(messages: loader.messages)
+        withAnimation(.snappy(duration: 0.2)) { isFinding = true }
+    }
+
+    /// Closing empties the query as well as hiding the bar. A find bar that
+    /// reopens still holding last week's word has remembered the wrong thing —
+    /// and here it would also leave every message forced open on its quoted
+    /// history.
+    private func closeFind() {
+        withAnimation(.snappy(duration: 0.2)) {
+            isFinding = false
+            find.query = ""
+        }
+    }
+
+    /// Brings the message holding a match into view.
+    ///
+    /// Coarse on purpose: this fires the moment the match changes, before the
+    /// web view has had a chance to say where in its body the match actually
+    /// sits. ``settle(on:at:with:)`` refines it when that answer arrives, and
+    /// for a match in a header or a short message there is nothing to refine.
+    private func reveal(_ match: ThreadFindMatch, with scroller: ScrollViewProxy) {
+        if let index = loader.messages.firstIndex(where: { $0.id == match.messageID }),
+            collapsedRange?.contains(index) == true
+        {
+            showsEarlierMessages = true
+        }
+
+        // A match inside a collapsed message is a match nobody can see.
+        expanded.insert(match.messageID)
+
+        withAnimation(.snappy(duration: 0.25)) {
+            scroller.scrollTo(match.messageID, anchor: .top)
+        }
+    }
+
+    /// Puts the match itself on screen, once its body has reported where it is.
+    ///
+    /// The fraction is the match's position down the body, and it is used as
+    /// the scroll anchor for both ends: aligning the point *f* down the body
+    /// with the point *f* down the viewport is not the same as putting the
+    /// match at the top, but it does guarantee it is somewhere on screen, which
+    /// is the only promise worth making with one number.
+    private func settle(
+        on message: MessageSnapshot, at fraction: CGFloat, with scroller: ScrollViewProxy
+    ) {
+        guard find.current?.messageID == message.id else { return }
+
+        withAnimation(.snappy(duration: 0.2)) {
+            scroller.scrollTo(
+                Self.bodyAnchor(message.id),
+                anchor: UnitPoint(x: 0, y: min(max(fraction, 0), 1)))
+        }
+    }
+
+    static func bodyAnchor(_ messageID: String) -> String { "find-body-\(messageID)" }
 
     // MARK: - State
 

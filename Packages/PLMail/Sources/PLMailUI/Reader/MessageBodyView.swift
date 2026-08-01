@@ -41,6 +41,19 @@ struct MessageBodyView: View {
     let inlineProvider: @Sendable (AttachmentSnapshot, String) async -> Data?
     let onRemoteContentBlocked: () -> Void
 
+    /// Where to paint find highlights, as UTF-16 offsets into
+    /// ``PLMailCore/ThreadFind/plainText(fromHTML:)`` of this same body. The
+    /// web view never searches; see ``PLMailCore/ThreadFind``.
+    var findMatches: [ThreadFindMatch] = []
+    /// Which of them is the current one, or nil when the current match is in
+    /// another message.
+    var currentFindOccurrence: Int?
+    /// How far down this body the current match sits, as a fraction of the
+    /// content height. The thread's scroll view is the one that scrolls — this
+    /// view is sized to its content and scrolls not at all — so putting a match
+    /// on screen is something only the reader above can do.
+    var onCurrentMatchPositioned: (CGFloat) -> Void = { _ in }
+
     @State private var height: CGFloat = 1
 
     var body: some View {
@@ -52,7 +65,10 @@ struct MessageBodyView: View {
             renderStyle: renderStyle,
             inlineProvider: inlineProvider,
             height: $height,
-            onRemoteContentBlocked: onRemoteContentBlocked
+            onRemoteContentBlocked: onRemoteContentBlocked,
+            findMatches: findMatches,
+            currentFindOccurrence: currentFindOccurrence,
+            onCurrentMatchPositioned: onCurrentMatchPositioned
         )
         .frame(height: height)
     }
@@ -67,9 +83,16 @@ private struct WebBody: UIViewRepresentable {
     let inlineProvider: @Sendable (AttachmentSnapshot, String) async -> Data?
     @Binding var height: CGFloat
     let onRemoteContentBlocked: () -> Void
+    let findMatches: [ThreadFindMatch]
+    let currentFindOccurrence: Int?
+    let onCurrentMatchPositioned: (CGFloat) -> Void
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(height: $height, onRemoteContentBlocked: onRemoteContentBlocked)
+        Coordinator(
+            height: $height,
+            onRemoteContentBlocked: onRemoteContentBlocked,
+            onCurrentMatchPositioned: onCurrentMatchPositioned
+        )
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -79,13 +102,18 @@ private struct WebBody: UIViewRepresentable {
 
         let controller = WKUserContentController()
         controller.add(context.coordinator, name: Coordinator.heightMessage)
-        controller.addUserScript(
-            WKUserScript(
-                source: Self.heightReportingScript,
-                injectionTime: .atDocumentEnd,
-                forMainFrameOnly: true
+        controller.add(context.coordinator, name: Coordinator.findPositionMessage)
+
+        for script in [Self.heightReportingScript, Self.findScript] {
+            controller.addUserScript(
+                WKUserScript(
+                    source: script,
+                    injectionTime: .atDocumentEnd,
+                    forMainFrameOnly: true
+                )
             )
-        )
+        }
+
         configuration.userContentController = controller
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
@@ -110,7 +138,15 @@ private struct WebBody: UIViewRepresentable {
         guard
             context.coordinator.renderedDocument != document
                 || context.coordinator.renderedRemoteSetting != loadRemoteContent
-        else { return }
+        else {
+            // Typing in the find bar changes nothing about the document, so
+            // this is the path a search actually takes. Applying the highlight
+            // after the early return would mean it only ever landed on a
+            // message that happened to be reloading for another reason.
+            context.coordinator.applyFind(
+                matches: findMatches, current: currentFindOccurrence, to: webView)
+            return
+        }
 
         // The web view's own scheme has to match the strategy, or the gap
         // around a short message keeps the other appearance's colour.
@@ -120,6 +156,10 @@ private struct WebBody: UIViewRepresentable {
 
         context.coordinator.renderedDocument = document
         context.coordinator.renderedRemoteSetting = loadRemoteContent
+
+        // Held for the load to finish: a highlight applied now would be thrown
+        // away with the document it was painted on.
+        context.coordinator.pendingFind = (findMatches, currentFindOccurrence)
 
         // No base URL, so a relative reference in the message cannot
         // resolve to anything at all.
@@ -165,6 +205,7 @@ private struct WebBody: UIViewRepresentable {
               table { display: block; overflow-x: auto; }
               pre { overflow-x: auto; }
               \(style.css)
+              \(style.findHighlightCSS)
             </style>
             </head>
             <body>\(body)</body>
@@ -189,26 +230,163 @@ private struct WebBody: UIViewRepresentable {
         })();
         """
 
+    /// Paints find highlights at offsets computed natively.
+    ///
+    /// The script does no matching of its own — see ``PLMailCore/ThreadFind``
+    /// for why that split is the whole design. Its two jobs are to rebuild the
+    /// flat projection the offsets are stated against, and to turn an offset
+    /// range back into a DOM `Range`.
+    ///
+    /// `flatten` is a transcription of `ThreadFind.collapsingWhitespace`, and
+    /// has to stay one. The parallel arrays are indexed by UTF-16 unit, which
+    /// is what `NSRange` counts in — iterating by code point instead would put
+    /// every offset after the first emoji two places out.
+    ///
+    /// Highlighting is all-or-nothing on purpose. If an offset does not fit the
+    /// projection the two sides have drifted, and a highlight on the wrong word
+    /// is worse than no highlight at all: it is a wrong answer presented with
+    /// the same confidence as a right one.
+    private static let findScript = """
+        (function () {
+          var ALL = 'plmail-find';
+          var CURRENT = 'plmail-find-current';
+
+          function isSpace(ch) {
+            return ch === ' ' || ch === '\\u00A0' || ch === '\\n' || ch === '\\r'
+              || ch === '\\t' || ch === '\\u000B' || ch === '\\u000C';
+          }
+
+          function flatten() {
+            var walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+              acceptNode: function (node) {
+                var name = node.parentNode ? node.parentNode.nodeName : '';
+                if (name === 'SCRIPT' || name === 'STYLE') return NodeFilter.FILTER_REJECT;
+                return NodeFilter.FILTER_ACCEPT;
+              }
+            });
+
+            var text = '', nodes = [], offsets = [], node;
+
+            while ((node = walker.nextNode())) {
+              var data = node.data;
+              for (var i = 0; i < data.length; i++) {
+                if (isSpace(data[i])) {
+                  if (text.length !== 0 && text[text.length - 1] !== ' ') {
+                    text += ' '; nodes.push(node); offsets.push(i);
+                  }
+                } else {
+                  text += data[i]; nodes.push(node); offsets.push(i);
+                }
+              }
+            }
+
+            if (text[text.length - 1] === ' ') {
+              text = text.slice(0, -1); nodes.pop(); offsets.pop();
+            }
+
+            return { text: text, nodes: nodes, offsets: offsets };
+          }
+
+          window.plmailFind = function (matches, current) {
+            if (typeof CSS === 'undefined' || !CSS.highlights) return;
+            if (typeof Highlight === 'undefined') return;
+
+            CSS.highlights.delete(ALL);
+            CSS.highlights.delete(CURRENT);
+
+            if (!matches || matches.length === 0) return;
+
+            var flat = flatten(), all = [], currentRange = null;
+
+            for (var m = 0; m < matches.length; m++) {
+              var start = matches[m][0], length = matches[m][1], end = start + length - 1;
+
+              if (length <= 0 || start < 0 || end >= flat.text.length) return;
+
+              var range = document.createRange();
+              range.setStart(flat.nodes[start], flat.offsets[start]);
+              range.setEnd(flat.nodes[end], flat.offsets[end] + 1);
+
+              if (m === current) currentRange = range; else all.push(range);
+            }
+
+            if (all.length) CSS.highlights.set(ALL, new Highlight(...all));
+            if (!currentRange) return;
+
+            CSS.highlights.set(CURRENT, new Highlight(currentRange));
+
+            // Where the reader has to scroll to, as a fraction of this body's
+            // height. This view cannot scroll itself — it is sized to its
+            // content and the thread scrolls around it.
+            var box = currentRange.getBoundingClientRect();
+            var total = document.documentElement.scrollHeight;
+
+            if (total > 0) {
+              window.webkit.messageHandlers.\(Coordinator.findPositionMessage)
+                .postMessage((box.top + window.scrollY) / total);
+            }
+          };
+        })();
+        """
+
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
         static let heightMessage = "plmailHeight"
+        static let findPositionMessage = "plmailFindPosition"
 
         let inlineHandler = InlineImageHandler()
         var renderedDocument: String?
         var renderedRemoteSetting: Bool?
         var blocksRemoteContent = true
+        /// Find state waiting for a document to finish loading.
+        var pendingFind: ([ThreadFindMatch], Int?)?
 
         private let height: Binding<CGFloat>
         private let onRemoteContentBlocked: () -> Void
+        private let onCurrentMatchPositioned: (CGFloat) -> Void
+        /// What was last handed to the script, so a `ResizeObserver` tick or a
+        /// SwiftUI re-render does not re-run the DOM walk for no reason.
+        private var appliedFind: String?
 
-        init(height: Binding<CGFloat>, onRemoteContentBlocked: @escaping () -> Void) {
+        init(
+            height: Binding<CGFloat>,
+            onRemoteContentBlocked: @escaping () -> Void,
+            onCurrentMatchPositioned: @escaping (CGFloat) -> Void
+        ) {
             self.height = height
             self.onRemoteContentBlocked = onRemoteContentBlocked
+            self.onCurrentMatchPositioned = onCurrentMatchPositioned
+        }
+
+        /// Hands the script the offsets to paint.
+        func applyFind(matches: [ThreadFindMatch], current: Int?, to webView: WKWebView) {
+            let pairs = matches.map { "[\($0.start),\($0.length)]" }.joined(separator: ",")
+            let call = "window.plmailFind && window.plmailFind([\(pairs)], \(current ?? -1));"
+
+            guard call != appliedFind else { return }
+
+            appliedFind = call
+            webView.evaluateJavaScript(call)
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            guard let (matches, current) = pendingFind else { return }
+
+            pendingFind = nil
+            // The document is new, so whatever was applied to the old one is
+            // not a reason to skip this.
+            appliedFind = nil
+            applyFind(matches: matches, current: current, to: webView)
         }
 
         func userContentController(
             _ controller: WKUserContentController, didReceive message: WKScriptMessage
         ) {
             guard let value = message.body as? NSNumber else { return }
+
+            if message.name == Self.findPositionMessage {
+                onCurrentMatchPositioned(CGFloat(value.doubleValue))
+                return
+            }
 
             let measured = CGFloat(value.doubleValue)
 

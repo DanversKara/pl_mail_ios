@@ -25,25 +25,39 @@ struct MessageView: View {
     /// participants, may go to the wrong person.
     let onCompose: (ComposeModel.Kind) -> Void
 
+    /// The open find, or nil when the bar is closed.
+    var find: ThreadFindModel?
+    /// Where in this message's body the current match sits, as a fraction of
+    /// the body's height. Only the thread's scroll view can act on it.
+    var onCurrentMatchPositioned: (CGFloat) -> Void = { _ in }
+
     /// Follows the system, so mail matches the rest of the phone rather than
     /// being the one screen that stays white at night.
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var prefersOriginalColors = false
     @State private var showsQuotedHistory = false
+    @State private var showsDetails = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
 
             if isExpanded {
+                if showsDetails {
+                    MessageDetailsView(message: message)
+                }
+
                 if wasRemoteContentBlocked && isRemoteContentAllowed == false {
                     remoteContentNotice
                 }
 
                 body(for: message)
 
-                if trimmed.quoted != nil {
+                // Hidden while a find is live: the body is forced open for the
+                // search, so the toggle would be a control with nothing to
+                // toggle.
+                if trimmed.quoted != nil, find?.hasQuery != true {
                     quotedHistoryToggle
                 }
 
@@ -74,7 +88,7 @@ struct MessageView: View {
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text(message.displayName)
+                        found(.sender, in: message.displayName)
                             .font(.subheadline.weight(.semibold))
                             .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
@@ -86,10 +100,7 @@ struct MessageView: View {
                     }
 
                     if isExpanded {
-                        Text(recipients)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+                        recipientLine
                     } else if message.preview.isEmpty == false {
                         // Only when there is one. An empty line still takes a
                         // line's height, and a column of collapsed rows with
@@ -165,12 +176,56 @@ struct MessageView: View {
         message.to.count + message.cc.count > 1
     }
 
-    private var recipients: String {
-        let names = message.to.map(\.displayName)
+    /// Who this went to, and the way into the full detail.
+    ///
+    /// The label and the names are separate views rather than one interpolated
+    /// string so the names can carry find highlighting: the find model counts
+    /// occurrences in the names alone, and a query like "to" would otherwise
+    /// match the label and put every subsequent occurrence one out.
+    @ViewBuilder
+    private var recipientLine: some View {
+        let names = message.to.map(\.displayName).joined(separator: ", ")
 
-        guard names.isEmpty == false else { return "" }
+        HStack(spacing: 4) {
+            if names.isEmpty == false {
+                Text(.ui("To:"))
+                found(.recipients, in: names)
+            }
 
-        return String(localized: .ui("To: \(names.joined(separator: ", "))"))
+            Button {
+                withAnimation(.snappy(duration: 0.2)) { showsDetails.toggle() }
+            } label: {
+                Image(systemName: showsDetails ? "chevron.up" : "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                Text(showsDetails ? .ui("Hide details") : .ui("Show details")))
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .lineLimit(1)
+    }
+
+    /// One of the natively drawn fields, with its find matches picked out.
+    ///
+    /// The string is passed in rather than derived from the field, because the
+    /// view already has it and deriving it twice is how the highlighted ranges
+    /// and the drawn text drift apart.
+    @ViewBuilder
+    private func found(_ field: ThreadFind.Field, in text: String) -> some View {
+        if let find, find.hasQuery {
+            FoundText(
+                text: text,
+                ranges: find.ranges(in: text),
+                currentOccurrence: find.currentOccurrence(in: message.id, field: field)
+            )
+        } else {
+            Text(text)
+        }
     }
 
     private var date: String {
@@ -198,11 +253,22 @@ struct MessageView: View {
         return MailHTML.trimQuotedHistory(html)
     }
 
+    /// Whether the quoted history has to be on screen.
+    ///
+    /// A find is computed over the whole body, history included — searching a
+    /// thread and being told there are matches you cannot see would be a worse
+    /// answer than not searching the history at all. So while a query is live
+    /// the message renders in full, which also keeps the rendered HTML and the
+    /// projection the offsets are stated against the same string.
+    private var showsFullBody: Bool {
+        showsQuotedHistory || (find?.hasQuery ?? false)
+    }
+
     @ViewBuilder
     private func body(for message: MessageSnapshot) -> some View {
         if let html = message.htmlBody, html.isEmpty == false {
             MessageBodyView(
-                html: showsQuotedHistory ? html : trimmed.visible,
+                html: showsFullBody ? html : trimmed.visible,
                 inlineParts: message.inlineParts,
                 accountKey: message.accountKey,
                 loadRemoteContent: isRemoteContentAllowed,
@@ -210,13 +276,20 @@ struct MessageView: View {
                 inlineProvider: { part, _ in
                     await downloadContext.data(for: part, blobs: blobs)
                 },
-                onRemoteContentBlocked: onRemoteContentBlocked
+                onRemoteContentBlocked: onRemoteContentBlocked,
+                findMatches: find?.bodyMatches(in: message.id) ?? [],
+                currentFindOccurrence: find?.currentOccurrence(in: message.id, field: .body),
+                onCurrentMatchPositioned: onCurrentMatchPositioned
             )
             .padding(.top, 8)
+            // The handle the find scrolls to once it knows how far down this
+            // body the match is. Separate from the card's own, because the
+            // fraction is measured against the body and not the header above it.
+            .id(ThreadReaderView.bodyAnchor(message.id))
         } else if let text = message.textBody, text.isEmpty == false {
             // Plain text stays native: no renderer needed, and it inherits
             // Dynamic Type and the app's theme for free.
-            Text(text)
+            found(.body, in: text)
                 .font(.body)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)

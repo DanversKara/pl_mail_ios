@@ -119,7 +119,6 @@
 "That file couldn't be opened." = "That file couldn't be opened.";
 "%@ couldn't be read." = "%@ couldn't be read.";
 "Couldn't download this attachment." = "Couldn't download this attachment.";
-"To: %@" = "To: %@";
 "Show quoted history" = "Show quoted history";
 "Hide quoted history" = "Hide quoted history";
 "%lld earlier messages" = "%lld earlier messages";
@@ -165,3 +164,16 @@
 
 "Any time" = "Any time";
 "Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase." = "Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase.";
+
+/* Find within an open conversation, and the header detail you open when you
+   suspect a message is not from who it says. "To:" carries its colon because
+   the names beside it are drawn separately, so that a search for "to" cannot
+   match the label and put every later hit one out. */
+
+"Find in conversation" = "Find in conversation";
+"Next match" = "Next match";
+"Previous match" = "Previous match";
+"To:" = "To:";
+"Show details" = "Show details";
+"Hide details" = "Hide details";
+"Date" = "Date";

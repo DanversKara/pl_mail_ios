@@ -124,7 +124,6 @@
 "That file couldn't be opened." = "Diese Datei ließ sich nicht öffnen.";
 "%@ couldn't be read." = "%@ ließ sich nicht lesen.";
 "Couldn't download this attachment." = "Dieser Anhang ließ sich nicht laden.";
-"To: %@" = "An: %@";
 "Show quoted history" = "Zitierten Verlauf einblenden";
 "Hide quoted history" = "Zitierten Verlauf ausblenden";
 "%lld earlier messages" = "%lld ältere Nachrichten";
@@ -171,3 +170,17 @@
 
 "Any time" = "Beliebiger Zeitraum";
 "Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase." = "Verwende from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox sowie before:/after: mit einem Datum. Alles andere wird als Text gesucht, Wörter in Anführungszeichen als Wortgruppe.";
+
+/* Suchen in einer geöffneten Konversation, dazu die Kopfzeilen-Details, die man
+   öffnet, wenn eine Nachricht nicht von dem zu stammen scheint, was sie
+   behauptet. „An:“ trägt seinen Doppelpunkt selbst, weil die Namen daneben
+   getrennt gezeichnet werden — sonst könnte eine Suche nach „an“ die
+   Beschriftung treffen und jeden weiteren Treffer verschieben. */
+
+"Find in conversation" = "In Konversation suchen";
+"Next match" = "Nächster Treffer";
+"Previous match" = "Vorheriger Treffer";
+"To:" = "An:";
+"Show details" = "Details einblenden";
+"Hide details" = "Details ausblenden";
+"Date" = "Datum";
