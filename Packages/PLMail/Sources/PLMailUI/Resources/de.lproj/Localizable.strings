@@ -163,3 +163,11 @@
 "Star or unstar" = "Markieren oder Markierung entfernen";
 "Nothing" = "Nichts";
 "Everything a swipe does is also in the menu you get by holding a conversation, so an edge set to Nothing takes away the shortcut and not the action." = "Alles, was eine Streichgeste tut, steht auch im Menü, das langes Tippen auf eine Konversation öffnet. „Nichts“ nimmt also nur die Abkürzung weg, nicht die Aktion.";
+
+/* Suche. Der Hilfetext war bis zu den Vorschlägen nur auf Englisch; er ist die
+   einzige Stelle, an der die Operatoren vollständig aufgezählt werden. Die
+   Operatoren selbst bleiben unübersetzt — sie sind Syntax, die der Server
+   liest. */
+
+"Any time" = "Beliebiger Zeitraum";
+"Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase." = "Verwende from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox sowie before:/after: mit einem Datum. Alles andere wird als Text gesucht, Wörter in Anführungszeichen als Wortgruppe.";

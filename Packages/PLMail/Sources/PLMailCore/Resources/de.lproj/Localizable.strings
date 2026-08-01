@@ -62,3 +62,27 @@
 "Tomorrow evening" = "Morgen Abend";
 "This weekend" = "Am Wochenende";
 "Next week" = "Nächste Woche";
+
+/* Suchoperatoren, je eine Zeile Erklärung in der Vorschlagsliste. Sie sind der
+   ganze Grund für die Vorschläge: „has:attachment“ errät niemand. Die
+   Operatoren selbst bleiben englisch — sie sind Syntax, die der Server so und
+   nicht anders liest. */
+
+"Mail from a person" = "Mail von einer Person";
+"Mail sent to a person" = "Mail an eine Person";
+"Words in the subject line" = "Wörter im Betreff";
+"Only mail with a file attached" = "Nur Mail mit Dateianhang";
+"Only mail you haven't read" = "Nur ungelesene Mail";
+"Only mail you starred" = "Nur Mail mit Stern";
+"One mailbox, such as in:inbox" = "Ein Postfach, etwa in:inbox";
+"Mail since a date, like 2024-01-31" = "Mail ab einem Datum, etwa 2024-01-31";
+"Mail up to a date, like 2024-01-31" = "Mail bis zu einem Datum, etwa 2024-01-31";
+
+/* Die Filter-Chips über den Suchergebnissen. Jeder schreibt seinen Operator in
+   die Suchanfrage, benennt also dasselbe wie das Token darunter. */
+
+"Unread" = "Ungelesen";
+"Has attachment" = "Mit Anhang";
+"Past week" = "Letzte Woche";
+"Past month" = "Letzter Monat";
+"Past year" = "Letztes Jahr";

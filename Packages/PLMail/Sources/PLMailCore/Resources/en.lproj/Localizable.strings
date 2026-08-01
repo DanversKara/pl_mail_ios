@@ -60,3 +60,25 @@
 "Tomorrow evening" = "Tomorrow evening";
 "This weekend" = "This weekend";
 "Next week" = "Next week";
+
+/* Search operators, explained one line at a time in the suggestion list. These
+   are the whole reason the suggestions exist: nobody guesses "has:attachment". */
+
+"Mail from a person" = "Mail from a person";
+"Mail sent to a person" = "Mail sent to a person";
+"Words in the subject line" = "Words in the subject line";
+"Only mail with a file attached" = "Only mail with a file attached";
+"Only mail you haven't read" = "Only mail you haven't read";
+"Only mail you starred" = "Only mail you starred";
+"One mailbox, such as in:inbox" = "One mailbox, such as in:inbox";
+"Mail since a date, like 2024-01-31" = "Mail since a date, like 2024-01-31";
+"Mail up to a date, like 2024-01-31" = "Mail up to a date, like 2024-01-31";
+
+/* The filter chips over search results. Each one writes its operator into the
+   query, so these words name the same thing the tokens below them do. */
+
+"Unread" = "Unread";
+"Has attachment" = "Has attachment";
+"Past week" = "Past week";
+"Past month" = "Past month";
+"Past year" = "Past year";

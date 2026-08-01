@@ -158,3 +158,10 @@
 "Star or unstar" = "Star or unstar";
 "Nothing" = "Nothing";
 "Everything a swipe does is also in the menu you get by holding a conversation, so an edge set to Nothing takes away the shortcut and not the action." = "Everything a swipe does is also in the menu you get by holding a conversation, so an edge set to Nothing takes away the shortcut and not the action.";
+
+/* Search. The help text was English-only until the suggestions landed; it is
+   the one place the operators are spelled out in full. The operators
+   themselves stay untranslated — they are syntax the server parses. */
+
+"Any time" = "Any time";
+"Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase." = "Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase.";

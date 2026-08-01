@@ -28,6 +28,15 @@ public struct MailView: View {
     /// Debounced separately from `searchText`, so a keystroke does not start a
     /// query against someone's home server.
     @State private var settledSearch = ""
+    /// Addresses from mail already synced, for the sender suggestions. Loaded
+    /// once when the field is first used rather than at launch: it is a fetch
+    /// over every stored message, and most sessions never search at all.
+    @State private var correspondents: [EmailAddress] = []
+    @State private var hasLoadedCorrespondents = false
+
+    /// Past searches. A plain value rather than `@State`: it is a wrapper over
+    /// `UserDefaults` with nothing of its own to observe.
+    private let recents = RecentSearches()
 
     /// Where results belong depends on the layout, and the search field can
     /// only live in the sidebar — the detail column's navigation bar is not
@@ -181,6 +190,37 @@ public struct MailView: View {
         searchText.trimmingCharacters(in: .whitespaces).isEmpty == false
     }
 
+    /// What to offer under the field. Recomputed per keystroke, which is cheap:
+    /// the operator list is nine entries and the addresses are already in
+    /// memory.
+    private var suggestions: [SearchSuggestion] {
+        SearchSuggestions.suggest(
+            for: searchText, recents: recents.all(), correspondents: correspondents)
+    }
+
+    /// Every address in synced mail, across accounts.
+    ///
+    /// Deduplicated by address, because the same person turns up in several
+    /// accounts and one of them being a different display name is not a reason
+    /// to offer them twice.
+    private func loadCorrespondents() async {
+        guard hasLoadedCorrespondents == false else { return }
+
+        hasLoadedCorrespondents = true
+
+        var byAddress: [String: EmailAddress] = [:]
+
+        for account in sync.accounts {
+            let addresses = (try? await store.knownAddresses(accountKey: account.accountKey)) ?? []
+
+            for address in addresses {
+                byAddress[address.email.lowercased()] = address
+            }
+        }
+
+        correspondents = byAddress.values.sorted { $0.email < $1.email }
+    }
+
     /// The sidebar, or the results that replaced it on a narrow screen.
     ///
     /// Compact: the sidebar *is* the screen, so results have to appear where
@@ -191,7 +231,7 @@ public struct MailView: View {
         if isSearching, sizeClass == .compact {
             SearchResultsView(
                 raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
-                selection: $selectedThread)
+                selection: $selectedThread, queryText: $searchText)
         } else {
             MailboxSidebarView(sync: sync, outbox: outbox, selection: $selectedFeed)
         }
@@ -203,7 +243,7 @@ public struct MailView: View {
         if isSearching, sizeClass != .compact {
             SearchResultsView(
                 raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
-                selection: $selectedThread)
+                selection: $selectedThread, queryText: $searchText)
         } else if let selectedFeed {
             // `.inline`, not large: a large title silently fails to render
             // when this column is restored rather than pushed, which is
@@ -245,6 +285,23 @@ public struct MailView: View {
                 )
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
+                .searchSuggestions {
+                    SearchSuggestionsView(suggestions: suggestions) { completion, shouldSubmit in
+                        searchText = completion
+
+                        // A finished suggestion is a search; a half one — the
+                        // `from:` that still wants a name — leaves the caret
+                        // where the value goes and runs nothing.
+                        if shouldSubmit {
+                            settledSearch = completion
+                            recents.record(completion)
+                        }
+                    }
+                }
+                // The moment a search is deliberately run, as opposed to the
+                // debounce firing mid-word. Recording every settled keystroke
+                // would fill the history with "inv", "invo", "invoi".
+                .onSubmit(of: .search) { recents.record(searchText) }
                 .navigationTitle(Text(verbatim: "plMail"))
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -327,6 +384,10 @@ public struct MailView: View {
         .onChange(of: IntentRouter.shared.pending) { _, _ in performPendingIntent() }
         .task { performPendingIntent() }
         .task(id: searchText) {
+            // The first keystroke is the signal that this session will search
+            // at all, and the addresses are wanted before the debounce is up.
+            if searchText.isEmpty == false { await loadCorrespondents() }
+
             // 350ms: long enough that typing a word is one query rather than
             // five, short enough not to feel laggy.
             try? await Task.sleep(for: .milliseconds(350))
