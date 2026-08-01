@@ -41,6 +41,9 @@ public struct ThreadRowView: View {
     /// nothing about why the message came back.
     var snippet: String?
 
+    /// Grows with the text size, because the date inside it does.
+    @ScaledMetric(relativeTo: .caption2) private var statusWidth: CGFloat = 44
+
     public init(
         thread: StoredThread,
         accountLabel: String? = nil,
@@ -156,9 +159,11 @@ public struct ThreadRowView: View {
     /// When it arrived, and what state it is in — one narrow strip down the
     /// trailing edge.
     ///
-    /// Fixed width rather than intrinsic, so the dates line up with each other
-    /// instead of ragging with the length of "09:41" against "12 Mar", and so
-    /// a row with a star is exactly as wide as one without.
+    /// A floor on the width rather than a fixed one, so the dates line up with
+    /// each other instead of ragging between "09:41" and "12 Mar", and a
+    /// starred row is exactly as wide as an unstarred one — while a date that
+    /// genuinely needs more room, at an accessibility text size, takes it from
+    /// the subject rather than spilling over it.
     private var statusColumn: some View {
         VStack(alignment: .trailing, spacing: 5) {
             Text(relativeDate)
@@ -184,7 +189,7 @@ public struct ThreadRowView: View {
                     .frame(width: 8, height: 8)
             }
         }
-        .frame(width: 44, alignment: .trailing)
+        .frame(minWidth: statusWidth, alignment: .trailing)
         .accessibilityHidden(true)
     }
 
@@ -202,8 +207,11 @@ public struct ThreadRowView: View {
                 starIcon
             }
             .buttonStyle(.plain)
-            // The glyph is well under the 44pt minimum on its own.
-            .frame(width: 30, height: 22)
+            // The glyph is well under the 44pt minimum on its own. A
+            // *minimum* rather than a size: at an accessibility text size
+            // the glyph outgrows any fixed box and would draw over the
+            // unread dot stacked beneath it.
+            .frame(minWidth: 30, minHeight: 22)
             .contentShape(.rect)
             .accessibilityHidden(true)
         } else if thread.isFlagged {
