@@ -47,6 +47,11 @@ public struct ThreadListView: View {
     /// server for somebody to press it twice.
     @State private var isMarkingAllRead = false
     @State private var isPickingBulkLabel = false
+    @State private var isPickingSwipeActions = false
+
+    /// Shared rather than owned, so the two lists a split view has on screen at
+    /// once cannot disagree about what a swipe does.
+    private var swipes: SwipeActionPreference { .shared }
     /// The conversation whose exact snooze time is being picked.
     @State private var snoozing: ActionTarget?
     @State private var editingDraft: DraftRef?
@@ -126,17 +131,14 @@ public struct ThreadListView: View {
                 // an opaque band sitting over the card.
                 .listRowBackground(Color.clear)
                 .task { await loadMoreIfNeeded(at: row.entry) }
-                // Both directions, both undoable, and everything a swipe does
-                // is also reachable from the row's context menu — a gesture
-                // must never be the only way to reach an action.
-                // Both directions, both undoable, and everything a swipe does
-                // is also reachable from the row's context menu — a gesture
-                // must never be the only way to reach an action.
+                // Both edges chosen by the user, both undoable, and everything
+                // a swipe does is also reachable from the row's context menu —
+                // a gesture must never be the only way to reach an action.
                 .swipeActions(edge: .leading, allowsFullSwipe: true) {
-                    leadingSwipe(for: row.thread)
+                    swipeButton(swipes.leading, for: row.thread)
                 }
                 .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                    trailingSwipe(for: row.thread)
+                    swipeButton(swipes.trailing, for: row.thread)
                 }
                 .contextMenu { rowMenu(for: row.thread) }
             }
@@ -160,6 +162,9 @@ public struct ThreadListView: View {
             BulkLabelPickerView(targets: checkedTargets, sync: sync, actions: actions) {
                 checked = []
             }
+        }
+        .sheet(isPresented: $isPickingSwipeActions) {
+            SwipeActionSettingsView(preference: swipes)
         }
         .sheet(item: $editingDraft) { draft in
             if let account = sync.accounts.first(where: { $0.accountKey == draft.accountKey }) {
@@ -199,6 +204,10 @@ public struct ThreadListView: View {
                             markAllAsRead()
                         }
                         .disabled(isMarkingAllRead)
+
+                        Button(.ui("Swipe actions"), systemImage: "hand.draw") {
+                            isPickingSwipeActions = true
+                        }
                     } label: {
                         Label(.ui("More"), systemImage: "ellipsis.circle")
                     }
@@ -302,30 +311,49 @@ public struct ThreadListView: View {
     // "unable to type-check in reasonable time", not as an error pointing at
     // any of them.
 
+    /// One edge's button.
+    ///
+    /// The title flips with the row's own state — a read conversation offers
+    /// Unread — because a swipe that says "Read" on something already read is
+    /// a button whose effect you cannot predict until you have pressed it.
     @ViewBuilder
-    private func leadingSwipe(for thread: StoredThread) -> some View {
-        Button {
-            act { await actions.archive(target(for: thread)) }
-        } label: {
-            Label(.ui("Archive"), systemImage: "archivebox")
+    private func swipeButton(_ action: SwipeAction, for thread: StoredThread) -> some View {
+        if action != .nothing {
+            Button(role: action.isDestructive ? .destructive : nil) {
+                perform(action, on: thread)
+            } label: {
+                swipeLabel(action, for: thread)
+            }
+            // Set even for the destructive role, which otherwise takes the
+            // system red — the one colour on this palette that has to be
+            // exactly the shade the rest of the app calls destructive.
+            .tint(action.tint)
         }
-        .tint(.green)
     }
 
     @ViewBuilder
-    private func trailingSwipe(for thread: StoredThread) -> some View {
-        Button(role: .destructive) {
-            act { await actions.trash(target(for: thread)) }
-        } label: {
-            Label(.ui("Trash"), systemImage: "trash")
+    private func swipeLabel(_ action: SwipeAction, for thread: StoredThread) -> some View {
+        switch action {
+        case .archive: Label(.ui("Archive"), systemImage: "archivebox")
+        case .trash: Label(.ui("Trash"), systemImage: "trash")
+        case .readState: readLabel(for: thread, long: false)
+        case .star: starLabel(for: thread)
+        case .spam: spamLabel
+        case .nothing: EmptyView()
         }
+    }
 
-        Button {
-            act { await actions.setSeen(thread.isUnread, target(for: thread)) }
-        } label: {
-            readLabel(for: thread, long: false)
+    private func perform(_ action: SwipeAction, on thread: StoredThread) {
+        let target = target(for: thread)
+
+        switch action {
+        case .archive: act { await actions.archive(target) }
+        case .trash: act { await actions.trash(target) }
+        case .readState: act { await actions.setSeen(thread.isUnread, target) }
+        case .star: act { await actions.setFlagged(thread.isFlagged == false, target) }
+        case .spam: act { await actions.setSpam(isJunkFeed == false, target) }
+        case .nothing: break
         }
-        .tint(.blue)
     }
 
     @ViewBuilder

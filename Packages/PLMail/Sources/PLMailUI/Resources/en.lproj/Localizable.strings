@@ -146,3 +146,10 @@
 "Send now" = "Send now";
 "Waiting until %@" = "Waiting until %@";
 "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later.";
+"Swipe actions" = "Swipe actions";
+"Swipe left" = "Swipe left";
+"Swipe right" = "Swipe right";
+"Read or unread" = "Read or unread";
+"Star or unstar" = "Star or unstar";
+"Nothing" = "Nothing";
+"Everything a swipe does is also in the menu you get by holding a conversation, so an edge set to Nothing takes away the shortcut and not the action." = "Everything a swipe does is also in the menu you get by holding a conversation, so an edge set to Nothing takes away the shortcut and not the action.";

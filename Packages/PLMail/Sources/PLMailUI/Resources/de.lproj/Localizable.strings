@@ -151,3 +151,10 @@
 "Send now" = "Jetzt senden";
 "Waiting until %@" = "Wartet bis %@";
 "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Wird bei der ersten Prüfung nach diesem Zeitpunkt gesendet. Dein iPhone muss dafür wach sein, es kann also etwas später werden.";
+"Swipe actions" = "Streichgesten";
+"Swipe left" = "Nach links streichen";
+"Swipe right" = "Nach rechts streichen";
+"Read or unread" = "Gelesen oder ungelesen";
+"Star or unstar" = "Markieren oder Markierung entfernen";
+"Nothing" = "Nichts";
+"Everything a swipe does is also in the menu you get by holding a conversation, so an edge set to Nothing takes away the shortcut and not the action." = "Alles, was eine Streichgeste tut, steht auch im Menü, das langes Tippen auf eine Konversation öffnet. „Nichts“ nimmt also nur die Abkürzung weg, nicht die Aktion.";
