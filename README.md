@@ -18,6 +18,8 @@ It talks to plMail directly over **JMAP** — no scraping, no bridge, no account
 
 **Mail you write does not get lost.** Press send while the server is unreachable and the message is written to disk rather than thrown away. It appears in an Outbox that says plainly what it is waiting for, it survives the app being force-quit, and it goes out on its own once your server is back. Nothing to press, nothing to retype.
 
+**Send it tomorrow morning instead.** Anything you write can be held until later today, tomorrow, next week or a time you pick; it waits in the Outbox, where you can send it now or throw it away. It goes out at the first check after the time you chose — the app has to be open or woken by the system for that, so it may be a little later, and the interface says so rather than pretending to a precision it hasn't got.
+
 **Formatting that survives the trip.** Bold, italic, underline, strikethrough and links, sent as real HTML — so a reply written on your phone reads like one written in the browser, and the quoted thread comes back intact instead of flattened into plain text.
 
 **Reading done properly.** Messages render as the sender wrote them, on white, even when your phone is in dark mode — mail is authored for a light background, and forcing it dark gives you black text on black. Remote images stay blocked until you ask, because in email a remote image is usually a tracking pixel. Attachments open in Quick Look.

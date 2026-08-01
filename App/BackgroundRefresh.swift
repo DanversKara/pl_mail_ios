@@ -39,9 +39,16 @@ enum BackgroundRefresh {
         }
     }
 
-    static func schedule() {
+    /// - Parameter due: When the outbox next has something to send, if it has.
+    ///   Asking earlier than the usual quarter of an hour is worth it only for
+    ///   mail somebody scheduled — and it is a request, not a guarantee: the
+    ///   system grants these on its own budget, so a message may still go out
+    ///   after its time rather than at it.
+    static func schedule(noLaterThan due: Date? = nil) {
         let request = BGAppRefreshTaskRequest(identifier: identifier)
-        request.earliestBeginDate = .now.addingTimeInterval(15 * 60)
+        let usual = Date.now.addingTimeInterval(15 * 60)
+
+        request.earliestBeginDate = [usual, due].compactMap { $0 }.min()
 
         do {
             try BGTaskScheduler.shared.submit(request)

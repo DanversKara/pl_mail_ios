@@ -86,10 +86,12 @@ public final class OutboxSender {
 
     /// Waits for a drain that is already running.
     ///
-    /// Internal: nothing in the app waits on one — the composer closes the
-    /// moment the message is on disk, which is the point — but a test that
-    /// asserts on what the queue looks like afterwards has to.
-    func settle() async {
+    /// Almost nothing waits on a drain — the composer closes the moment the
+    /// message is on disk, which is the point. The exception is the background
+    /// refresh, which must not report itself finished while a send is still in
+    /// flight: the system is entitled to suspend the process the instant it
+    /// does, and the send would be cut off mid-request.
+    public func settle() async {
         await drainTask?.value
     }
 
