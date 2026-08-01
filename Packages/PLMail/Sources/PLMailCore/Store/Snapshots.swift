@@ -45,6 +45,11 @@ public struct MailboxSnapshot: Hashable, Sendable, Identifiable {
     public var role: MailboxRole?
     public var unreadThreads: Int
     public var totalThreads: Int
+    /// The label's visibility toggle in plMail, and **not** a synonym for
+    /// "empty" or "unimportant". Archive is created hidden on this server, so
+    /// a sidebar that only ever shows subscribed mailboxes leaves a real,
+    /// populated label with no way to reach it.
+    public var isSubscribed: Bool = true
 
     public var id: String { "\(accountKey)#\(mailboxID.rawValue)" }
 }

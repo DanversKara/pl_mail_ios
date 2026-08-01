@@ -1127,7 +1127,8 @@ public actor SyncStore {
             name: mailbox.name,
             role: mailbox.role.map(MailboxRole.init(rawValue:)),
             unreadThreads: mailbox.unreadThreads,
-            totalThreads: mailbox.totalThreads
+            totalThreads: mailbox.totalThreads,
+            isSubscribed: mailbox.isSubscribed
         )
     }
 }
