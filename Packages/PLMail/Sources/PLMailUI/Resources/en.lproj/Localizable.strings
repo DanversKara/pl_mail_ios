@@ -104,3 +104,9 @@
 "Add" = "Add";
 "The selected text will link here." = "The selected text will link here.";
 "Quoted message included" = "Quoted message included";
+"Send later" = "Send later";
+"Send at" = "Send at";
+"Schedule" = "Schedule";
+"Send now" = "Send now";
+"Waiting until %@" = "Waiting until %@";
+"Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later.";

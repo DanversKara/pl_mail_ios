@@ -22,8 +22,16 @@ public struct OutboxView: View {
     public var body: some View {
         NavigationStack {
             List {
-                ForEach(messages) { message in
-                    row(for: message)
+                Section {
+                    ForEach(messages) { message in
+                        row(for: message)
+                    }
+                } footer: {
+                    // Only when it applies. Mail waiting for a server needs no
+                    // explanation of the clock.
+                    if messages.contains(where: { $0.sendAfter != nil }) {
+                        Text(.ui(SendLaterSheet.caveat))
+                    }
                 }
             }
             .overlay {
@@ -79,6 +87,18 @@ public struct OutboxView: View {
                 .font(.subheadline)
                 .lineLimit(1)
 
+            // Stated rather than shown as a clock glyph and a time: a row that
+            // is waiting on purpose and a row that is stuck look identical
+            // otherwise, and the second is the one people worry about.
+            if let sendAfter = message.sendAfter {
+                Label(
+                    String(localized: .ui("Waiting until \(SnoozeMenu.shortTime(sendAfter))")),
+                    systemImage: "clock"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            }
+
             if let failure = message.lastFailure {
                 // Named rather than reduced to a spinner: "waiting for the
                 // server" and "the server refused this" call for entirely
@@ -86,7 +106,7 @@ public struct OutboxView: View {
                 Label(failure, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
                     .foregroundStyle(.orange)
-            } else if outbox.isSending {
+            } else if outbox.isSending, message.isDue() {
                 Label {
                     Text(.ui("Sending…"))
                 } icon: {
@@ -102,6 +122,39 @@ public struct OutboxView: View {
                 Task { await outbox.discard(message.id) }
             }
         }
+        .swipeActions(edge: .leading) {
+            // The way out of a schedule that turned out to be wrong: send it
+            // anyway. Discarding is the other, and it is on the side people
+            // already swipe for it.
+            if message.sendAfter != nil {
+                Button(.ui("Send now"), systemImage: "paperplane") {
+                    Task { await sendNow(message.id) }
+                }
+                .tint(.accentColor)
+            }
+        }
+        // Both actions again, because a swipe is invisible until it is tried
+        // and this is the screen someone opens when they are already unsure
+        // what is happening to their mail.
+        .contextMenu {
+            if message.sendAfter != nil {
+                Button(.ui("Send now"), systemImage: "paperplane") {
+                    Task { await sendNow(message.id) }
+                }
+            }
+
+            Button(.ui("Discard"), systemImage: "trash", role: .destructive) {
+                Task { await outbox.discard(message.id) }
+            }
+        }
+    }
+
+    /// Reloads afterwards rather than waiting for the count to change: a send
+    /// that fails leaves the message here, and the row would otherwise go on
+    /// saying it was waiting for a time that has been cleared.
+    private func sendNow(_ id: UUID) async {
+        await outbox.sendNow(id)
+        await reload()
     }
 
     private func reload() async {
