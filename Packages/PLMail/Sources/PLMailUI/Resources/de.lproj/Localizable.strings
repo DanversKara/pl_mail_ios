@@ -151,3 +151,11 @@
 "Send now" = "Jetzt senden";
 "Waiting until %@" = "Wartet bis %@";
 "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Wird bei der ersten Prüfung nach diesem Zeitpunkt gesendet. Dein iPhone muss dafür wach sein, es kann also etwas später werden.";
+
+/* Suche. Der Hilfetext war bis zu den Vorschlägen nur auf Englisch; er ist die
+   einzige Stelle, an der die Operatoren vollständig aufgezählt werden. Die
+   Operatoren selbst bleiben unübersetzt — sie sind Syntax, die der Server
+   liest. */
+
+"Any time" = "Beliebiger Zeitraum";
+"Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase." = "Verwende from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox sowie before:/after: mit einem Datum. Alles andere wird als Text gesucht, Wörter in Anführungszeichen als Wortgruppe.";

@@ -146,3 +146,10 @@
 "Send now" = "Send now";
 "Waiting until %@" = "Waiting until %@";
 "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later.";
+
+/* Search. The help text was English-only until the suggestions landed; it is
+   the one place the operators are spelled out in full. The operators
+   themselves stay untranslated — they are syntax the server parses. */
+
+"Any time" = "Any time";
+"Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase." = "Use from:, to:, subject:, has:attachment, is:unread, is:starred, in:inbox and before:/after: with a date. Anything else is searched as text, and quoted words are searched as a phrase.";
