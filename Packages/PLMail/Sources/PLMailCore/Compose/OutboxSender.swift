@@ -16,6 +16,11 @@ public final class OutboxSender {
     public private(set) var pendingCount = 0
     public private(set) var isSending = false
 
+    /// The earliest time something in the queue becomes due, or nil when
+    /// nothing is being held back. Read by the app when it goes to the
+    /// background, to ask the system for a wake-up nearer that time.
+    public private(set) var nextDueAt: Date?
+
     /// Exposed so the composer files into the same queue this drains. Two
     /// `Outbox` values over one directory would work — it is all on disk — but
     /// sharing one keeps the count and the queue from disagreeing.
@@ -24,6 +29,7 @@ public final class OutboxSender {
     private let store: SyncStore
     private let logger = Logger(subsystem: "de.plmail", category: "outbox")
     private var drainTask: Task<Void, Never>?
+    private var wakeTask: Task<Void, Never>?
 
     public init(outbox: Outbox, client: JMAPClient, store: SyncStore) {
         queue = outbox
@@ -32,7 +38,10 @@ public final class OutboxSender {
     }
 
     public func refreshCount() async {
-        pendingCount = await queue.count()
+        let queued = await queue.pending()
+
+        pendingCount = queued.count
+        armWake(among: queued)
     }
 
     public func pending() async -> [Outbox.PendingMessage] {
@@ -40,9 +49,23 @@ public final class OutboxSender {
     }
 
     /// Drops a queued message. The only way out for one the server will never
-    /// accept — a recipient that does not exist, an account since removed.
+    /// accept — a recipient that does not exist, an account since removed —
+    /// and how a scheduled message is called back before it goes.
     public func discard(_ id: UUID) async {
         await queue.remove(id)
+        await refreshCount()
+    }
+
+    /// Releases a message that was being held back, and sends it.
+    public func sendNow(_ id: UUID) async {
+        await queue.reschedule(id, to: nil)
+        await refreshCount()
+        drain()
+    }
+
+    /// Moves a scheduled message to a different time.
+    public func reschedule(_ id: UUID, to date: Date) async {
+        await queue.reschedule(id, to: date)
         await refreshCount()
     }
 
@@ -61,19 +84,35 @@ public final class OutboxSender {
         }
     }
 
+    /// Waits for a drain that is already running.
+    ///
+    /// Almost nothing waits on a drain — the composer closes the moment the
+    /// message is on disk, which is the point. The exception is the background
+    /// refresh, which must not report itself finished while a send is still in
+    /// flight: the system is entitled to suspend the process the instant it
+    /// does, and the send would be cut off mid-request.
+    public func settle() async {
+        await drainTask?.value
+    }
+
     private func drainNow() async {
         let queued = await queue.pending()
 
-        guard queued.isEmpty == false else {
-            pendingCount = 0
+        pendingCount = queued.count
+        armWake(among: queued)
 
-            return
-        }
+        // Everything held back for later is left exactly where it is. A drain
+        // happens on foreground, on the network returning and on launch —
+        // moments that say nothing about whether a scheduled message is ready.
+        let now = Date.now
+        let due = queued.filter { $0.isDue(at: now) }
+
+        guard due.isEmpty == false else { return }
 
         isSending = true
         defer { isSending = false }
 
-        for message in queued {
+        for message in due {
             do {
                 try await send(message)
                 await queue.remove(message.id)
@@ -91,6 +130,35 @@ public final class OutboxSender {
         }
 
         await refreshCount()
+    }
+
+    /// Arranges to drain again when the next scheduled message falls due.
+    ///
+    /// **A timer, not a promise.** It only runs while the process does, which
+    /// is why nothing depends on it: a message becomes due on the wall clock,
+    /// and the drains on foreground, on the network returning, on launch and on
+    /// the background refresh are what actually get it out. This is the case
+    /// where the app happens to be open at the moment — worth having, because
+    /// otherwise a message scheduled for ten minutes' time sits there while
+    /// somebody watches it.
+    private func armWake(among queued: [Outbox.PendingMessage]) {
+        let now = Date.now
+        let next = queued.compactMap(\.sendAfter).filter { $0 > now }.min()
+
+        wakeTask?.cancel()
+        nextDueAt = next
+
+        guard let next else { return }
+
+        wakeTask = Task { [weak self] in
+            // A second past the due time rather than exactly on it: waking a
+            // hair early would find nothing due, re-arm, and spin.
+            try? await Task.sleep(for: .seconds(next.timeIntervalSinceNow + 1))
+
+            guard Task.isCancelled == false else { return }
+
+            self?.drain()
+        }
     }
 
     /// The one send path.

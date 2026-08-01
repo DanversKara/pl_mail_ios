@@ -23,6 +23,7 @@ public struct ComposeView: View {
     @State private var isPickingFiles = false
     @State private var pickedPhotos: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
+    @State private var isPickingSendTime = false
     @State private var attachmentError: String?
 
     /// Filled in by Shortcuts or Siri, applied once the model exists.
@@ -101,6 +102,20 @@ public struct ComposeView: View {
                     }
                     .disabled(model.isSending)
                 }
+
+                ToolbarItem(placement: .topBarLeading) {
+                    Menu {
+                        SendLaterMenu(
+                            onPick: { model.scheduleSend(at: $0) },
+                            onPickExact: { isPickingSendTime = true }
+                        )
+                    } label: {
+                        Label(.ui("Send later"), systemImage: "clock")
+                    }
+                    // Same condition as Send: a time is no use without
+                    // somebody to send to.
+                    .disabled(model.canSend == false)
+                }
             }
             .safeAreaInset(edge: .bottom) { sendingBar }
             // Copied into memory on pick rather than held as a URL: the
@@ -126,6 +141,9 @@ public struct ComposeView: View {
                 guard items.isEmpty == false else { return }
 
                 Task { await attach(items) }
+            }
+            .sheet(isPresented: $isPickingSendTime) {
+                SendLaterSheet { model.scheduleSend(at: $0) }
             }
             .alert(
                 Text(.ui("Couldn't attach that")),

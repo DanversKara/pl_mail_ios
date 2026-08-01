@@ -54,3 +54,11 @@
 "Couldn't reach the server. The name wasn't saved." = "Server nicht erreichbar. Der Name wurde nicht gespeichert.";
 "This address isn't set up as an alias on the server, so its name comes from the account and can't be changed here." = "Diese Adresse ist auf dem Server nicht als Alias angelegt; ihr Name stammt vom Konto und lässt sich hier nicht ändern.";
 "This account is read-only." = "Dieses Konto ist schreibgeschützt.";
+/* Die voreingestellten Zeiten, gemeinsam genutzt von „Zurückstellen“ und
+   „Später senden“. */
+
+"Later today" = "Später heute";
+"Tomorrow" = "Morgen";
+"Tomorrow evening" = "Morgen Abend";
+"This weekend" = "Am Wochenende";
+"Next week" = "Nächste Woche";

@@ -18,7 +18,10 @@ import OSLog
 /// sometimes tens of megabytes of them, and base64 inside a single JSON
 /// document would mean rewriting every queued message to append one.
 public actor Outbox {
-    private let directory: URL
+    /// Internal rather than private so a test can plant a message file in the
+    /// shape an older build wrote, which is the only way to check that the
+    /// format is still lenient enough to read it.
+    let directory: URL
     private let logger = Logger(subsystem: "de.plmail", category: "outbox")
 
     /// - Parameter serverID: Scopes the queue to one server, so signing into a
@@ -80,6 +83,18 @@ public actor Outbox {
     public func remove(_ id: UUID) {
         try? FileManager.default.removeItem(
             at: directory.appending(path: id.uuidString, directoryHint: .isDirectory))
+    }
+
+    /// Moves a scheduled message, or releases it to go out at the next drain.
+    ///
+    /// Rewrites the same folder rather than removing and re-adding, so a crash
+    /// between the two cannot lose a message that was only being retimed.
+    public func reschedule(_ id: UUID, to date: Date?) {
+        guard var message = pending().first(where: { $0.id == id }) else { return }
+
+        message.sendAfter = date
+
+        try? enqueue(message)
     }
 
     /// Records that an attempt failed, so the UI can say so and a message that
@@ -144,6 +159,10 @@ public actor Outbox {
         var references: [String]?
         var editingEmailID: String?
         var queuedAt: Date
+        /// Optional for the same reason `html` is: a queue written by a build
+        /// that had no send-later still decodes, and its messages are due now,
+        /// which is what they always were.
+        var sendAfter: Date?
         var attempts: Int
         var lastFailure: String?
         var lastAttemptAt: Date?
@@ -171,6 +190,7 @@ public actor Outbox {
             references = message.references
             editingEmailID = message.editingEmailID
             queuedAt = message.queuedAt
+            sendAfter = message.sendAfter
             attempts = message.attempts
             lastFailure = message.lastFailure
             lastAttemptAt = message.lastAttemptAt
@@ -198,6 +218,7 @@ public actor Outbox {
                 attachments: attachments
             )
             message.queuedAt = queuedAt
+            message.sendAfter = sendAfter
             message.attempts = attempts
             message.lastFailure = lastFailure
             message.lastAttemptAt = lastAttemptAt
@@ -252,9 +273,25 @@ extension Outbox {
         public var attachments: [Attachment] = []
 
         public var queuedAt = Date.now
+        /// When this may go out, for a message held back on purpose. Nil is
+        /// the ordinary case: send at the next opportunity.
+        ///
+        /// A time rather than a flag plus a time, so "scheduled" and "when"
+        /// cannot disagree.
+        public var sendAfter: Date?
         public var attempts = 0
         public var lastFailure: String?
         public var lastAttemptAt: Date?
+
+        /// Whether the sender may take this one now.
+        ///
+        /// A message with no `sendAfter` is always due — including every
+        /// message written by a build that predates scheduling.
+        public func isDue(at now: Date = .now) -> Bool {
+            guard let sendAfter else { return true }
+
+            return sendAfter <= now
+        }
 
         public var displayRecipient: String {
             to.first.map { $0.name ?? $0.email } ?? ""

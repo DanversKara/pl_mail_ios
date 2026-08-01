@@ -140,3 +140,9 @@
 "Mark all as read" = "Mark all as read";
 "Show all labels" = "Show all labels";
 "Hide extra labels" = "Hide extra labels";
+"Send later" = "Send later";
+"Send at" = "Send at";
+"Schedule" = "Schedule";
+"Send now" = "Send now";
+"Waiting until %@" = "Waiting until %@";
+"Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later.";

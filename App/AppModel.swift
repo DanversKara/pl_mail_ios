@@ -137,7 +137,12 @@ final class AppModel {
             // keep while it is not being looked at, and the server's pool is
             // small enough that one idle client is a real cost.
             await sync?.endLiveUpdates()
-            BackgroundRefresh.schedule()
+
+            // Mail held for a time is the one thing that makes an earlier
+            // wake-up worth asking for. The system decides whether to grant
+            // it, which is why the interface promises "at the first check
+            // after" rather than the time itself.
+            BackgroundRefresh.schedule(noLaterThan: outbox?.nextDueAt)
 
         @unknown default:
             await sync?.endLiveUpdates()
@@ -175,14 +180,22 @@ final class AppModel {
     }
 
     func refreshInBackground() async {
-        guard sync == nil else {
-            await sync?.refreshInBackground()
-            return
-        }
-
         // Woken before any UI existed: rebuild just enough to do one pull.
-        load()
+        if sync == nil { load() }
+
         await sync?.refreshInBackground()
+
+        // The other half of a background wake, and the only thing that gets a
+        // scheduled message out while nobody is looking at the app. Awaited
+        // rather than fired off: the task reports itself complete when this
+        // returns, and the system may suspend us on the next line.
+        outbox?.drain()
+        await outbox?.settle()
+
+        // Resubmitted now that the queue is known: the run was rescheduled
+        // before it started, when nothing here had been read yet, and a
+        // request with the same identifier replaces that one.
+        BackgroundRefresh.schedule(noLaterThan: outbox?.nextDueAt)
     }
 
     /// Registering and prompting are two different decisions.

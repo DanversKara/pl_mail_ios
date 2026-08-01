@@ -53,3 +53,10 @@
 "Couldn't reach the server. The name wasn't saved." = "Couldn't reach the server. The name wasn't saved.";
 "This address isn't set up as an alias on the server, so its name comes from the account and can't be changed here." = "This address isn't set up as an alias on the server, so its name comes from the account and can't be changed here.";
 "This account is read-only." = "This account is read-only.";
+/* The preset times, shared by snooze and send-later. */
+
+"Later today" = "Later today";
+"Tomorrow" = "Tomorrow";
+"Tomorrow evening" = "Tomorrow evening";
+"This weekend" = "This weekend";
+"Next week" = "Next week";

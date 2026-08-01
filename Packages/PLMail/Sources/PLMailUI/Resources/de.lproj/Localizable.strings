@@ -143,6 +143,11 @@
 "Save" = "Sichern";
 "Not saved" = "Nicht gesichert";
 "Mark all as read" = "Alle als gelesen markieren";
-"More" = "Mehr";
 "Show all labels" = "Alle Labels zeigen";
 "Hide extra labels" = "Zusätzliche Labels ausblenden";
+"Send later" = "Später senden";
+"Send at" = "Senden um";
+"Schedule" = "Planen";
+"Send now" = "Jetzt senden";
+"Waiting until %@" = "Wartet bis %@";
+"Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Wird bei der ersten Prüfung nach diesem Zeitpunkt gesendet. Dein iPhone muss dafür wach sein, es kann also etwas später werden.";
