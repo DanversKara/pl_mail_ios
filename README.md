@@ -106,6 +106,12 @@ Open `plMail.xcodeproj`, pick a simulator, and press Run. Simulator builds need 
 
 ---
 
+## What isn't finished
+
+[docs/WHATS-LEFT.md](docs/WHATS-LEFT.md) is the honest list: what is blocked on
+a paid Apple account, what is half-built and where, and the handful of traps in
+this codebase that cost real time to rediscover.
+
 ## Contributing
 
 Issues and pull requests welcome. See [docs/DEVELOPING.md](docs/DEVELOPING.md) for the architecture, the test setup, and the handful of decisions that will look strange until you know why they're there.
