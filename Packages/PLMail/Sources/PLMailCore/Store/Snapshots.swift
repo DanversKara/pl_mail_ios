@@ -56,6 +56,10 @@ public struct MailboxSnapshot: Hashable, Sendable, Identifiable {
     public var labelID: LabelID?
     public var name: String
     public var role: MailboxRole?
+    /// The parent's *binding* id, or nil for a top-level label. Nil also when
+    /// the parent has no binding in this account, which the server reports the
+    /// same way rather than pointing at an id the client cannot resolve.
+    public var parentID: MailboxID?
     public var unreadThreads: Int
     public var totalThreads: Int
     /// The label's visibility toggle in plMail, and **not** a synonym for
@@ -63,6 +67,14 @@ public struct MailboxSnapshot: Hashable, Sendable, Identifiable {
     /// a sidebar that only ever shows subscribed mailboxes leaves a real,
     /// populated label with no way to reach it.
     public var isSubscribed: Bool = true
+
+    /// Whether the server will let this label be renamed and deleted.
+    ///
+    /// Read from `myRights` rather than inferred from ``role`` being nil. The
+    /// two agree today, but the server is the one that decides, and a client
+    /// that guesses offers a Rename button that fails on press.
+    public var mayRename: Bool = false
+    public var mayDelete: Bool = false
 
     public var id: String { "\(accountKey)#\(mailboxID.rawValue)" }
 }

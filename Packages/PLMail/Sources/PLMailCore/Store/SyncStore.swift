@@ -1129,9 +1129,12 @@ public actor SyncStore {
             labelID: mailbox.labelID.map { LabelID(rawValue: $0) },
             name: mailbox.name,
             role: mailbox.role.map(MailboxRole.init(rawValue:)),
+            parentID: mailbox.parentID.map(MailboxID.init(rawValue:)),
             unreadThreads: mailbox.unreadThreads,
             totalThreads: mailbox.totalThreads,
-            isSubscribed: mailbox.isSubscribed
+            isSubscribed: mailbox.isSubscribed,
+            mayRename: mailbox.mayRename,
+            mayDelete: mailbox.mayDelete
         )
     }
 }

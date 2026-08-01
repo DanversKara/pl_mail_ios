@@ -86,3 +86,17 @@
 "Past week" = "Letzte Woche";
 "Past month" = "Letzter Monat";
 "Past year" = "Letztes Jahr";
+
+/* Label anlegen, umbenennen und löschen. Jede Ablehnung benennt die Regel des
+   Servers, statt nur zu melden, dass es nicht geklappt hat: „So heißt hier
+   schon eins“ sagt, was als Nächstes zu tippen ist — „nicht akzeptiert“ nicht. */
+
+"A label needs a name." = "Ein Label braucht einen Namen.";
+"A label name can't contain a slash. Use a parent label to nest it." = "Ein Labelname darf keinen Schrägstrich enthalten. Zum Verschachteln ein übergeordnetes Label verwenden.";
+"There's already a label with that name here." = "Hier gibt es bereits ein Label mit diesem Namen.";
+"Delete the labels nested inside this one first." = "Zuerst die darin verschachtelten Labels löschen.";
+"Built-in labels like Inbox and Sent can't be changed." = "Vorgegebene Labels wie Posteingang und Gesendet lassen sich nicht ändern.";
+"That label no longer exists." = "Dieses Label gibt es nicht mehr.";
+"Your labels changed elsewhere. Try again." = "Deine Labels haben sich anderswo geändert. Bitte erneut versuchen.";
+"The server didn't make that change." = "Der Server hat diese Änderung nicht ausgeführt.";
+"The server didn't accept that change." = "Der Server hat diese Änderung nicht akzeptiert.";

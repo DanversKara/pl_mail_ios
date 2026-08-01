@@ -82,3 +82,18 @@
 "Past week" = "Past week";
 "Past month" = "Past month";
 "Past year" = "Past year";
+
+/* Creating, renaming and deleting a label. Each refusal names the rule the
+   server applied rather than saying the change failed: "there's already one
+   called that" tells you what to type next, "the server didn't accept that"
+   does not. */
+
+"A label needs a name." = "A label needs a name.";
+"A label name can't contain a slash. Use a parent label to nest it." = "A label name can't contain a slash. Use a parent label to nest it.";
+"There's already a label with that name here." = "There's already a label with that name here.";
+"Delete the labels nested inside this one first." = "Delete the labels nested inside this one first.";
+"Built-in labels like Inbox and Sent can't be changed." = "Built-in labels like Inbox and Sent can't be changed.";
+"That label no longer exists." = "That label no longer exists.";
+"Your labels changed elsewhere. Try again." = "Your labels changed elsewhere. Try again.";
+"The server didn't make that change." = "The server didn't make that change.";
+"The server didn't accept that change." = "The server didn't accept that change.";
