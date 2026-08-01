@@ -13,8 +13,12 @@ import SwiftUI
 ///
 /// Three columns, in the order the eye uses them: who (avatar, scannable
 /// without reading), what (sender, subject, snippet), and when plus state.
-/// The star sits on the right as a real control rather than a read-only
-/// indicator, so the most common one-handed action needs no swipe.
+///
+/// Everything that is a fact *about* the conversation rather than its content
+/// — the date, an attachment, a star, unread — is gathered into one trailing
+/// column instead of being scattered through the text. Scanning a list for
+/// "which of these is still unread" then means running the eye down a single
+/// narrow strip, rather than looking in a different place on each row.
 public struct ThreadRowView: View {
     let thread: StoredThread
     /// Shown only in a unified feed, where "which mailbox is this from?"
@@ -43,6 +47,9 @@ public struct ThreadRowView: View {
     /// do, and it is the difference between a large-text layout that works
     /// and one that merely does not crash.
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// Grows with the text size, because the date inside it does.
+    @ScaledMetric(relativeTo: .caption2) private var statusWidth: CGFloat = 44
 
     public init(
         thread: StoredThread,
@@ -76,10 +83,16 @@ public struct ThreadRowView: View {
                 snippetLine
                 badges
             }
+            // The rule between rows starts where the text does, not at the
+            // pane edge — an unbroken line under the avatars would draw a
+            // grid, whereas one that begins at the sender reads as the rows
+            // being stacked. Set here rather than at the call site so the
+            // inset tracks the avatar if its size ever changes.
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+
+            statusColumn
         }
-        // Roomier than a separator-divided list needs to be: without rules
-        // between rows, whitespace is the only thing grouping each block.
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background {
             if isOpen || isSelected {
@@ -104,7 +117,6 @@ public struct ThreadRowView: View {
         let circle = SenderAvatar(
             name: thread.participantsSummary,
             address: thread.participantsAddress,
-            isUnread: thread.isUnread,
             isSelected: isSelected
         )
 
@@ -131,7 +143,6 @@ public struct ThreadRowView: View {
                     messageCountBadge
                 }
 
-                dateText
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -139,8 +150,6 @@ public struct ThreadRowView: View {
                 messageCountBadge
 
                 Spacer(minLength: 4)
-
-                dateText
             }
         }
     }
@@ -152,52 +161,75 @@ public struct ThreadRowView: View {
             .foregroundStyle(thread.isUnread ? .primary : .secondary)
     }
 
+    /// Bare, not a pill. A capsule around two digits is a badge, and a badge
+    /// claims the reply count is worth acting on; it is only ever context for
+    /// the sender beside it. Small and muted says that.
     @ViewBuilder
     private var messageCountBadge: some View {
         if thread.messageCount > 1 {
             Text("\(thread.messageCount)")
                 .font(.caption2)
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
-                .background(.quaternary, in: Capsule())
+                .foregroundStyle(.tertiary)
         }
-    }
-
-    private var dateText: some View {
-        Text(relativeDate)
-            .font(.caption)
-            .fontWeight(thread.isUnread ? .medium : .regular)
-            .foregroundStyle(thread.isUnread ? Color.accentColor : .secondary)
-            // Already in the row's combined label, in a form that reads
-            // properly out loud ("2 hours ago" rather than "2h").
-            .accessibilityHidden(true)
     }
 
     private var subjectLine: some View {
-        // Top-aligned rather than baseline-aligned once the subject can wrap:
-        // a star sitting on the baseline of a two-line subject floats in the
-        // middle of the row with nothing beside it.
-        HStack(
-            alignment: dynamicTypeSize.isAccessibilitySize ? .top : .firstTextBaseline, spacing: 6
-        ) {
-            Text(subject)
-                .font(.subheadline)
-                .fontWeight(thread.isUnread ? .semibold : .regular)
-                .foregroundStyle(.primary)
-                // The subject is the one line worth reading in full. At large
-                // sizes it gets a second line rather than an ellipsis.
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+        Text(subject)
+            .font(.subheadline)
+            .fontWeight(thread.isUnread ? .semibold : .regular)
+            .foregroundStyle(.primary)
+            // The subject is the one line worth reading in full. At large
+            // sizes it gets a second line rather than an ellipsis. The star
+            // no longer shares this line, so wrapping costs nothing.
+            .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            Spacer(minLength: 4)
+    /// When it arrived, and what state it is in — one narrow strip down the
+    /// trailing edge.
+    ///
+    /// A floor on the width rather than a fixed one, so the dates line up with
+    /// each other instead of ragging between "09:41" and "12 Mar", and a
+    /// starred row is exactly as wide as an unstarred one — while a date that
+    /// genuinely needs more room, at an accessibility text size, takes it from
+    /// the subject rather than spilling over it.
+    private var statusColumn: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Text(relativeDate)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+
+            if thread.hasAttachment {
+                Image(systemName: "paperclip")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             star
+
+            // Green rather than the tint, so unread is legible as unread and
+            // not confused with the accent-coloured highlight the open row
+            // already carries.
+            if thread.isUnread {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+            }
         }
+        .frame(minWidth: statusWidth, alignment: .trailing)
+        .accessibilityHidden(true)
     }
 
     /// A control when the list can act on it, a plain indicator when it
     /// cannot — never a button that looks tappable and does nothing.
+    ///
+    /// The unstarred glyph stays drawn, faintly, rather than appearing only
+    /// once starred. A star that is invisible until it is on cannot be turned
+    /// on, and starring is the one row action worth reaching without a swipe
+    /// or a long press.
     @ViewBuilder
     private var star: some View {
         if let onToggleStar {
@@ -205,8 +237,11 @@ public struct ThreadRowView: View {
                 starIcon
             }
             .buttonStyle(.plain)
-            // The glyph is well under the 44pt minimum on its own.
-            .frame(width: 30, height: 26)
+            // The glyph is well under the 44pt minimum on its own. A
+            // *minimum* rather than a size: at an accessibility text size
+            // the glyph outgrows any fixed box and would draw over the
+            // unread dot stacked beneath it.
+            .frame(minWidth: 30, minHeight: 22)
             .contentShape(.rect)
             .accessibilityHidden(true)
         } else if thread.isFlagged {
@@ -214,10 +249,15 @@ public struct ThreadRowView: View {
         }
     }
 
+    /// Amber rather than the system orange, which next to muted avatars is the
+    /// most saturated thing on screen and pulls the eye off the subject.
     private var starIcon: some View {
         Image(systemName: thread.isFlagged ? "star.fill" : "star")
-            .font(.caption)
-            .foregroundStyle(thread.isFlagged ? Color.orange : Color.secondary.opacity(0.45))
+            .font(.caption2)
+            .foregroundStyle(
+                thread.isFlagged
+                    ? Color(red: 0.80, green: 0.62, blue: 0.20) : Color.secondary.opacity(0.30)
+            )
             .contentTransition(.symbolEffect(.replace))
     }
 
@@ -264,7 +304,7 @@ public struct ThreadRowView: View {
     /// an empty line would make every row taller for the sake of a few.
     @ViewBuilder
     private var badges: some View {
-        if thread.hasAttachment || accountLabel != nil || thread.snoozedUntil != nil {
+        if accountLabel != nil || thread.snoozedUntil != nil {
             HStack(spacing: 6) {
                 if let snoozedUntil = thread.snoozedUntil {
                     // Tinted rather than grey: a snoozed conversation is not
@@ -276,12 +316,6 @@ public struct ThreadRowView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
                         .background(Color.accentColor.opacity(0.12), in: Capsule())
-                }
-
-                if thread.hasAttachment {
-                    Image(systemName: "paperclip")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
 
                 if let accountLabel {

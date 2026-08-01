@@ -24,15 +24,51 @@ enum PanelStyle {
 
     /// The pane itself, and the window behind it.
     ///
-    /// The grouped pair rather than the plain one, and in this order, because
-    /// the plain pair inverts in light mode: `background.secondary` is the
-    /// *grey* there and the window is white, so the gutter between two panes
-    /// comes out brighter than the panes and reads as a drawn divider — the
-    /// one thing this layout is trying not to look like. The grouped pair is
-    /// card-on-grey in light and card-on-black in dark, which is the way round
-    /// every other grouped surface on the platform works.
-    static let surface = Color(.secondarySystemGroupedBackground)
-    static let window = Color(.systemGroupedBackground)
+    /// Drawn rather than taken from `systemGroupedBackground`, because the
+    /// system's light grouped pair is a cool neutral grey and mail read on it
+    /// all day looks like a spreadsheet. Paper is warm; these are the same two
+    /// steps of the grouped idea — card lighter than window — moved a few
+    /// points towards yellow so the list reads as a page rather than a table.
+    ///
+    /// Dark keeps the near-black the system uses. Warming a dark background
+    /// does not read as paper, it reads as a colour cast, and it eats the
+    /// contrast the muted avatars need.
+    static let surface = Color(
+        light: Color(red: 0.988, green: 0.976, blue: 0.957),
+        dark: Color(red: 0.086, green: 0.086, blue: 0.090)
+    )
+    static let window = Color(
+        light: Color(red: 0.961, green: 0.945, blue: 0.918),
+        dark: .black
+    )
+
+    /// The rule between rows, and anywhere else one surface abuts another.
+    ///
+    /// Low enough to be felt rather than read: its job is to stop two rows
+    /// merging, not to draw a grid. `.separator` is too dark on cream and too
+    /// light on near-black, so both ends are stated.
+    static let hairline = Color(
+        light: Color(red: 0.09, green: 0.07, blue: 0.03).opacity(0.10),
+        dark: Color.white.opacity(0.08)
+    )
+}
+
+extension Color {
+    /// One token, both appearances.
+    ///
+    /// SwiftUI has no literal for this — `Color(light:dark:)` does not exist —
+    /// and an asset catalogue entry for four colours would put the values
+    /// somewhere nobody reading this file would look for them.
+    init(light: Color, dark: Color) {
+        #if canImport(UIKit)
+        self.init(
+            uiColor: UIColor { traits in
+                UIColor(traits.userInterfaceStyle == .dark ? dark : light)
+            })
+        #else
+        self = light
+        #endif
+    }
 }
 
 extension View {

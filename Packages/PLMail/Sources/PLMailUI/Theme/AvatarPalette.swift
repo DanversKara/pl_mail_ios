@@ -13,23 +13,39 @@ import SwiftUI
 /// mid-toned rather than pale or near-black, so one set works on both a white
 /// and a black background — the avatar is a solid fill, so the surface behind
 /// it never shows through.
+///
+/// They are also deliberately desaturated. A dozen fully-saturated circles
+/// down the left of a list is the loudest thing on screen, and the avatar is
+/// meant to be scanned past, not read: it answers "same person as three rows
+/// up?" and nothing else. Muting them lets the sender and subject carry the
+/// row, which is the order the eye should take it in.
 enum AvatarPalette {
     /// Tuned by hand, not sampled from a wheel: evenly spaced hues would put
     /// two adjacent entries a few degrees apart in the blues, where the eye
     /// discriminates worst.
+    ///
+    /// Earthy rather than primary — terracotta, clay, mustard, sage, dusty
+    /// blue, periwinkle, heather. Saturation is held low so nothing vibrates
+    /// against the warm off-white in light mode, then each is walked down in
+    /// lightness only as far as white text needs to clear 4.5:1, which is what
+    /// keeps them muted without going pale.
+    ///
+    /// The order is unchanged and must stay unchanged: a sender's colour is
+    /// their hash modulo this count, so reordering or resizing the array
+    /// renumbers everybody.
     private static let colors: [Color] = [
-        Color(red: 0.85, green: 0.28, blue: 0.28),  // red
-        Color(red: 0.83, green: 0.42, blue: 0.16),  // orange
-        Color(red: 0.70, green: 0.52, blue: 0.10),  // amber
-        Color(red: 0.35, green: 0.58, blue: 0.24),  // green
-        Color(red: 0.16, green: 0.58, blue: 0.48),  // teal
-        Color(red: 0.16, green: 0.51, blue: 0.72),  // blue
-        Color(red: 0.29, green: 0.40, blue: 0.78),  // indigo
-        Color(red: 0.48, green: 0.35, blue: 0.76),  // violet
-        Color(red: 0.72, green: 0.31, blue: 0.63),  // magenta
-        Color(red: 0.80, green: 0.31, blue: 0.45),  // pink
-        Color(red: 0.45, green: 0.45, blue: 0.52),  // slate
-        Color(red: 0.55, green: 0.38, blue: 0.28),  // brown
+        Color(red: 0.67, green: 0.39, blue: 0.33),  // terracotta
+        Color(red: 0.61, green: 0.42, blue: 0.27),  // clay
+        Color(red: 0.54, green: 0.45, blue: 0.25),  // mustard
+        Color(red: 0.40, green: 0.49, blue: 0.34),  // sage
+        Color(red: 0.32, green: 0.50, blue: 0.46),  // eucalyptus
+        Color(red: 0.35, green: 0.48, blue: 0.58),  // dusty blue
+        Color(red: 0.43, green: 0.45, blue: 0.65),  // periwinkle
+        Color(red: 0.52, green: 0.43, blue: 0.60),  // heather
+        Color(red: 0.60, green: 0.40, blue: 0.53),  // mauve
+        Color(red: 0.64, green: 0.39, blue: 0.41),  // dusty rose
+        Color(red: 0.45, green: 0.46, blue: 0.49),  // stone
+        Color(red: 0.55, green: 0.44, blue: 0.37),  // taupe
     ]
 
     static func color(for seed: String) -> Color {
