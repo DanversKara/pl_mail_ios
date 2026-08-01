@@ -160,23 +160,21 @@ public enum SearchSuggestions {
 
     /// Operators matching the token being typed.
     ///
-    /// Once a colon is typed the operator is usually settled, and what is
-    /// wanted next is a person or a date rather than a list of other operators
-    /// — `from:ad` must not offer `from:` again.
+    /// Two rules do all the work here, and it is worth saying why no third one
+    /// is needed. Once a value is being typed — `from:ad`, `after:2024` — no
+    /// operator can match: ``SearchOperator/matches(_:)`` asks whether the
+    /// operator *starts with* what was typed, and a token carrying a value is
+    /// always longer than the `from:` it began as. The only colon-bearing
+    /// fragments that still match are the ones whose value belongs to the
+    /// operator itself, `is:u` finding `is:unread`, which is exactly the case
+    /// that should keep completing.
     ///
-    /// `is:` and `has:` are the exception, because their values are part of the
-    /// operator itself: `is:u` should still find `is:unread`, and suppressing
-    /// it would leave that halfway state offering nothing at all, since these
-    /// two take no address either.
+    /// That leaves the exact match — `from:` offering `from:` — which the
+    /// filter below drops as a row that completes to what is already there. An
+    /// explicit "suppress operators after a colon" guard was tried and removed:
+    /// it could not change any outcome these two rules do not already give.
     private static func operators(for token: String, draft: SearchDraft) -> [SearchSuggestion] {
-        if let colon = token.firstIndex(of: ":") {
-            let name = String(token[..<colon])
-
-            guard name == "is" || name == "has" else { return [] }
-        }
-
-        return SearchOperator.all
-            // A row completing to exactly what is already typed does nothing.
+        SearchOperator.all
             .filter { $0.matches(token) && $0.token.lowercased() != token }
             .prefix(operatorLimit)
             .map {
