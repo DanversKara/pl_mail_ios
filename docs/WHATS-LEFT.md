@@ -3,7 +3,8 @@
 Written at the end of a long session, for whoever picks this up — likely me,
 with no memory of any of it. Ordered by what I would do next, not by size.
 
-Current state: 337 tests green, iOS build clean, `main` pushed. The app pairs,
+Current state: 337 tests green, iOS build clean, **not yet pushed** — see the
+last section. The app pairs,
 syncs, reads, writes, sends, schedules, searches and looks like itself in both
 appearances.
 
@@ -29,7 +30,7 @@ account exists.
 
 ---
 
-## Unfinished, in a worktree
+## Unfinished, on a branch
 
 The reader agent was stopped mid-task. Its two finished commits are merged —
 find-in-thread with a match count, and the header "show details" — but the work it had in
@@ -95,10 +96,12 @@ Worth making the reset cheaper rather than adding retries.
 `IdentitiesView.swift` and `IdentityEditorTests.swift`. Neither is mine and
 neither is interesting, but they make the lint output useless as a signal.
 
-**Seed data is polluted.** The dev server's inbox now holds ~60 "Bulk unread N"
-rows from testing mark-all-as-read, plus a six-message "Roof repair quote"
-thread I inserted by hand. `app:reset` and the `app:test:seed-*` commands will
-put it back.
+**The README screenshots are stale.** They were taken before the restyle, so
+they show saturated avatars, a grey-white background and no status column —
+none of which the app looks like now. Retaking them needs the dev server up;
+Docker died before I could. Reset and reseed first (`app:reset -n`, then the
+`app:test:seed-*` commands), because the seeded inbox is thin and reads as test
+data in a screenshot.
 
 ---
 
@@ -131,4 +134,11 @@ outright. See [INSTALL-ON-DEVICE.md](INSTALL-ON-DEVICE.md).
 
 **Agents need their own simulator.** Two sharing one device overwrote each
 other's builds mid-verification and produced screenshots of the wrong binary.
-Dedicated devices exist: `agent-reader`, `agent-labels`, `agent-spare`.
+Create one per agent with `xcrun simctl create` and put the UDID in the brief;
+the ones from this session have been deleted.
+
+**`git push` has no credentials here.** `origin` is set to
+`git@github.com:karatektus/pl_mail_ios.git` but the SSH key is not available to
+this environment, so nothing has been pushed. 47 commits are waiting. If the
+remote does not exist yet, create it empty — no README — or the first push will
+be rejected as diverged.
