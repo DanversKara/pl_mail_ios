@@ -317,9 +317,17 @@ public final class FakeMailServer: Sendable {
             matching = matching.filter { $0.receivedAt < before }
         }
 
-        // collapseThreads: one message per thread, the newest.
-        var seenThreads: Set<String> = []
-        matching = matching.filter { seenThreads.insert($0.threadID).inserted }
+        if excludesSeen(arguments["filter"]) {
+            matching = matching.filter { $0.isSeen == false }
+        }
+
+        // Honoured rather than assumed: a query that wants every unread
+        // *message* must not be handed one per thread, or a conversation with
+        // two unread replies comes back half marked.
+        if arguments["collapseThreads"] as? Bool ?? false {
+            var seenThreads: Set<String> = []
+            matching = matching.filter { seenThreads.insert($0.threadID).inserted }
+        }
 
         let page = Array(matching.prefix(limit))
 
@@ -436,6 +444,19 @@ public final class FakeMailServer: Sendable {
         }
 
         return []
+    }
+
+    /// Whether the filter carries `notKeyword: $seen` anywhere inside it.
+    private func excludesSeen(_ filter: Any?) -> Bool {
+        guard let filter = filter as? [String: Any] else { return false }
+
+        if filter["notKeyword"] as? String == "$seen" { return true }
+
+        if let conditions = filter["conditions"] as? [[String: Any]] {
+            return conditions.contains { excludesSeen($0) }
+        }
+
+        return false
     }
 
     private func boundDate(in filter: Any?) -> Date? {

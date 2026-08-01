@@ -137,3 +137,4 @@
 "plMail keeps no signature for an address, so this cannot be changed here or in the web interface. If your server ever does send one, it is added below what you write." = "plMail keeps no signature for an address, so this cannot be changed here or in the web interface. If your server ever does send one, it is added below what you write.";
 "Save" = "Save";
 "Not saved" = "Not saved";
+"Mark all as read" = "Mark all as read";

@@ -142,3 +142,5 @@
 "plMail keeps no signature for an address, so this cannot be changed here or in the web interface. If your server ever does send one, it is added below what you write." = "plMail speichert zu einer Adresse keine Signatur; sie lässt sich weder hier noch in der Weboberfläche ändern. Sollte dein Server doch eine liefern, wird sie unter deinen Text gesetzt.";
 "Save" = "Sichern";
 "Not saved" = "Nicht gesichert";
+"Mark all as read" = "Alle als gelesen markieren";
+"More" = "Mehr";

@@ -40,6 +40,10 @@ public struct ThreadListView: View {
     /// Conversations picked out for a bulk action. Non-empty *is* selection
     /// mode: there is no separate toggle to get out of sync with it.
     @State private var checked: Set<ThreadRef> = []
+    /// Guards the menu item while the round trip is in flight. The action is
+    /// two requests and a structure refresh, which is long enough on a home
+    /// server for somebody to press it twice.
+    @State private var isMarkingAllRead = false
     @State private var isPickingBulkLabel = false
     /// The conversation whose exact snooze time is being picked.
     @State private var snoozing: ActionTarget?
@@ -176,6 +180,19 @@ public struct ThreadListView: View {
                 ? "\(checked.count) selected" : feed.title(mailboxes: sync.mailboxes)
         )
         .toolbar {
+            if isSelecting == false {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button(.ui("Mark all as read"), systemImage: "envelope.open") {
+                            markAllAsRead()
+                        }
+                        .disabled(isMarkingAllRead)
+                    } label: {
+                        Label(.ui("More"), systemImage: "ellipsis.circle")
+                    }
+                }
+            }
+
             if isSelecting {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(.ui("Cancel")) { checked = [] }
@@ -238,6 +255,31 @@ public struct ThreadListView: View {
             },
             onToggleSelection: { toggle(ref) }
         )
+    }
+
+    /// Marks everything unread in this list as read.
+    ///
+    /// The targets are asked of the server rather than taken from the rows on
+    /// screen: the store holds only what has been paged in, and "mark all as
+    /// read" that quietly meant "mark the first fifty as read" would leave the
+    /// mailbox still showing unread mail immediately after being told not to.
+    private func markAllAsRead() {
+        isMarkingAllRead = true
+
+        Task {
+            defer { isMarkingAllRead = false }
+
+            let targets = await sync.unreadTargets(in: feed)
+
+            guard targets.isEmpty == false else { return }
+
+            await actions.perform(.setSeen(true), on: targets)
+
+            // Unread counts come from `Mailbox/get` and nothing local
+            // recomputes them, so without this the sidebar goes on claiming
+            // unread mail in a list the user has just cleared.
+            await sync.refreshStructure()
+        }
     }
 
     // MARK: - Row actions

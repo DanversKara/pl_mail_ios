@@ -265,6 +265,124 @@ public final class MailSyncService {
         await loadFirstPage(of: feed)
     }
 
+    // MARK: - Whole-list actions
+
+    /// How many messages one "mark all as read" will touch per account.
+    ///
+    /// `Core/capabilities.maxObjectsInSet` is 500 on plMail, and a single
+    /// `Email/set` carrying more than that is refused outright — so this is
+    /// the cap, not a guess. A mailbox with more unread than this takes two
+    /// presses, which is honest: the undo bar names the number it actually
+    /// changed, and one enormous set that the server rejects would change
+    /// nothing at all while looking like it had worked.
+    public static let bulkLimit = 500
+
+    /// Every unread conversation in `feed`, ready for a bulk action.
+    ///
+    /// Asked of the server rather than read out of the store, because the
+    /// store holds only what has been paged in. "Mark all as read" that
+    /// silently meant "mark the first fifty as read" would leave a mailbox
+    /// showing unread mail immediately after the user told it not to.
+    ///
+    /// One query and one get per account, all in a single POST. `Email/get`
+    /// is asked only for `threadId`: the ids are what the action needs, and
+    /// the thread grouping is what makes the count in the undo bar a count of
+    /// conversations rather than of messages.
+    public func unreadTargets(in feed: FeedID) async -> [ActionTarget] {
+        var calls: [(account: AccountSnapshot, get: CallHandle<EmailGet>)] = []
+        var builder: RequestBuilder
+
+        do {
+            builder = RequestBuilder(session: try await client.session())
+        } catch {
+            logger.error("Could not reach the server to count unread: \(error, privacy: .public)")
+            return []
+        }
+
+        for account in accounts {
+            guard let base = await pager(for: feed, account: account)?.baseFilter else {
+                continue
+            }
+
+            let query = builder.add(
+                EmailQuery(
+                    accountID: account.accountID,
+                    filter: .and([base, .notKeyword(.seen)]),
+                    // Every unread *message*, not one per thread: a
+                    // conversation with two unread replies has to have both
+                    // patched, or it comes back unread the moment the list
+                    // refreshes.
+                    collapseThreads: false,
+                    limit: Self.bulkLimit
+                )
+            )
+
+            calls.append(
+                (
+                    account,
+                    builder.add(
+                        EmailGet(
+                            accountID: account.accountID,
+                            ids: .reference(query.reference(path: "/ids")),
+                            properties: ["id", "threadId"]
+                        ))
+                ))
+        }
+
+        guard calls.isEmpty == false else { return [] }
+
+        let results: MethodResults
+
+        do {
+            results = try await client.send(builder)
+        } catch {
+            logger.error("Could not list unread mail: \(error, privacy: .public)")
+            return []
+        }
+
+        var targets: [ActionTarget] = []
+
+        for call in calls {
+            // Per account, like everything else here: one mailbox refusing
+            // must not stop the others being marked read.
+            guard let list = try? results.result(of: call.get).list else { continue }
+
+            var byThread: [String: [EmailID]] = [:]
+
+            for email in list {
+                byThread[email.threadID?.rawValue ?? email.id.rawValue, default: []]
+                    .append(email.id)
+            }
+
+            for (threadID, emailIDs) in byThread {
+                targets.append(
+                    ActionTarget(
+                        threadID: threadID,
+                        accountKey: call.account.accountKey,
+                        accountID: call.account.accountID,
+                        emailIDs: emailIDs
+                    ))
+            }
+        }
+
+        return targets
+    }
+
+    /// Re-reads mailbox structure, and with it the server's unread counts.
+    ///
+    /// Called after an action that changes how many unread messages a mailbox
+    /// holds. Those counts come from `Mailbox/get` and nothing local
+    /// recomputes them, so without this the sidebar goes on claiming five
+    /// unread in a list the user has just emptied — the app disagreeing with
+    /// itself on the same screen.
+    public func refreshStructure() async {
+        for account in accounts {
+            await syncMailboxes(for: account)
+        }
+
+        mailboxes = (try? await allMailboxes()) ?? mailboxes
+    }
+
     // MARK: - Structure
 
     private func syncMailboxes(for account: AccountSnapshot) async {
