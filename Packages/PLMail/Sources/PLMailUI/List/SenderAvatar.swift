@@ -13,11 +13,6 @@ struct SenderAvatar: View {
     let address: String?
     var diameter: CGFloat = 40
 
-    /// A thread nobody has read yet gets a ring, so unread survives even when
-    /// the row is otherwise quiet. Weight alone is too subtle at a glance and
-    /// a coloured dot spends a whole column on one bit.
-    var isUnread = false
-
     /// Replaces the initials with a checkmark while the row is selected.
     ///
     /// The avatar doubles as the selection control because it is already the
@@ -40,13 +35,6 @@ struct SenderAvatar: View {
                         .font(.system(size: diameter * 0.4, weight: .semibold, design: .rounded))
                         .foregroundStyle(.white)
                         .minimumScaleFactor(0.6)
-                }
-            }
-            .overlay {
-                if isUnread {
-                    Circle()
-                        .strokeBorder(.tint, lineWidth: 2)
-                        .padding(-3)
                 }
             }
             .animation(.snappy(duration: 0.15), value: isSelected)

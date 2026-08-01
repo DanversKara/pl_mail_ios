@@ -13,8 +13,12 @@ import SwiftUI
 ///
 /// Three columns, in the order the eye uses them: who (avatar, scannable
 /// without reading), what (sender, subject, snippet), and when plus state.
-/// The star sits on the right as a real control rather than a read-only
-/// indicator, so the most common one-handed action needs no swipe.
+///
+/// Everything that is a fact *about* the conversation rather than its content
+/// — the date, an attachment, a star, unread — is gathered into one trailing
+/// column instead of being scattered through the text. Scanning a list for
+/// "which of these is still unread" then means running the eye down a single
+/// narrow strip, rather than looking in a different place on each row.
 public struct ThreadRowView: View {
     let thread: StoredThread
     /// Shown only in a unified feed, where "which mailbox is this from?"
@@ -69,10 +73,16 @@ public struct ThreadRowView: View {
                 snippetLine
                 badges
             }
+            // The rule between rows starts where the text does, not at the
+            // pane edge — an unbroken line under the avatars would draw a
+            // grid, whereas one that begins at the sender reads as the rows
+            // being stacked. Set here rather than at the call site so the
+            // inset tracks the avatar if its size ever changes.
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+
+            statusColumn
         }
-        // Roomier than a separator-divided list needs to be: without rules
-        // between rows, whitespace is the only thing grouping each block.
-        .padding(.vertical, 9)
+        .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background {
             if isOpen || isSelected {
@@ -97,7 +107,6 @@ public struct ThreadRowView: View {
         let circle = SenderAvatar(
             name: thread.participantsSummary,
             address: thread.participantsAddress,
-            isUnread: thread.isUnread,
             isSelected: isSelected
         )
 
@@ -121,42 +130,71 @@ public struct ThreadRowView: View {
                 .foregroundStyle(thread.isUnread ? .primary : .secondary)
                 .lineLimit(1)
 
+            // Bare, not a pill. A capsule around two digits is a badge, and a
+            // badge claims the reply count is worth acting on; it is only ever
+            // context for the sender beside it. Small and muted says that.
             if thread.messageCount > 1 {
                 Text("\(thread.messageCount)")
                     .font(.caption2)
                     .monospacedDigit()
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 1)
-                    .background(.quaternary, in: Capsule())
+                    .foregroundStyle(.tertiary)
             }
 
             Spacer(minLength: 4)
-
-            Text(relativeDate)
-                .font(.caption)
-                .fontWeight(thread.isUnread ? .medium : .regular)
-                .foregroundStyle(thread.isUnread ? Color.accentColor : .secondary)
-                .accessibilityHidden(true)
         }
     }
 
     private var subjectLine: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(subject)
-                .font(.subheadline)
-                .fontWeight(thread.isUnread ? .semibold : .regular)
-                .foregroundStyle(.primary)
-                .lineLimit(1)
+        Text(subject)
+            .font(.subheadline)
+            .fontWeight(thread.isUnread ? .semibold : .regular)
+            .foregroundStyle(.primary)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
 
-            Spacer(minLength: 4)
+    /// When it arrived, and what state it is in — one narrow strip down the
+    /// trailing edge.
+    ///
+    /// Fixed width rather than intrinsic, so the dates line up with each other
+    /// instead of ragging with the length of "09:41" against "12 Mar", and so
+    /// a row with a star is exactly as wide as one without.
+    private var statusColumn: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            Text(relativeDate)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .fixedSize()
+
+            if thread.hasAttachment {
+                Image(systemName: "paperclip")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+            }
 
             star
+
+            // Green rather than the tint, so unread is legible as unread and
+            // not confused with the accent-coloured highlight the open row
+            // already carries.
+            if thread.isUnread {
+                Circle()
+                    .fill(Color.green)
+                    .frame(width: 8, height: 8)
+            }
         }
+        .frame(width: 44, alignment: .trailing)
+        .accessibilityHidden(true)
     }
 
     /// A control when the list can act on it, a plain indicator when it
     /// cannot — never a button that looks tappable and does nothing.
+    ///
+    /// The unstarred glyph stays drawn, faintly, rather than appearing only
+    /// once starred. A star that is invisible until it is on cannot be turned
+    /// on, and starring is the one row action worth reaching without a swipe
+    /// or a long press.
     @ViewBuilder
     private var star: some View {
         if let onToggleStar {
@@ -165,7 +203,7 @@ public struct ThreadRowView: View {
             }
             .buttonStyle(.plain)
             // The glyph is well under the 44pt minimum on its own.
-            .frame(width: 30, height: 26)
+            .frame(width: 30, height: 22)
             .contentShape(.rect)
             .accessibilityHidden(true)
         } else if thread.isFlagged {
@@ -173,10 +211,15 @@ public struct ThreadRowView: View {
         }
     }
 
+    /// Amber rather than the system orange, which next to muted avatars is the
+    /// most saturated thing on screen and pulls the eye off the subject.
     private var starIcon: some View {
         Image(systemName: thread.isFlagged ? "star.fill" : "star")
-            .font(.caption)
-            .foregroundStyle(thread.isFlagged ? Color.orange : Color.secondary.opacity(0.45))
+            .font(.caption2)
+            .foregroundStyle(
+                thread.isFlagged
+                    ? Color(red: 0.80, green: 0.62, blue: 0.20) : Color.secondary.opacity(0.30)
+            )
             .contentTransition(.symbolEffect(.replace))
     }
 
@@ -223,7 +266,7 @@ public struct ThreadRowView: View {
     /// an empty line would make every row taller for the sake of a few.
     @ViewBuilder
     private var badges: some View {
-        if thread.hasAttachment || accountLabel != nil || thread.snoozedUntil != nil {
+        if accountLabel != nil || thread.snoozedUntil != nil {
             HStack(spacing: 6) {
                 if let snoozedUntil = thread.snoozedUntil {
                     // Tinted rather than grey: a snoozed conversation is not
@@ -235,12 +278,6 @@ public struct ThreadRowView: View {
                         .padding(.horizontal, 6)
                         .padding(.vertical, 1)
                         .background(Color.accentColor.opacity(0.12), in: Capsule())
-                }
-
-                if thread.hasAttachment {
-                    Image(systemName: "paperclip")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
                 }
 
                 if let accountLabel {

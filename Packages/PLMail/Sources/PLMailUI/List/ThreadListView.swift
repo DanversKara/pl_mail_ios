@@ -36,6 +36,8 @@ public struct ThreadListView: View {
     @Query private var entries: [StoredFeedEntry]
     @Query private var threads: [StoredThread]
 
+    @Environment(\.horizontalSizeClass) private var sizeClass
+
     @State private var isLoadingMore = false
     /// Conversations picked out for a bulk action. Non-empty *is* selection
     /// mode: there is no separate toggle to get out of sync with it.
@@ -107,8 +109,14 @@ public struct ThreadListView: View {
                     rowContent(for: row)
                 }
                 .buttonStyle(.plain)
-                .listRowSeparator(.hidden)
-                .listRowInsets(.init(top: 1, leading: 6, bottom: 1, trailing: 6))
+                // A rule between rows rather than whitespace. With three lines
+                // of text per row, gaps alone leave it ambiguous which subject
+                // belongs to which sender at a glance; a hairline settles it
+                // and lets the rows sit closer together. Inset to the text
+                // column by the row itself.
+                .listRowSeparator(.visible)
+                .listRowSeparatorTint(PanelStyle.hairline)
+                .listRowInsets(.init(top: 0, leading: 6, bottom: 0, trailing: 6))
                 // Hiding the *scroll* background is not enough: rows paint
                 // their own on top of it, which on a separated pane shows as
                 // an opaque band sitting over the card.
@@ -138,6 +146,10 @@ public struct ThreadListView: View {
         // The pane behind supplies the surface; a List painting its own would
         // square off the pane's rounded corners.
         .scrollContentBackground(.hidden)
+        // Collapsed there is no pane behind, so the list has to lay the paper
+        // down itself — otherwise the system's cool white shows through and
+        // the one appearance most people use is the one that misses the point.
+        .background(sizeClass == .compact ? PanelStyle.surface : Color.clear)
         .safeAreaInset(edge: .bottom) { bulkBar }
         .onChange(of: isSelecting) { _, active in isSelectionActive = active }
         .sheet(isPresented: $isPickingBulkLabel) {
