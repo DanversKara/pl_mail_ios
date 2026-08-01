@@ -158,6 +158,117 @@ struct OutboxTests {
         #expect(await outbox.pending().first?.attachments.first?.data == bytes)
     }
 
+    // MARK: - Scheduled sends
+
+    /// The time a message is held until is the one field that must survive a
+    /// relaunch even more surely than the rest: the app is expected to be dead
+    /// for most of the wait.
+    @Test("A scheduled time survives being reloaded from disk")
+    func scheduledRoundTrip() async throws {
+        let outbox = makeOutbox()
+        let when = Date(timeIntervalSince1970: 1_800_000_000)
+
+        var queued = message(subject: "In the morning")
+        queued.sendAfter = when
+
+        try await outbox.enqueue(queued)
+
+        #expect(await outbox.pending().first?.sendAfter == when)
+    }
+
+    /// The queue on disk is versioned only by being lenient. A message written
+    /// by the build before this one has no `sendAfter` at all, and it must
+    /// come back meaning what it always meant: send at the next opportunity.
+    @Test("A message written before scheduling existed still decodes, and is due")
+    func decodesQueueWithoutSendAfter() async throws {
+        let outbox = makeOutbox()
+        let id = UUID()
+        let folder = await outbox.directory.appending(
+            path: id.uuidString, directoryHint: .isDirectory)
+
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+
+        // Written out by hand rather than by encoding a current record with
+        // the field left off: the point is the bytes an older build produced.
+        let legacy = """
+            {
+              "id": "\(id.uuidString)",
+              "accountKey": "srv/1",
+              "accountID": "1",
+              "identityID": "3",
+              "to": [{ "email": "you@example.com" }],
+              "cc": [],
+              "bcc": [],
+              "subject": "From the last build",
+              "body": "Still here.",
+              "queuedAt": 700000000,
+              "attempts": 0,
+              "attachments": []
+            }
+            """
+
+        try Data(legacy.utf8).write(to: folder.appending(path: "message.json"))
+
+        let reloaded = try #require(await outbox.pending().first)
+
+        #expect(reloaded.subject == "From the last build")
+        #expect(reloaded.sendAfter == nil)
+        #expect(reloaded.isDue())
+    }
+
+    @Test("Due-ness is decided by the clock, not by a flag")
+    func dueness() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+
+        var unscheduled = message()
+        #expect(unscheduled.isDue(at: now))
+
+        unscheduled.sendAfter = now.addingTimeInterval(60)
+        #expect(unscheduled.isDue(at: now) == false)
+
+        unscheduled.sendAfter = now
+        #expect(unscheduled.isDue(at: now), "the moment it is due, it is due")
+
+        unscheduled.sendAfter = now.addingTimeInterval(-1)
+        #expect(unscheduled.isDue(at: now))
+    }
+
+    /// Sending a held message now, and moving one — both rewrite the folder
+    /// rather than requeueing, so neither may lose the attachments.
+    @Test("Rescheduling keeps everything but the time")
+    func reschedule() async throws {
+        let outbox = makeOutbox()
+        let bytes = Data("payload".utf8)
+
+        var queued = message(
+            subject: "Held",
+            attachments: [
+                Outbox.Attachment(name: "a.txt", type: "text/plain", data: bytes)
+            ])
+        queued.sendAfter = Date(timeIntervalSince1970: 1_800_000_000)
+
+        try await outbox.enqueue(queued)
+
+        let moved = Date(timeIntervalSince1970: 1_900_000_000)
+
+        await outbox.reschedule(queued.id, to: moved)
+
+        var stored = try #require(await outbox.pending().first)
+
+        #expect(await outbox.count() == 1)
+        #expect(stored.sendAfter == moved)
+        #expect(stored.subject == "Held")
+        #expect(stored.attachments.first?.data == bytes)
+
+        await outbox.reschedule(queued.id, to: nil)
+
+        stored = try #require(await outbox.pending().first)
+
+        #expect(stored.sendAfter == nil)
+        #expect(stored.isDue())
+        #expect(stored.attachments.first?.data == bytes)
+    }
+
     /// Signing into a different server must not inherit the previous one's
     /// unsent mail — it would be sent from an identity that no longer exists.
     @Test("Queues are scoped to one server")

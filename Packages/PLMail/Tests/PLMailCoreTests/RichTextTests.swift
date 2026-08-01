@@ -205,7 +205,8 @@ struct RichTextTests {
         let restored = MailHTML.attributedString(fromHTML: MailHTML.html(from: text))
 
         #expect(String(restored.characters) == String(text.characters))
-        #expect(restored.runs.map { $0.inlineStyle ?? [] } == text.runs.map { $0.inlineStyle ?? [] })
+        #expect(
+            restored.runs.map { $0.inlineStyle ?? [] } == text.runs.map { $0.inlineStyle ?? [] })
     }
 
     // MARK: - Quoting

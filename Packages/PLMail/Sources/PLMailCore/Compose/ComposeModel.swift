@@ -362,6 +362,19 @@ public final class ComposeModel {
         }
     }
 
+    /// Queues the message to go out no earlier than `date`.
+    ///
+    /// No countdown here, unlike ``send()``. The five-second window exists to
+    /// catch the "wrong person" moment on a message that is about to leave;
+    /// one held back until tomorrow morning is recallable for as long as it
+    /// waits, from the Outbox, so a bar counting down from five would be
+    /// theatre.
+    public func scheduleSend(at date: Date) {
+        guard canSend, let identity = selectedIdentity else { return }
+
+        sendTask = Task { await deliver(identity: identity, sendAfter: date) }
+    }
+
     /// Recalls a message still inside its window.
     public func undoSend() {
         sendTask?.cancel()
@@ -380,8 +393,8 @@ public final class ComposeModel {
     ///
     /// Writing to disk before sending also means the message survives the app
     /// being killed mid-send, which no amount of retry logic in memory does.
-    private func deliver(identity: IdentitySnapshot) async {
-        let queued = Outbox.PendingMessage(
+    private func deliver(identity: IdentitySnapshot, sendAfter: Date? = nil) async {
+        var queued = Outbox.PendingMessage(
             accountKey: accountKey,
             accountID: accountID,
             identityID: identity.id,
@@ -399,6 +412,8 @@ public final class ComposeModel {
                 Outbox.Attachment(name: $0.name, type: $0.type, data: $0.data)
             }
         )
+
+        queued.sendAfter = sendAfter
 
         do {
             try await outbox.enqueue(queued)
