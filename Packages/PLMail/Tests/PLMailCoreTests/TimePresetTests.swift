@@ -3,12 +3,14 @@ import Testing
 
 @testable import PLMailCore
 
-/// The presets are the whole snooze UI, and every one of them can land in the
-/// past if it is computed by adding intervals instead of asking a calendar.
-/// A snooze in the past is not a small bug: the sweep wakes it immediately and
-/// the gesture appears to have done nothing.
-@Suite("Snooze presets")
-struct SnoozePresetTests {
+/// The presets are the whole snooze UI and most of the send-later one, and
+/// every one of them can land in the past if it is computed by adding
+/// intervals instead of asking a calendar. A time in the past is not a small
+/// bug: the snooze sweep wakes it immediately, and a message scheduled for a
+/// moment already gone goes out at once — in both cases the gesture appears to
+/// have done nothing, or worse.
+@Suite("Time presets")
+struct TimePresetTests {
     private let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(identifier: "Europe/Berlin")!
@@ -37,9 +39,52 @@ struct SnoozePresetTests {
     func alwaysFuture(now iso: String) {
         let now = date(iso)
 
-        for (preset, when) in SnoozePreset.available(from: now, calendar: calendar) {
+        for (preset, when) in TimePreset.available(from: now, calendar: calendar) {
             #expect(when > now, "\(preset.title) landed in the past")
         }
+    }
+
+    /// The evening slot exists for send-later, where the useful thing is
+    /// landing after the recipient's working day rather than at the start of
+    /// it. Same day as "tomorrow", ten hours later.
+    @Test("tomorrow evening lands at 18:00 on the same day as tomorrow")
+    func tomorrowEvening() throws {
+        let now = date("2026-07-27T15:20:00+02:00")
+        let evening = try #require(TimePreset.tomorrowEvening.date(from: now, calendar: calendar))
+        let morning = try #require(TimePreset.tomorrow.date(from: now, calendar: calendar))
+
+        #expect(calendar.component(.hour, from: evening) == 18)
+        #expect(calendar.component(.minute, from: evening) == 0)
+        #expect(calendar.isDate(evening, inSameDayAs: morning))
+        #expect(evening > morning)
+    }
+
+    /// Held mail is the case where a weekend is wrong: Saturday morning is
+    /// when nobody is reading. The two lists differ on purpose, so a preset
+    /// quietly appearing in both would be a regression rather than tidying.
+    @Test("send-later offers the evening and no weekend")
+    func sendLaterChoices() {
+        #expect(TimePreset.sendLaterChoices.contains(.tomorrowEvening))
+        #expect(TimePreset.sendLaterChoices.contains(.thisWeekend) == false)
+        #expect(TimePreset.snoozeChoices.contains(.thisWeekend))
+        #expect(TimePreset.snoozeChoices.contains(.tomorrowEvening) == false)
+    }
+
+    /// Asking for a subset must not smuggle the rest back in through
+    /// `allCases`, which is what the default argument uses.
+    @Test("only the presets asked for are offered")
+    func choicesAreRespected() {
+        let offered = TimePreset.available(
+            among: TimePreset.sendLaterChoices,
+            // Midweek on purpose. On a Friday "this weekend" collides with
+            // "tomorrow" and is dropped as a duplicate anyway, so a version
+            // that ignored `choices` entirely would still pass.
+            from: date("2026-07-29T09:00:00+02:00"),  // Wednesday
+            calendar: calendar
+        )
+
+        #expect(offered.map(\.preset).contains(.thisWeekend) == false)
+        #expect(Set(offered.map(\.preset)).isSubset(of: Set(TimePreset.sendLaterChoices)))
     }
 
     /// Past the evening hour there is no later today left. Offering it anyway
@@ -48,11 +93,11 @@ struct SnoozePresetTests {
     func laterTodayExpires() {
         let evening = date("2026-07-27T19:30:00+02:00")
 
-        #expect(SnoozePreset.laterToday.date(from: evening, calendar: calendar) == nil)
+        #expect(TimePreset.laterToday.date(from: evening, calendar: calendar) == nil)
 
         let morning = date("2026-07-27T07:00:00+02:00")
 
-        #expect(SnoozePreset.laterToday.date(from: morning, calendar: calendar) != nil)
+        #expect(TimePreset.laterToday.date(from: morning, calendar: calendar) != nil)
     }
 
     /// Landing at a fixed local hour is what separates "tomorrow morning" from
@@ -61,7 +106,7 @@ struct SnoozePresetTests {
     @Test("tomorrow lands at 08:00 local, not 24 hours out")
     func tomorrowIsMorning() throws {
         let now = date("2026-07-27T15:20:00+02:00")
-        let when = try #require(SnoozePreset.tomorrow.date(from: now, calendar: calendar))
+        let when = try #require(TimePreset.tomorrow.date(from: now, calendar: calendar))
 
         #expect(calendar.component(.hour, from: when) == 8)
         #expect(calendar.component(.minute, from: when) == 0)
@@ -73,7 +118,7 @@ struct SnoozePresetTests {
     @Test("this weekend on a Saturday means the following Saturday")
     func weekendFromWeekend() throws {
         let saturday = date("2026-08-01T14:00:00+02:00")
-        let when = try #require(SnoozePreset.thisWeekend.date(from: saturday, calendar: calendar))
+        let when = try #require(TimePreset.thisWeekend.date(from: saturday, calendar: calendar))
 
         #expect(when > saturday)
         #expect(calendar.component(.weekday, from: when) == 7)
@@ -83,7 +128,7 @@ struct SnoozePresetTests {
     @Test("this weekend from midweek is the coming Saturday")
     func weekendFromMidweek() throws {
         let wednesday = date("2026-07-29T10:00:00+02:00")
-        let when = try #require(SnoozePreset.thisWeekend.date(from: wednesday, calendar: calendar))
+        let when = try #require(TimePreset.thisWeekend.date(from: wednesday, calendar: calendar))
 
         #expect(calendar.component(.weekday, from: when) == 7)
         #expect(calendar.component(.day, from: when) == 1)
@@ -97,7 +142,7 @@ struct SnoozePresetTests {
             "2026-08-02T09:00:00+02:00",  // Sunday
         ] {
             let now = date(iso)
-            let when = try #require(SnoozePreset.nextWeek.date(from: now, calendar: calendar))
+            let when = try #require(TimePreset.nextWeek.date(from: now, calendar: calendar))
 
             #expect(calendar.component(.weekday, from: when) == 2)
             #expect(when > now)

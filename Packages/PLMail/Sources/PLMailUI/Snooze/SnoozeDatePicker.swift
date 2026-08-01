@@ -22,7 +22,7 @@ struct SnoozeDatePicker: View {
     init(onPick: @escaping (Date) -> Void) {
         self.onPick = onPick
         _date = State(
-            wrappedValue: SnoozePreset.tomorrow.date() ?? Date().addingTimeInterval(3600))
+            wrappedValue: TimePreset.tomorrow.date() ?? Date().addingTimeInterval(3600))
     }
 
     var body: some View {

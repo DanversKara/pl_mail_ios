@@ -11,3 +11,11 @@
 "Starred" = "Starred";
 "Important" = "Important";
 "All mail" = "All mail";
+
+/* The preset times, shared by snooze and send-later. */
+
+"Later today" = "Later today";
+"Tomorrow" = "Tomorrow";
+"Tomorrow evening" = "Tomorrow evening";
+"This weekend" = "This weekend";
+"Next week" = "Next week";

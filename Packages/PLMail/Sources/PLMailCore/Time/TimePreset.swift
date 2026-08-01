@@ -2,16 +2,24 @@ import Foundation
 
 /// The times people actually pick.
 ///
-/// Offered as a short list rather than a date picker because a snooze is a
-/// gesture, not an appointment: the whole value is that it takes one tap. A
-/// picker is still reachable for the rare exact time.
+/// Offered as a short list rather than a date picker because both the gestures
+/// that use it — snoozing a conversation, holding a message back until the
+/// morning — are gestures, not appointments: the whole value is that they take
+/// one tap. A picker is still reachable for the rare exact time.
 ///
 /// Every case resolves against a calendar rather than by adding intervals, so
-/// "tomorrow morning" lands at 08:00 local on the next day and not 24 hours
-/// from now — and so a daylight-saving boundary does not shift it by an hour.
-public enum SnoozePreset: String, CaseIterable, Identifiable, Sendable {
+/// "tomorrow" lands at 08:00 local on the next day and not 24 hours from now —
+/// and so a daylight-saving boundary does not shift it by an hour. That
+/// arithmetic is the part worth having exactly once, which is why this is one
+/// type shared by snooze and send-later rather than two lists that agree today
+/// and drift apart at the next change.
+///
+/// Which cases each of them offers differs, though — see ``snoozeChoices`` and
+/// ``sendLaterChoices``.
+public enum TimePreset: String, CaseIterable, Identifiable, Sendable {
     case laterToday
     case tomorrow
+    case tomorrowEvening
     case thisWeekend
     case nextWeek
 
@@ -19,10 +27,11 @@ public enum SnoozePreset: String, CaseIterable, Identifiable, Sendable {
 
     public var title: String {
         switch self {
-        case .laterToday: "Later today"
-        case .tomorrow: "Tomorrow"
-        case .thisWeekend: "This weekend"
-        case .nextWeek: "Next week"
+        case .laterToday: String(localized: "Later today", bundle: .module)
+        case .tomorrow: String(localized: "Tomorrow", bundle: .module)
+        case .tomorrowEvening: String(localized: "Tomorrow evening", bundle: .module)
+        case .thisWeekend: String(localized: "This weekend", bundle: .module)
+        case .nextWeek: String(localized: "Next week", bundle: .module)
         }
     }
 
@@ -30,10 +39,24 @@ public enum SnoozePreset: String, CaseIterable, Identifiable, Sendable {
         switch self {
         case .laterToday: "sun.max"
         case .tomorrow: "sunrise"
+        case .tomorrowEvening: "sunset"
         case .thisWeekend: "beach.umbrella"
         case .nextWeek: "calendar"
         }
     }
+
+    /// What a snooze offers: a weekend is a real thing to put a conversation
+    /// off until.
+    public static let snoozeChoices: [TimePreset] = [
+        .laterToday, .tomorrow, .thisWeekend, .nextWeek,
+    ]
+
+    /// What send-later offers. No weekend: mail held for Saturday morning
+    /// arrives when nobody is reading it, and an evening slot is there instead
+    /// because "after they have stopped working" is a thing people aim at.
+    public static let sendLaterChoices: [TimePreset] = [
+        .laterToday, .tomorrow, .tomorrowEvening, .nextWeek,
+    ]
 
     /// Hours the presets aim at, in local time.
     private static let morning = 8
@@ -59,7 +82,10 @@ public enum SnoozePreset: String, CaseIterable, Identifiable, Sendable {
             return candidate
 
         case .tomorrow:
-            return Self.morningOfDay(after: now, days: 1, calendar: calendar)
+            return Self.day(after: now, days: 1, hour: Self.morning, calendar: calendar)
+
+        case .tomorrowEvening:
+            return Self.day(after: now, days: 1, hour: Self.evening, calendar: calendar)
 
         case .thisWeekend:
             // Saturday morning. On a Saturday or Sunday it means *next*
@@ -68,7 +94,7 @@ public enum SnoozePreset: String, CaseIterable, Identifiable, Sendable {
             let saturday = 7
             let daysAhead = weekday >= saturday ? 7 : saturday - weekday
 
-            return Self.morningOfDay(after: now, days: daysAhead, calendar: calendar)
+            return Self.day(after: now, days: daysAhead, hour: Self.morning, calendar: calendar)
 
         case .nextWeek:
             // Monday morning, always at least one day out.
@@ -76,26 +102,29 @@ public enum SnoozePreset: String, CaseIterable, Identifiable, Sendable {
             let monday = 2
             let daysAhead = weekday < monday ? monday - weekday : 9 - weekday
 
-            return Self.morningOfDay(
-                after: now, days: daysAhead == 0 ? 7 : daysAhead, calendar: calendar)
+            return Self.day(
+                after: now, days: daysAhead == 0 ? 7 : daysAhead, hour: Self.morning,
+                calendar: calendar)
         }
     }
 
-    private static func morningOfDay(after now: Date, days: Int, calendar: Calendar) -> Date? {
+    private static func day(after now: Date, days: Int, hour: Int, calendar: Calendar) -> Date? {
         guard let day = calendar.date(byAdding: .day, value: days, to: now) else { return nil }
 
-        return calendar.date(bySettingHour: morning, minute: 0, second: 0, of: day)
+        return calendar.date(bySettingHour: hour, minute: 0, second: 0, of: day)
     }
 
-    /// The presets that still make sense at this moment.
+    /// The presets from `choices` that still make sense at this moment.
     public static func available(
-        from now: Date = .now, calendar: Calendar = .current
+        among choices: [TimePreset] = allCases,
+        from now: Date = .now,
+        calendar: Calendar = .current
     )
-        -> [(preset: SnoozePreset, date: Date)]
+        -> [(preset: TimePreset, date: Date)]
     {
         var seen: Set<Date> = []
 
-        return allCases.compactMap { preset -> (preset: SnoozePreset, date: Date)? in
+        return choices.compactMap { preset -> (preset: TimePreset, date: Date)? in
             guard let date = preset.date(from: now, calendar: calendar) else { return nil }
 
             // Presets collide — on a Friday, "tomorrow" and "this weekend" are

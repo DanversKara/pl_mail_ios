@@ -16,7 +16,7 @@ struct SnoozeMenu: View {
     let onPickExact: () -> Void
 
     var body: some View {
-        ForEach(SnoozePreset.available(), id: \.preset.id) { entry in
+        ForEach(TimePreset.available(among: TimePreset.snoozeChoices), id: \.preset.id) { entry in
             Button {
                 onPick(entry.date)
             } label: {

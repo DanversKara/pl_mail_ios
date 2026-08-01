@@ -12,3 +12,12 @@
 "Starred" = "Markiert";
 "Important" = "Wichtig";
 "All mail" = "Alle E-Mails";
+
+/* Die voreingestellten Zeiten, gemeinsam genutzt von „Zurückstellen“ und
+   „Später senden“. */
+
+"Later today" = "Später heute";
+"Tomorrow" = "Morgen";
+"Tomorrow evening" = "Morgen Abend";
+"This weekend" = "Am Wochenende";
+"Next week" = "Nächste Woche";
