@@ -16,6 +16,19 @@ public struct AccountSnapshot: Hashable, Sendable, Identifiable {
     public var threadState: StateToken?
     public var mailboxState: StateToken?
 
+    /// The server says this account may not be written to — a shared mailbox,
+    /// or one plMail connected read-only.
+    public var isReadOnly: Bool = false
+
+    /// When this account last completed a sync, and what stopped it if one
+    /// did. Both are already written on every pass; they are carried here so
+    /// diagnostics can say *which* mailbox is stale rather than only that
+    /// something is. Without them the screen can report the whole server's
+    /// last contact and nothing finer, which on a server aggregating five
+    /// IMAP accounts is the one number that does not help.
+    public var lastSyncedAt: Date?
+    public var lastSyncError: String?
+
     public var id: String { accountKey }
 
     /// Never empty.

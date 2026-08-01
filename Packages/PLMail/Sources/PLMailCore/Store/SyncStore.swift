@@ -1115,7 +1115,10 @@ public actor SyncStore {
             name: account.name,
             emailState: account.emailState.map(StateToken.init(rawValue:)),
             threadState: account.threadState.map(StateToken.init(rawValue:)),
-            mailboxState: account.mailboxState.map(StateToken.init(rawValue:))
+            mailboxState: account.mailboxState.map(StateToken.init(rawValue:)),
+            isReadOnly: account.isReadOnly,
+            lastSyncedAt: account.lastSyncedAt,
+            lastSyncError: account.lastSyncError
         )
     }
 
