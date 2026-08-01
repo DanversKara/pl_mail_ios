@@ -110,6 +110,19 @@ struct SearchDraftTests {
         #expect(draft.completed(with: "has:attachment") == "from:ada has:attachment")
     }
 
+    /// Three tokens, so splitting at the *first* space rather than the last is
+    /// distinguishable — with only one space the two are the same answer, which
+    /// is exactly how a wrong split hides.
+    @Test("the split is at the last space, not the first")
+    func lastSpaceWins() {
+        let draft = SearchDraft.of("invoice from:ada has:att")
+
+        #expect(draft.prefix == "invoice from:ada ")
+        #expect(draft.activeToken == "has:att")
+        #expect(
+            draft.completed(with: "has:attachment") == "invoice from:ada has:attachment")
+    }
+
     /// A trailing space means the next token is new and empty — completing here
     /// must append rather than overwrite the word just finished.
     @Test("a trailing space starts a new token")
@@ -189,6 +202,34 @@ struct SearchSuggestionTests {
 
         #expect(suggestions.contains { $0.kind == .searchOperator } == false)
         #expect(suggestions.contains { $0.kind == .sender })
+    }
+
+    /// `from:` is a value-taking operator whose value has not been typed, so
+    /// offering `from:` back would be a row that completes to the same string.
+    @Test("a bare value-taking operator offers no operator rows")
+    func bareValueOperator() {
+        #expect(Self.suggest("from:").contains { $0.kind == .searchOperator } == false)
+    }
+
+    /// The exception to the rule above: `is:` and `has:` carry their value in
+    /// the operator itself, so a half-typed one must still complete — and there
+    /// is no address to offer instead.
+    @Test(
+        "a half-typed flag operator still completes",
+        arguments: [
+            ("is:u", "is:unread"), ("is:st", "is:starred"), ("has:att", "has:attachment"),
+        ])
+    func flagOperatorCompletes(input: String, expected: String) {
+        let titles = Self.suggest(input).filter { $0.kind == .searchOperator }.map(\.title)
+
+        #expect(titles.contains(expected), "\(input) should still offer \(expected)")
+    }
+
+    /// A suggestion completing to exactly what is in the field does nothing but
+    /// take up a row.
+    @Test("a fully typed operator is not offered back")
+    func noEchoRow() {
+        #expect(Self.suggest("is:unread").contains { $0.kind == .searchOperator } == false)
     }
 
     @Test("a sender completes into the operator that was being typed")

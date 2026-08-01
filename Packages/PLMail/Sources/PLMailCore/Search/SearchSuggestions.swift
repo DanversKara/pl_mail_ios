@@ -160,15 +160,24 @@ public enum SearchSuggestions {
 
     /// Operators matching the token being typed.
     ///
-    /// Suppressed once the token has a colon *and* a value started — at
-    /// `from:ad` the operator is settled and what is wanted is a person, not a
-    /// list of other operators. A bare `from:` still lists nothing here for the
-    /// same reason.
+    /// Once a colon is typed the operator is usually settled, and what is
+    /// wanted next is a person or a date rather than a list of other operators
+    /// — `from:ad` must not offer `from:` again.
+    ///
+    /// `is:` and `has:` are the exception, because their values are part of the
+    /// operator itself: `is:u` should still find `is:unread`, and suppressing
+    /// it would leave that halfway state offering nothing at all, since these
+    /// two take no address either.
     private static func operators(for token: String, draft: SearchDraft) -> [SearchSuggestion] {
-        guard token.contains(":") == false else { return [] }
+        if let colon = token.firstIndex(of: ":") {
+            let name = String(token[..<colon])
+
+            guard name == "is" || name == "has" else { return [] }
+        }
 
         return SearchOperator.all
-            .filter { $0.matches(token) }
+            // A row completing to exactly what is already typed does nothing.
+            .filter { $0.matches(token) && $0.token.lowercased() != token }
             .prefix(operatorLimit)
             .map {
                 SearchSuggestion(
