@@ -20,10 +20,24 @@ import SwiftUI
 /// "which of these is still unread" then means running the eye down a single
 /// narrow strip, rather than looking in a different place on each row.
 public struct ThreadRowView: View {
+    /// Which account a row arrived in, in a unified feed.
+    ///
+    /// The colour is seeded on the account's key rather than its display name,
+    /// so renaming a mailbox in plMail does not recolour every row it owns.
+    public struct AccountTag: Equatable, Sendable {
+        let name: String
+        let key: String
+
+        public init(name: String, key: String) {
+            self.name = name
+            self.key = key
+        }
+    }
+
     let thread: StoredThread
     /// Shown only in a unified feed, where "which mailbox is this from?"
     /// is a real question. In a single-account list it is noise.
-    let accountLabel: String?
+    let account: AccountTag?
     /// Absent in previews and in any list where starring is not offered; the
     /// star then falls back to an indicator.
     var onToggleStar: (() -> Void)?
@@ -53,7 +67,7 @@ public struct ThreadRowView: View {
 
     public init(
         thread: StoredThread,
-        accountLabel: String? = nil,
+        account: AccountTag? = nil,
         isSelected: Bool = false,
         isOpen: Bool = false,
         snippet: String? = nil,
@@ -61,7 +75,7 @@ public struct ThreadRowView: View {
         onToggleSelection: (() -> Void)? = nil
     ) {
         self.thread = thread
-        self.accountLabel = accountLabel
+        self.account = account
         self.isSelected = isSelected
         self.isOpen = isOpen
         self.snippet = snippet
@@ -304,8 +318,8 @@ public struct ThreadRowView: View {
     /// an empty line would make every row taller for the sake of a few.
     @ViewBuilder
     private var badges: some View {
-        if accountLabel != nil || thread.snoozedUntil != nil {
-            HStack(spacing: 6) {
+        if account != nil || thread.snoozedUntil != nil {
+            HStack(spacing: 8) {
                 if let snoozedUntil = thread.snoozedUntil {
                     // Tinted rather than grey: a snoozed conversation is not
                     // in the inbox, and a row that looks identical to its
@@ -318,18 +332,36 @@ public struct ThreadRowView: View {
                         .background(Color.accentColor.opacity(0.12), in: Capsule())
                 }
 
-                if let accountLabel {
-                    Text(accountLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 1)
-                        .background(.quaternary, in: Capsule())
+                if let account {
+                    accountTag(account)
                 }
             }
             .padding(.top, 2)
             .accessibilityHidden(true)
+        }
+    }
+
+    /// Which account this arrived in — a dot and a word, not a badge.
+    ///
+    /// It was a filled capsule, which made the least important thing on the row
+    /// the heaviest: a solid shape outweighs text, and against a muted palette
+    /// it was reliably the first thing the eye landed on. The account is context
+    /// for the subject, not a claim on it.
+    ///
+    /// The dot carries the identity and the label merely confirms it, which is
+    /// what lets the text drop to tertiary without becoming unreadable — the
+    /// same colour repeated down a column is recognisable long before it is
+    /// read, and it is the shorthand the web UI and the README already use.
+    private func accountTag(_ account: AccountTag) -> some View {
+        HStack(spacing: 4) {
+            Circle()
+                .fill(AvatarPalette.color(for: account.key))
+                .frame(width: 5, height: 5)
+
+            Text(account.name)
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+                .lineLimit(1)
         }
     }
 
@@ -382,7 +414,7 @@ public struct ThreadRowView: View {
                 "Snoozed until "
                     + snoozedUntil.formatted(date: .abbreviated, time: .shortened))
         }
-        if let accountLabel { parts.append(accountLabel) }
+        if let account { parts.append(account.name) }
 
         parts.append(thread.latestReceivedAt.formatted(date: .abbreviated, time: .shortened))
 

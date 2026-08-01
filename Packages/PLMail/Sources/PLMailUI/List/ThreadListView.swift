@@ -255,7 +255,7 @@ public struct ThreadListView: View {
 
         return ThreadRowView(
             thread: row.thread,
-            accountLabel: accountLabel(for: row.entry),
+            account: accountTag(for: row.entry),
             isSelected: checked.contains(ref),
             isOpen: selection == ref,
             snippet: snippet,
@@ -560,10 +560,15 @@ public struct ThreadListView: View {
         Task { await work() }
     }
 
-    private func accountLabel(for entry: StoredFeedEntry) -> String? {
+    private func accountTag(for entry: StoredFeedEntry) -> ThreadRowView.AccountTag? {
         guard sync.accounts.count > 1 else { return nil }
 
-        return sync.accounts.first { $0.accountKey == entry.accountKey }?.displayName
+        guard
+            let name = sync.accounts.first(where: { $0.accountKey == entry.accountKey })?
+                .displayName
+        else { return nil }
+
+        return ThreadRowView.AccountTag(name: name, key: entry.accountKey)
     }
 
     // MARK: - Paging
