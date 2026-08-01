@@ -13,6 +13,12 @@ struct RootView: View {
     /// user back to the server for another code.
     @State private var pairingLink: URL?
 
+    /// Applied at the root so onboarding obeys it too. Set on `MailView`
+    /// instead, a sheet presented from it would inherit the override but the
+    /// sign-in screen behind a sign-out would not — the app would change
+    /// appearance the moment the user signed out.
+    @State private var appearance = AppearancePreference.shared
+
     var body: some View {
         Group {
             if let connection = model.connection, let sync = model.sync, let outbox = model.outbox {
@@ -29,6 +35,7 @@ struct RootView: View {
                 ProgressView()
             }
         }
+        .preferredColorScheme(appearance.choice.colorScheme)
         .modelContainer(model.container)
         .task { model.load() }
         .onOpenURL { url in

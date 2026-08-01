@@ -19,7 +19,7 @@ public struct MailView: View {
     /// Three columns by default on iPad. Left to the system on iPhone, where
     /// the split view is collapsed and this is ignored.
     @State private var columns = NavigationSplitViewVisibility.all
-    @State private var isShowingDiagnostics = false
+    @State private var isShowingSettings = false
     @State private var isSelectionActive = false
     @State private var composing: ComposeModel.Kind?
     /// What an intent asked us to fill in, consumed when the composer opens.
@@ -305,8 +305,8 @@ public struct MailView: View {
                 .navigationTitle(Text(verbatim: "plMail"))
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
-                        Button(.ui("Server"), systemImage: "gearshape") {
-                            isShowingDiagnostics = true
+                        Button(.ui("Settings"), systemImage: "gearshape") {
+                            isShowingSettings = true
                         }
                     }
                 }
@@ -432,8 +432,8 @@ public struct MailView: View {
             // afterwards does not resurrect a dictated recipient.
             if kind == nil { prefilled = nil }
         }
-        .sheet(isPresented: $isShowingDiagnostics) {
-            ServerDiagnosticsView(
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView(
                 connection: connection,
                 sync: sync,
                 store: store,
