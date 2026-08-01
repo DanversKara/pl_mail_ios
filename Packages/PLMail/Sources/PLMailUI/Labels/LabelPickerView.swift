@@ -20,6 +20,10 @@ struct LabelPickerView: View {
     let sync: MailSyncService
     let actions: MailActions
     let store: SyncStore
+    /// Optional so a caller that has no ``LabelActions`` to hand still gets
+    /// the picker, just without the inline create. Nil is a degradation, not a
+    /// mode: every call site that can pass one should.
+    var labelActions: LabelActions?
 
     @Environment(\.dismiss) private var dismiss
 
@@ -33,11 +37,30 @@ struct LabelPickerView: View {
     var body: some View {
         NavigationStack {
             List {
-                if labels.isEmpty {
+                // Offered before the list, where the search text already is:
+                // the reason to create a label from here is that you looked
+                // for one and it was not there.
+                if let name = creatable {
+                    Section {
+                        Button {
+                            Task { await createAndApply(named: name) }
+                        } label: {
+                            Label(
+                                .ui("Create “\(name)” and apply it"),
+                                systemImage: "plus.circle")
+                        }
+                        .disabled(labelActions?.isBusy ?? true)
+                    }
+                }
+
+                if labels.isEmpty && query.isEmpty {
                     ContentUnavailableView {
                         Label(.ui("No labels yet"), systemImage: "tag")
                     } description: {
-                        Text(.ui("Labels you create in plMail's web UI appear here."))
+                        Text(
+                            labelActions == nil
+                                ? .ui("Labels you create in plMail's web UI appear here.")
+                                : .ui("Type a name above to make your first one."))
                     }
                 } else {
                     ForEach(labels, id: \.mailboxID) { label in
@@ -47,7 +70,7 @@ struct LabelPickerView: View {
             }
             .navigationTitle(.ui("Labels"))
             .navigationBarTitleDisplayMode(.inline)
-            .searchable(text: $query, prompt: Text(.ui("Filter labels")))
+            .searchable(text: $query, prompt: Text(.ui("Filter or add a label")))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(.ui("Done")) { dismiss() }
@@ -68,9 +91,50 @@ struct LabelPickerView: View {
         .presentationDetents([.medium, .large])
     }
 
+    /// The name the search field would create, or nil when there is nothing
+    /// sensible to offer.
+    ///
+    /// Silent when the typed name already exists — the row for it is right
+    /// there, and offering to create a second one that the server would refuse
+    /// is worse than offering nothing.
+    private var creatable: String? {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard labelActions != nil,
+            trimmed.isEmpty == false,
+            LabelActions.complaint(about: trimmed) == nil,
+            LabelActions.nameIsTaken(
+                trimmed, parentID: nil, accountKey: target.accountKey,
+                among: sync.mailboxes) == false
+        else { return nil }
+
+        return trimmed
+    }
+
+    /// Creates the label and puts it on this conversation in one go.
+    ///
+    /// Both, not just the create: the button is reached by looking for a label
+    /// to apply, so stopping at "created" would leave the user to find the new
+    /// row and tap it — having already said what they wanted.
+    private func createAndApply(named name: String) async {
+        guard let labelActions,
+            let mailboxID = await labelActions.create(
+                named: name, accountID: target.accountID)
+        else { return }
+
+        query = ""
+
+        await actions.setLabel(true, mailbox: mailboxID, named: name, target)
+
+        applied =
+            (try? await store.mailboxIDs(
+                threadID: target.threadID, accountKey: target.accountKey)) ?? applied
+    }
+
     @ViewBuilder
     private var refusal: some View {
-        if let failure = actions.failure {
+        // Either layer can refuse, and both refusals belong in the same place.
+        if let failure = labelActions?.failure ?? actions.failure {
             HStack(spacing: 8) {
                 Image(systemName: "exclamationmark.triangle.fill")
                     .foregroundStyle(.orange)

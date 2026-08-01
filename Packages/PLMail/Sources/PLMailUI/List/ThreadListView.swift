@@ -16,6 +16,9 @@ public struct ThreadListView: View {
     private let feed: FeedID
     private let sync: MailSyncService
     private let actions: MailActions
+    /// Optional so a caller without one still gets the list, just without
+    /// the inline label create. Nil is a degradation, not a mode.
+    private let labelActions: LabelActions?
     /// Only for the composer a draft row opens. The list itself has nothing
     /// queued.
     private let outbox: OutboxSender
@@ -71,6 +74,7 @@ public struct ThreadListView: View {
         feed: FeedID,
         sync: MailSyncService,
         actions: MailActions,
+        labelActions: LabelActions? = nil,
         outbox: OutboxSender,
         selection: Binding<ThreadRef?>,
         isSelectionActive: Binding<Bool> = .constant(false)
@@ -78,6 +82,7 @@ public struct ThreadListView: View {
         self.feed = feed
         self.sync = sync
         self.actions = actions
+        self.labelActions = labelActions
         self.outbox = outbox
         _selection = selection
         _isSelectionActive = isSelectionActive
@@ -159,7 +164,13 @@ public struct ThreadListView: View {
         .safeAreaInset(edge: .bottom) { bulkBar }
         .onChange(of: isSelecting) { _, active in isSelectionActive = active }
         .sheet(isPresented: $isPickingBulkLabel) {
-            BulkLabelPickerView(targets: checkedTargets, sync: sync, actions: actions) {
+            BulkLabelPickerView(
+                targets: checkedTargets,
+                sync: sync,
+                actions: actions,
+                labelActions: labelActions,
+                store: sync.store
+            ) {
                 checked = []
             }
         }
@@ -184,7 +195,9 @@ public struct ThreadListView: View {
             }
         }
         .sheet(item: $labelling) { target in
-            LabelPickerView(target: target, sync: sync, actions: actions, store: sync.store)
+            LabelPickerView(
+                target: target, sync: sync, actions: actions, store: sync.store,
+                labelActions: labelActions)
         }
         .undoOverlay(actions)
         .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }

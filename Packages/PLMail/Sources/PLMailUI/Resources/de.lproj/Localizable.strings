@@ -222,3 +222,39 @@
 "Copy diagnostics" = "Diagnose kopieren";
 "Copied" = "Kopiert";
 "Everything on this screen as plain text, for pasting into a bug report. It contains your server's address and your mailbox names, and never your app password." = "Alles auf diesem Bildschirm als reiner Text, zum Einfügen in einen Fehlerbericht. Enthält die Adresse deines Servers und deine Postfachnamen, niemals dein App-Passwort.";
+
+/* Labels verwalten: der Screen hinter „Labels bearbeiten“ in der Seitenleiste
+   und das direkte Anlegen, das jetzt beide Auswahllisten anbieten. */
+
+"Create a label" = "Label anlegen";
+"Edit labels" = "Labels bearbeiten";
+"New label" = "Neues Label";
+"Rename label" = "Label umbenennen";
+"Rename" = "Umbenennen";
+"Label name" = "Labelname";
+"Create" = "Anlegen";
+"Built in" = "Vorgegeben";
+"Dismiss" = "Schließen";
+"Delete this label?" = "Dieses Label löschen?";
+"“%@” will be removed from this account. No mail is deleted — the messages keep every other label they carry." = "„%@“ wird aus diesem Konto entfernt. Es wird keine Mail gelöscht — die Nachrichten behalten alle anderen Labels.";
+"There's already a label with that name here." = "Hier gibt es bereits ein Label mit diesem Namen.";
+"Filter or add a label" = "Label filtern oder anlegen";
+"Create “%@” and apply it" = "„%@“ anlegen und zuweisen";
+"Type a name above to make your first one." = "Oben einen Namen eingeben, um das erste anzulegen.";
+
+/* Ein Label liegt über einer Mehrfachauswahl auf allen, einigen oder keinen.
+   „Einige“ ist der Zustand, den die alten Buttons nicht ausdrücken konnten. */
+
+"%lld of %lld" = "%lld von %lld";
+"On all selected" = "Bei allen ausgewählten";
+"On some selected" = "Bei einigen ausgewählten";
+"On none selected" = "Bei keinem ausgewählten";
+
+/* Schlüssel, die der Code längst angefragt hat und die in keinem Katalog
+   standen — deutsche Leser sahen Englisch, und nichts hat es gemeldet.
+   Gefunden vom Abdeckungstest, nicht von jemandem, dem es aufgefallen wäre. */
+
+"Delete" = "Löschen";
+"Mark as read" = "Als gelesen markieren";
+"Remove star" = "Stern entfernen";
+"An app password starts with plmail_ and is 64 characters after that." = "Ein App-Passwort beginnt mit plmail_ und hat danach 64 Zeichen.";

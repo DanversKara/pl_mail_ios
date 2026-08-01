@@ -14,6 +14,7 @@ import SwiftUI
 public struct MailView: View {
     @State private var sync: MailSyncService
     @State private var actions: MailActions
+    @State private var labels: LabelActions
     @State private var selectedFeed: FeedID?
     @State private var selectedThread: ThreadRef?
     /// Three columns by default on iPad. Left to the system on iPhone, where
@@ -73,6 +74,13 @@ public struct MailView: View {
         _sync = State(wrappedValue: sync)
         _actions = State(
             wrappedValue: MailActions(client: sync.jmapClient, store: store))
+        // Re-reads structure once the server agrees: the sidebar and both
+        // pickers read the sync service's mailbox list, and nothing local
+        // recomputes it after a label is created or destroyed.
+        _labels = State(
+            wrappedValue: LabelActions(client: sync.jmapClient) { [sync] in
+                await sync.refreshStructure()
+            })
         _selectedFeed = State(wrappedValue: .unified(.inbox))
     }
 
@@ -233,7 +241,8 @@ public struct MailView: View {
                 raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
                 selection: $selectedThread, queryText: $searchText)
         } else {
-            MailboxSidebarView(sync: sync, outbox: outbox, selection: $selectedFeed)
+            MailboxSidebarView(
+                sync: sync, outbox: outbox, labelActions: labels, selection: $selectedFeed)
         }
     }
 
@@ -250,7 +259,8 @@ public struct MailView: View {
             // exactly the cold-launch path, and an untitled list reads as a
             // bug.
             ThreadListView(
-                feed: selectedFeed, sync: sync, actions: actions, outbox: outbox,
+                feed: selectedFeed, sync: sync, actions: actions, labelActions: labels,
+                outbox: outbox,
                 selection: $selectedThread, isSelectionActive: $isSelectionActive
             )
         } else {

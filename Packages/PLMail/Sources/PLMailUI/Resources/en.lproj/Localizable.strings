@@ -216,3 +216,39 @@
 "Copy diagnostics" = "Copy diagnostics";
 "Copied" = "Copied";
 "Everything on this screen as plain text, for pasting into a bug report. It contains your server's address and your mailbox names, and never your app password." = "Everything on this screen as plain text, for pasting into a bug report. It contains your server's address and your mailbox names, and never your app password.";
+
+/* Managing labels: the screen behind the sidebar's Edit labels row, and the
+   inline create both pickers now offer. */
+
+"Create a label" = "Create a label";
+"Edit labels" = "Edit labels";
+"New label" = "New label";
+"Rename label" = "Rename label";
+"Rename" = "Rename";
+"Label name" = "Label name";
+"Create" = "Create";
+"Built in" = "Built in";
+"Dismiss" = "Dismiss";
+"Delete this label?" = "Delete this label?";
+"“%@” will be removed from this account. No mail is deleted — the messages keep every other label they carry." = "“%@” will be removed from this account. No mail is deleted — the messages keep every other label they carry.";
+"There's already a label with that name here." = "There's already a label with that name here.";
+"Filter or add a label" = "Filter or add a label";
+"Create “%@” and apply it" = "Create “%@” and apply it";
+"Type a name above to make your first one." = "Type a name above to make your first one.";
+
+/* A label across a multi-selection is on all, some or none of it. "Some" is
+   the state the old Apply/Remove buttons could not express. */
+
+"%lld of %lld" = "%lld of %lld";
+"On all selected" = "On all selected";
+"On some selected" = "On some selected";
+"On none selected" = "On none selected";
+
+/* Keys the code was already asking for and neither catalogue defined, so a
+   German reader saw English and nothing reported it. Found by the coverage
+   test rather than by anyone noticing. */
+
+"Delete" = "Delete";
+"Mark as read" = "Mark as read";
+"Remove star" = "Remove star";
+"An app password starts with plmail_ and is 64 characters after that." = "An app password starts with plmail_ and is 64 characters after that.";

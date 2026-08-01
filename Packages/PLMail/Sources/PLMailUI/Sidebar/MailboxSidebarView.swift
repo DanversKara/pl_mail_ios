@@ -17,8 +17,10 @@ import SwiftUI
 public struct MailboxSidebarView: View {
     let sync: MailSyncService
     let outbox: OutboxSender
+    let labelActions: LabelActions
     @Binding var selection: FeedID?
     @State private var showingOutbox = false
+    @State private var showingLabelManager = false
     /// Unsubscribed labels are hidden until asked for. plMail creates Archive
     /// unsubscribed, so "hidden" here means "not on the sidebar by default",
     /// never "empty" — the mail is real and has to be reachable.
@@ -26,10 +28,14 @@ public struct MailboxSidebarView: View {
     @State private var expandedAccounts: Set<String> = []
 
     public init(
-        sync: MailSyncService, outbox: OutboxSender, selection: Binding<FeedID?>
+        sync: MailSyncService,
+        outbox: OutboxSender,
+        labelActions: LabelActions,
+        selection: Binding<FeedID?>
     ) {
         self.sync = sync
         self.outbox = outbox
+        self.labelActions = labelActions
         _selection = selection
     }
 
@@ -71,23 +77,36 @@ public struct MailboxSidebarView: View {
                 }
             }
 
-            if labels.isEmpty == false {
-                Section(.ui("Labels")) {
-                    ForEach(labels, id: \.id) { label in
-                        Label {
-                            Text(label.name)
-                        } icon: {
-                            // Hashed from the label id, so a label keeps its
-                            // colour when it is renamed — the same rule the
-                            // avatars follow, for the same reason.
-                            Image(systemName: "tag.fill")
-                                .foregroundStyle(
-                                    AvatarPalette.color(for: label.labelID.rawValue))
-                        }
-                        .tag(FeedID.unifiedLabel(label.labelID))
-                        .listRowBackground(Color.clear)
+            // Shown even with no labels yet, because the row that *makes* one
+            // lives here. Hiding the section until a label exists would leave
+            // a new account with no way to create its first.
+            Section(.ui("Labels")) {
+                ForEach(labels, id: \.id) { label in
+                    Label {
+                        Text(label.name)
+                    } icon: {
+                        // Hashed from the label id, so a label keeps its
+                        // colour when it is renamed — the same rule the
+                        // avatars follow, for the same reason.
+                        Image(systemName: "tag.fill")
+                            .foregroundStyle(
+                                AvatarPalette.color(for: label.labelID.rawValue))
                     }
+                    .tag(FeedID.unifiedLabel(label.labelID))
+                    .listRowBackground(Color.clear)
                 }
+
+                Button {
+                    showingLabelManager = true
+                } label: {
+                    Label(
+                        labels.isEmpty ? .ui("Create a label") : .ui("Edit labels"),
+                        systemImage: labels.isEmpty ? "plus.circle" : "slider.horizontal.3"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+                }
+                .listRowBackground(Color.clear)
             }
 
             if sync.accounts.count > 1 {
@@ -102,6 +121,9 @@ public struct MailboxSidebarView: View {
         .scrollContentBackground(.hidden)
         .sheet(isPresented: $showingOutbox) {
             OutboxView(outbox: outbox)
+        }
+        .sheet(isPresented: $showingLabelManager) {
+            LabelManagerView(sync: sync, labels: labelActions)
         }
     }
 
