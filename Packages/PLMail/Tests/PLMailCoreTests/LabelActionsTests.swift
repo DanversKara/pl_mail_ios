@@ -234,9 +234,31 @@ struct LabelActionsTests {
         let (actions, refreshCount) = makeActions(server)
 
         #expect(await actions.delete(MailboxID("50"), accountID: accountID) == false)
-        #expect(actions.failure != nil)
         #expect(server.labels(accountID: "1").count == 2)
         #expect(refreshCount() == 0)
+
+        // "Delete the nested ones first" is an instruction; the generic
+        // message tells the user to retry something that cannot work.
+        let refusal = try #require(actions.failure)
+        let generic = await Self.genericFailure(server)
+
+        #expect(generic != nil)
+        #expect(refusal != generic)
+    }
+
+    @Test("a refused rename says why, rather than falling back to the generic error")
+    func renameRefusalIsSpecific() async throws {
+        let server = FakeMailServer(accounts: ["1": []])
+        let (actions, _) = makeActions(server)
+
+        // The fake's Inbox, whose myRights say mayRename: false.
+        #expect(await actions.rename(MailboxID("1"), to: "Nope", accountID: accountID) == false)
+
+        let refusal = try #require(actions.failure)
+        let generic = await Self.genericFailure(server)
+
+        #expect(generic != nil)
+        #expect(refusal != generic)
     }
 
     @Test("deleting a system mailbox is refused")
