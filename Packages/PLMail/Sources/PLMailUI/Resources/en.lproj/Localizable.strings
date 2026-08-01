@@ -118,7 +118,6 @@
 "That file couldn't be opened." = "That file couldn't be opened.";
 "%@ couldn't be read." = "%@ couldn't be read.";
 "Couldn't download this attachment." = "Couldn't download this attachment.";
-"To: %@" = "To: %@";
 "Show quoted history" = "Show quoted history";
 "Hide quoted history" = "Hide quoted history";
 "%lld earlier messages" = "%lld earlier messages";
@@ -260,3 +259,16 @@
 "Select all loaded" = "Select all loaded";
 "Not everything fitted" = "Not everything fitted";
 "Your server accepts a limited number of changes per request, so %lld messages are still unread. Press Mark all as read again to continue." = "Your server accepts a limited number of changes per request, so %lld messages are still unread. Press Mark all as read again to continue.";
+
+/* Find within an open conversation, and the header detail you open when you
+   suspect a message is not from who it says. "To:" carries its colon because
+   the names beside it are drawn separately, so that a search for "to" cannot
+   match the label and put every later hit one out. */
+
+"Find in conversation" = "Find in conversation";
+"Next match" = "Next match";
+"Previous match" = "Previous match";
+"To:" = "To:";
+"Show details" = "Show details";
+"Hide details" = "Hide details";
+"Date" = "Date";

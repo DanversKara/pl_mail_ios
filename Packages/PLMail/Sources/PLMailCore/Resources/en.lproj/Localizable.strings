@@ -97,3 +97,8 @@
 "Your labels changed elsewhere. Try again." = "Your labels changed elsewhere. Try again.";
 "The server didn't make that change." = "The server didn't make that change.";
 "The server didn't accept that change." = "The server didn't accept that change.";
+/* Find within an open conversation. The count is the whole point of the bar,
+   so it is a sentence about position rather than a bare fraction. */
+
+"No matches" = "No matches";
+"%lld of %lld" = "%lld of %lld";

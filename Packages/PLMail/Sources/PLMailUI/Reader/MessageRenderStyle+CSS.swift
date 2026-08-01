@@ -26,6 +26,55 @@ extension MessageRenderStyle {
         }
     }
 
+    /// What a find highlight looks like inside the message.
+    ///
+    /// Amber rather than the system's find yellow, because it is the palette's
+    /// own warm hue — the one ``ActionTint/star`` is drawn from — and a pure
+    /// yellow next to cream paper reads as a highlighter pen someone left on the
+    /// page. The current match is the saturated end of the same hue: one colour
+    /// family, two weights, so "this one of those" needs no legend.
+    ///
+    /// Painted through the CSS Custom Highlight API, which styles ranges without
+    /// touching the DOM. That matters more here than it looks: wrapping matches
+    /// in `<mark>` elements would edit the sender's markup, and a message whose
+    /// nodes are re-parented between renders is one where `cid:` rewriting and
+    /// the height observer both have the ground moved under them.
+    var findHighlightCSS: String {
+        """
+        ::highlight(plmail-find) {
+          background-color: \(findTint);
+          color: \(findInk);
+        }
+        ::highlight(plmail-find-current) {
+          background-color: \(currentFindTint);
+          color: \(currentFindInk);
+        }
+        """
+    }
+
+    /// The inverted case is the awkward one: `invert(1) hue-rotate(180deg)` is
+    /// applied to the whole document, so a colour stated here is not the colour
+    /// that appears. These two are the pre-images — solve the filter's matrix
+    /// backwards for the amber we want and this is what goes in. Amber turns out
+    /// to be just outside the reachable gamut (the exact pre-image needs a
+    /// negative blue), so clamping lands on a slightly sandier amber, which is
+    /// close enough to belong to the same family as the other three.
+    private var findTint: String {
+        self == .original ? "#f8d67a" : (self == .darkInverted ? "#4a3000" : "#7a5c1c")
+    }
+
+    private var findInk: String {
+        self == .original ? "#1c1c1e" : (self == .darkInverted ? "#141414" : "#f5f5f7")
+    }
+
+    private var currentFindTint: String {
+        self == .original ? "#e0a020" : (self == .darkInverted ? "#774a00" : "#d9a93a")
+    }
+
+    private var currentFindInk: String {
+        self == .original ? "#1c1c1e" : (self == .darkInverted ? "#f0f0f0" : "#1c1c1e")
+    }
+
     /// The message as sent, on white — the truest rendering of anything
     /// designed, and what light appearance always gets.
     private static let originalCSS = """
