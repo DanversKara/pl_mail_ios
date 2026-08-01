@@ -63,12 +63,40 @@ public final class FakeMailServer: Sendable {
         }
     }
 
+    /// A custom label, as `Mailbox/set` creates one. System mailboxes are not
+    /// modelled here: the fake's Inbox is a constant, exactly as immutable as
+    /// the real server's.
+    public struct CustomLabel: Sendable, Hashable {
+        public var id: String
+        public var labelID: String
+        public var name: String
+        public var parentID: String?
+        public var isSubscribed: Bool
+
+        public init(
+            id: String, labelID: String, name: String, parentID: String? = nil,
+            isSubscribed: Bool = true
+        ) {
+            self.id = id
+            self.labelID = labelID
+            self.name = name
+            self.parentID = parentID
+            self.isSubscribed = isSubscribed
+        }
+    }
+
     private struct State {
         var accounts: [String: [Message]] = [:]
         var identities: [String: [Identity]] = [:]
         var failing: Set<String> = []
         var refusesRenames = false
         var queryCount = 0
+        /// Custom labels per account, in creation order.
+        var labels: [String: [CustomLabel]] = [:]
+        /// Ids are per-account in plMail, but a single counter keeps them
+        /// unique across the whole fake, which makes a test that muddles two
+        /// accounts' ids fail rather than accidentally pass.
+        var nextLabelID = 500
     }
 
     private let state = Mutex(State())
@@ -113,6 +141,14 @@ public final class FakeMailServer: Sendable {
     /// shape a client is most likely to mistake for success.
     public func setRefusesRenames(_ refuses: Bool) {
         state.withLock { $0.refusesRenames = refuses }
+    }
+
+    public func setLabels(_ labels: [CustomLabel], accountID: String) {
+        state.withLock { $0.labels[accountID] = labels }
+    }
+
+    public func labels(accountID: String) -> [CustomLabel] {
+        state.withLock { $0.labels[accountID] ?? [] }
     }
 
     public var queryCount: Int { state.withLock(\.queryCount) }
@@ -217,6 +253,7 @@ public final class FakeMailServer: Sendable {
             case "Email/get": result = emailGet(arguments, accountID: accountID, prior: byCallID)
             case "Thread/get": result = threadGet(arguments, accountID: accountID, prior: byCallID)
             case "Mailbox/get": result = mailboxGet(accountID: accountID)
+            case "Mailbox/set": result = mailboxSet(arguments, accountID: accountID)
             case "Identity/get": result = identityGet(accountID: accountID)
             case "Identity/set": result = identitySet(arguments, accountID: accountID)
             default:
@@ -391,26 +428,203 @@ public final class FakeMailServer: Sendable {
     }
 
     private func mailboxGet(accountID: String) -> [String: Any] {
-        [
+        let inbox =
+            [
+                "id": mailboxID,
+                "labelId": "100",
+                "name": "Inbox",
+                "parentId": NSNull(),
+                "role": "inbox",
+                "sortOrder": 0,
+                "totalEmails": messages(accountID).count,
+                "unreadEmails": messages(accountID).filter { $0.isSeen == false }.count,
+                "totalThreads": Set(messages(accountID).map(\.threadID)).count,
+                "unreadThreads": 0,
+                // A system mailbox, and the fake says so the way the real
+                // server does: through myRights, not by leaving the client to
+                // infer it from the role.
+                "myRights": ["mayRename": false, "mayDelete": false],
+                "isSubscribed": true,
+            ] as [String: Any]
+
+        let custom = labels(accountID: accountID).map { label in
+            [
+                "id": label.id,
+                "labelId": label.labelID,
+                "name": label.name,
+                "parentId": label.parentID.map { $0 as Any } ?? NSNull(),
+                "role": NSNull(),
+                "sortOrder": 0,
+                "totalEmails": 0,
+                "unreadEmails": 0,
+                "totalThreads": 0,
+                "unreadThreads": 0,
+                "myRights": ["mayRename": true, "mayDelete": true],
+                "isSubscribed": label.isSubscribed,
+            ] as [String: Any]
+        }
+
+        return [
             "accountId": accountID,
             "state": "m1",
-            "list": [
-                [
-                    "id": mailboxID,
-                    "labelId": "100",
-                    "name": "Inbox",
-                    "parentId": NSNull(),
-                    "role": "inbox",
-                    "sortOrder": 0,
-                    "totalEmails": messages(accountID).count,
-                    "unreadEmails": messages(accountID).filter { $0.isSeen == false }.count,
-                    "totalThreads": Set(messages(accountID).map(\.threadID)).count,
-                    "unreadThreads": 0,
-                    "myRights": ["mayRename": false, "mayDelete": false],
-                    "isSubscribed": true,
-                ] as [String: Any]
-            ],
+            "list": [inbox] + custom,
             "notFound": [],
+        ]
+    }
+
+    /// `Mailbox/set`, with plMail's rules rather than the spec's supersets: a
+    /// fake that accepted a slash in a name, or a duplicate sibling, would let
+    /// a test pass against behaviour the real server refuses.
+    private func mailboxSet(_ arguments: [String: Any], accountID: String) -> [String: Any] {
+        var created: [String: Any] = [:]
+        var notCreated: [String: Any] = [:]
+        var updated: [String: Any] = [:]
+        var notUpdated: [String: Any] = [:]
+        var destroyed: [String] = []
+        var notDestroyed: [String: Any] = [:]
+
+        state.withLock { state in
+            var labels = state.labels[accountID] ?? []
+
+            func nameIsTaken(_ name: String, parentID: String?, ignoring: String?) -> Bool {
+                labels.contains {
+                    $0.name == name && $0.parentID == parentID && $0.id != ignoring
+                }
+            }
+
+            for (creationID, properties) in arguments["create"] as? [String: Any] ?? [:] {
+                let properties = properties as? [String: Any] ?? [:]
+                let name = (properties["name"] as? String ?? "").trimmingCharacters(
+                    in: .whitespaces)
+                let parentID = properties["parentId"] as? String
+
+                if name.isEmpty {
+                    notCreated[creationID] = ["type": "invalidProperties"]
+                    continue
+                }
+
+                if name.contains("/") {
+                    notCreated[creationID] = ["type": "invalidProperties"]
+                    continue
+                }
+
+                if nameIsTaken(name, parentID: parentID, ignoring: nil) {
+                    notCreated[creationID] = ["type": "invalidProperties"]
+                    continue
+                }
+
+                let id = String(state.nextLabelID)
+                state.nextLabelID += 1
+
+                let label = CustomLabel(
+                    id: id,
+                    labelID: "9" + id,
+                    name: name,
+                    parentID: parentID,
+                    isSubscribed: properties["isSubscribed"] as? Bool ?? true
+                )
+
+                labels.append(label)
+
+                created[creationID] = [
+                    "id": id,
+                    "labelId": label.labelID,
+                    "role": NSNull(),
+                    "sortOrder": 0,
+                    "totalEmails": 0,
+                    "unreadEmails": 0,
+                    "totalThreads": 0,
+                    "unreadThreads": 0,
+                ]
+            }
+
+            for (id, patch) in arguments["update"] as? [String: Any] ?? [:] {
+                let patch = patch as? [String: Any] ?? [:]
+
+                // The Inbox is the fake's one system mailbox, and it refuses
+                // exactly as the real server does.
+                if id == mailboxID {
+                    notUpdated[id] = ["type": "forbidden"]
+                    continue
+                }
+
+                guard let index = labels.firstIndex(where: { $0.id == id }) else {
+                    notUpdated[id] = ["type": "notFound"]
+                    continue
+                }
+
+                var label = labels[index]
+                var refusal: [String: Any]?
+
+                for (property, value) in patch {
+                    switch property {
+                    case "name":
+                        let name = (value as? String ?? "").trimmingCharacters(in: .whitespaces)
+
+                        if name.isEmpty || name.contains("/")
+                            || nameIsTaken(name, parentID: label.parentID, ignoring: label.id)
+                        {
+                            refusal = ["type": "invalidProperties"]
+                        } else {
+                            label.name = name
+                        }
+
+                    case "parentId":
+                        label.parentID = value as? String
+
+                    case "isSubscribed":
+                        label.isSubscribed = value as? Bool ?? true
+
+                    case "sortOrder":
+                        break
+
+                    default:
+                        refusal = ["type": "invalidPatch"]
+                    }
+                }
+
+                if let refusal {
+                    notUpdated[id] = refusal
+                    continue
+                }
+
+                labels[index] = label
+                updated[id] = NSNull()
+            }
+
+            for id in arguments["destroy"] as? [String] ?? [] {
+                if id == mailboxID {
+                    notDestroyed[id] = ["type": "forbidden"]
+                    continue
+                }
+
+                guard labels.contains(where: { $0.id == id }) else {
+                    notDestroyed[id] = ["type": "notFound"]
+                    continue
+                }
+
+                if labels.contains(where: { $0.parentID == id }) {
+                    notDestroyed[id] = ["type": "mailboxHasChild"]
+                    continue
+                }
+
+                labels.removeAll { $0.id == id }
+                destroyed.append(id)
+            }
+
+            state.labels[accountID] = labels
+        }
+
+        return [
+            "accountId": accountID,
+            "oldState": "m1",
+            "newState": "m2",
+            "created": created,
+            "notCreated": notCreated,
+            "updated": updated,
+            "notUpdated": notUpdated,
+            "destroyed": destroyed,
+            "notDestroyed": notDestroyed,
         ]
     }
 

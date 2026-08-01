@@ -48,9 +48,10 @@ struct IdentityEditorTests {
 
         #expect(editor.isLoading == false)
         #expect(editor.groups.count == 1)
-        #expect(editor.groups.first?.identities.map(\.email) == [
-            "ada@example.test", "billing@example.test",
-        ])
+        #expect(
+            editor.groups.first?.identities.map(\.email) == [
+                "ada@example.test", "billing@example.test",
+            ])
     }
 
     @Test("a rename reaches the server and the local store")
