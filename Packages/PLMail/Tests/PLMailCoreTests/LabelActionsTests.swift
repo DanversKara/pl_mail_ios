@@ -49,13 +49,17 @@ struct LabelActionsTests {
         #expect(refreshCount() == 1)
     }
 
-    @Test("surrounding whitespace is trimmed rather than sent")
+    /// Asserted against what the *wire* carried, not against what the server
+    /// stored. plMail trims too, so checking the stored name passes whether or
+    /// not this client trims anything — a test that proves the server works.
+    @Test("surrounding whitespace is trimmed before the name is sent")
     func trims() async throws {
         let server = FakeMailServer(accounts: ["1": []])
         let (actions, _) = makeActions(server)
 
         await actions.create(named: "  Invoices  ", accountID: accountID)
 
+        #expect(server.receivedLabelNames == ["Invoices"])
         #expect(server.labels(accountID: "1").map(\.name) == ["Invoices"])
     }
 
@@ -99,6 +103,58 @@ struct LabelActionsTests {
         #expect(server.labels(accountID: "1").count == 1)
         // One refresh for the create that worked, none for the one that did not.
         #expect(refreshCount() == 1)
+    }
+
+    /// The complaint has to be the *specific* one. A refusal read only as
+    /// "nothing came back" degrades to the generic message, which tells the
+    /// user to try again at something that will never work. Compared against
+    /// the generic text rather than pinned to a literal, so the assertion
+    /// survives a rewording of either.
+    @Test("a duplicate says so, rather than falling back to the generic error")
+    func duplicateComplaintIsSpecific() async throws {
+        let server = FakeMailServer(accounts: ["1": []])
+        let (actions, _) = makeActions(server)
+
+        await actions.create(named: "Invoices", accountID: accountID)
+        await actions.create(named: "Invoices", accountID: accountID)
+
+        let duplicate = try #require(actions.failure)
+        let generic = await Self.genericFailure(server)
+
+        #expect(generic != nil)
+        #expect(duplicate != generic)
+    }
+
+    /// What a server that answers 200 and does nothing produces. Derived
+    /// rather than written down, so it cannot drift from the real string.
+    private static func genericFailure(_ server: FakeMailServer) async -> String? {
+        server.setSilentlyIgnoresMailboxSet(true)
+        defer { server.setSilentlyIgnoresMailboxSet(false) }
+
+        let actions = LabelActions(client: server.makeClient()) {}
+        await actions.create(named: "Anything", accountID: AccountID("1"))
+
+        return actions.failure
+    }
+
+    /// Neither done nor refused. `destroyed` is the only proof a delete
+    /// happened, and treating "no refusal" as success takes the label out of
+    /// the sidebar while it is still on the server.
+    @Test("a server that answers 200 and does nothing is not read as success")
+    func silentServerIsNotSuccess() async throws {
+        let server = FakeMailServer(accounts: ["1": []])
+        server.setLabels(
+            [FakeMailServer.CustomLabel(id: "50", labelID: "950", name: "Invoices")],
+            accountID: "1")
+        server.setSilentlyIgnoresMailboxSet(true)
+        let (actions, refreshCount) = makeActions(server)
+
+        #expect(await actions.delete(MailboxID("50"), accountID: accountID) == false)
+        #expect(actions.failure != nil)
+        #expect(refreshCount() == 0)
+
+        #expect(await actions.create(named: "Receipts", accountID: accountID) == nil)
+        #expect(await actions.rename(MailboxID("50"), to: "X", accountID: accountID) == false)
     }
 
     // MARK: - Renaming

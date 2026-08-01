@@ -93,6 +93,14 @@ public final class FakeMailServer: Sendable {
         var queryCount = 0
         /// Custom labels per account, in creation order.
         var labels: [String: [CustomLabel]] = [:]
+        /// Makes `Mailbox/set` answer 200 with every bucket empty — neither
+        /// done nor refused. Nothing in RFC 8621 promises a reason, so a
+        /// client that reads "no refusal" as "success" reports a label
+        /// created that does not exist.
+        var silentMailboxSet = false
+        /// Every `name` a create was asked for, exactly as it arrived. Kept
+        /// raw so a test can tell the *client's* trimming from the server's.
+        var receivedLabelNames: [String] = []
         /// Ids are per-account in plMail, but a single counter keeps them
         /// unique across the whole fake, which makes a test that muddles two
         /// accounts' ids fail rather than accidentally pass.
@@ -149,6 +157,17 @@ public final class FakeMailServer: Sendable {
 
     public func labels(accountID: String) -> [CustomLabel] {
         state.withLock { $0.labels[accountID] ?? [] }
+    }
+
+    /// Makes `Mailbox/set` answer 200 with nothing created, updated, destroyed
+    /// *or* refused — the shape a client is most likely to mistake for success.
+    public func setSilentlyIgnoresMailboxSet(_ silent: Bool) {
+        state.withLock { $0.silentMailboxSet = silent }
+    }
+
+    /// The `name` values creates arrived with, untrimmed.
+    public var receivedLabelNames: [String] {
+        state.withLock(\.receivedLabelNames)
     }
 
     public var queryCount: Int { state.withLock(\.queryCount) }
@@ -484,6 +503,13 @@ public final class FakeMailServer: Sendable {
         var notDestroyed: [String: Any] = [:]
 
         state.withLock { state in
+            for properties in (arguments["create"] as? [String: Any] ?? [:]).values {
+                state.receivedLabelNames.append(
+                    (properties as? [String: Any] ?? [:])["name"] as? String ?? "")
+            }
+
+            guard state.silentMailboxSet == false else { return }
+
             var labels = state.labels[accountID] ?? []
 
             func nameIsTaken(_ name: String, parentID: String?, ignoring: String?) -> Bool {

@@ -149,7 +149,13 @@ public final class LabelActions {
         return await send(
             MailboxSet.rename(mailboxID, to: name, accountID: accountID),
             accountID: accountID
-        ) { _ in true } ?? false
+        ) { result in
+            // The id has to appear in `updated`. A server that answers 200
+            // with every bucket empty has neither done it nor refused it, and
+            // reporting that as a rename leaves the sidebar showing a name
+            // nothing else in the world agrees with.
+            result.updated?.keys.contains(mailboxID) == true ? true : nil
+        } ?? false
     }
 
     // MARK: - Deleting
