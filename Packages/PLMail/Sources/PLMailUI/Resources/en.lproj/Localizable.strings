@@ -146,6 +146,11 @@
 "Send now" = "Send now";
 "Waiting until %@" = "Waiting until %@";
 "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later.";
+"Still catching up" = "Still catching up";
+"Fetching mail from %@. Conversations appear as they arrive." = "Fetching mail from %@. Conversations appear as they arrive.";
+"Nothing synced yet" = "Nothing synced yet";
+"This list shows what is already on this device, and your server hasn't been reached yet." = "This list shows what is already on this device, and your server hasn't been reached yet.";
+"Check now" = "Check now";
 "Swipe actions" = "Swipe actions";
 "Swipe left" = "Swipe left";
 "Swipe right" = "Swipe right";

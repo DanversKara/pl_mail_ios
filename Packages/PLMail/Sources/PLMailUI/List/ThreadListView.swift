@@ -637,12 +637,34 @@ public struct ThreadListView: View {
         }
     }
 
+    /// What stands in for the list when there is nothing in it.
+    ///
+    /// Three empties that look identical to a bare spinner are three different
+    /// situations, and the difference is the only thing worth saying: mail is
+    /// on its way, mail has never been fetched, or there genuinely is none. The
+    /// last is the only one that is a fact about the mailbox, and it is the only
+    /// one stated as one.
     @ViewBuilder
     private var emptyState: some View {
         if entries.isEmpty {
             switch sync.status {
+            // A spinner alone says "wait" without saying for what, and on a
+            // home server behind a VPN that wait is long enough to read a
+            // sentence. The list also stays empty for the whole first sync, so
+            // this is the screen a new install sits on.
             case .syncing:
-                ProgressView()
+                ContentUnavailableView {
+                    Label {
+                        Text(.ui("Still catching up"))
+                    } icon: {
+                        ProgressView()
+                    }
+                } description: {
+                    Text(
+                        .ui(
+                            "Fetching mail from \(sync.serverID). Conversations appear as they arrive."
+                        ))
+                }
 
             // A rejected credential is not a network problem, and offering
             // "try again" for it would send someone to check their wifi.
@@ -668,15 +690,34 @@ public struct ThreadListView: View {
                 } actions: {
                     Button(.ui("Try again")) { Task { await sync.refresh(feed: feed) } }
                 }
+            // Idle without ever having reached the server: the app is between
+            // launch and its first request, or a sync was cancelled before it
+            // started. The list is empty, but nothing has established that the
+            // mailbox is — and "No mail here" would be a claim made on no
+            // evidence, which is the one thing this app tries not to do.
+            case .idle where sync.lastCheckedAt == nil:
+                ContentUnavailableView {
+                    Label(.ui("Nothing synced yet"), systemImage: "tray")
+                } description: {
+                    Text(
+                        .ui(
+                            "This list shows what is already on this device, and your server hasn't been reached yet."
+                        ))
+                } actions: {
+                    Button(.ui("Check now")) { Task { await sync.refresh(feed: feed) } }
+                }
+
             case .idle:
-                ContentUnavailableView(
-                    .ui("No mail here"),
-                    systemImage: "tray",
-                    description: Text(
+                ContentUnavailableView {
+                    Label(.ui("No mail here"), systemImage: "tray")
+                } description: {
+                    Text(
                         .ui(
                             "This list covers mail plMail has synced. Older mail arrives as the sync window widens."
                         ))
-                )
+                } actions: {
+                    Button(.ui("Check now")) { Task { await sync.refresh(feed: feed) } }
+                }
             }
         }
     }

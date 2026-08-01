@@ -151,6 +151,11 @@
 "Send now" = "Jetzt senden";
 "Waiting until %@" = "Wartet bis %@";
 "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later." = "Wird bei der ersten Prüfung nach diesem Zeitpunkt gesendet. Dein iPhone muss dafür wach sein, es kann also etwas später werden.";
+"Still catching up" = "Wird noch nachgeholt";
+"Fetching mail from %@. Conversations appear as they arrive." = "E-Mails werden von %@ geladen. Konversationen erscheinen, sobald sie eintreffen.";
+"Nothing synced yet" = "Noch nichts synchronisiert";
+"This list shows what is already on this device, and your server hasn't been reached yet." = "Diese Liste zeigt, was bereits auf diesem Gerät liegt; dein Server wurde noch nicht erreicht.";
+"Check now" = "Jetzt prüfen";
 "Swipe actions" = "Streichgesten";
 "Swipe left" = "Nach links streichen";
 "Swipe right" = "Nach rechts streichen";
