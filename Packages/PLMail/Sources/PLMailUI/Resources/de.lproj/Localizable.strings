@@ -258,3 +258,12 @@
 "Mark as read" = "Als gelesen markieren";
 "Remove star" = "Stern entfernen";
 "An app password starts with plmail_ and is 64 characters after that." = "Ein App-Passwort beginnt mit plmail_ und hat danach 64 Zeichen.";
+
+/* Mehrfachauswahl. „Alle auswählen“ neben einer gestückelten Liste klingt nach
+   dem ganzen Postfach und ist es nicht; ein Schreibvorgang trägt nur begrenzt
+   viele Objekte — mehr ungelesene Mail braucht zwei Durchgänge, und das wird
+   auch gesagt. */
+
+"Select all loaded" = "Alle geladenen auswählen";
+"Not everything fitted" = "Es hat nicht alles gepasst";
+"Your server accepts a limited number of changes per request, so %lld messages are still unread. Press Mark all as read again to continue." = "Dein Server nimmt pro Anfrage nur begrenzt viele Änderungen an, deshalb sind %lld Nachrichten noch ungelesen. Erneut „Alles als gelesen markieren“ drücken, um fortzufahren.";

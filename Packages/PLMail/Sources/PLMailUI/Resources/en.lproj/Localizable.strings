@@ -252,3 +252,11 @@
 "Mark as read" = "Mark as read";
 "Remove star" = "Remove star";
 "An app password starts with plmail_ and is 64 characters after that." = "An app password starts with plmail_ and is 64 characters after that.";
+
+/* Multi-select. "Select all" beside a paged list reads as the whole mailbox
+   and is not, and one write carries a limited number of objects — so a
+   mailbox with more unread than that takes two presses, and says so. */
+
+"Select all loaded" = "Select all loaded";
+"Not everything fitted" = "Not everything fitted";
+"Your server accepts a limited number of changes per request, so %lld messages are still unread. Press Mark all as read again to continue." = "Your server accepts a limited number of changes per request, so %lld messages are still unread. Press Mark all as read again to continue.";

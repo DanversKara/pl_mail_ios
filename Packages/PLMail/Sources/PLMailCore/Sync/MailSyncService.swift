@@ -275,7 +275,25 @@ public final class MailSyncService {
     /// presses, which is honest: the undo bar names the number it actually
     /// changed, and one enormous set that the server rejects would change
     /// nothing at all while looking like it had worked.
-    public static let bulkLimit = 500
+    public nonisolated static let bulkLimit = 500
+
+    /// The unread mail one bulk action can reach, and what it cannot.
+    ///
+    /// The second number is the point. `maxObjectsInSet` is 500, so a mailbox
+    /// with more unread than that cannot be cleared in one write — and the
+    /// user who pressed "mark all as read" is entitled to know that some of it
+    /// is still unread rather than discovering it from the badge.
+    public struct UnreadSelection: Sendable {
+        public var targets: [ActionTarget]
+        /// Unread messages left over, summed across accounts. Zero when
+        /// everything fitted.
+        public var remaining: Int
+
+        public init(targets: [ActionTarget], remaining: Int) {
+            self.targets = targets
+            self.remaining = remaining
+        }
+    }
 
     /// Every unread conversation in `feed`, ready for a bulk action.
     ///
@@ -288,15 +306,17 @@ public final class MailSyncService {
     /// is asked only for `threadId`: the ids are what the action needs, and
     /// the thread grouping is what makes the count in the undo bar a count of
     /// conversations rather than of messages.
-    public func unreadTargets(in feed: FeedID) async -> [ActionTarget] {
-        var calls: [(account: AccountSnapshot, get: CallHandle<EmailGet>)] = []
+    public func unreadTargets(in feed: FeedID) async -> UnreadSelection {
+        var calls:
+            [(account: AccountSnapshot, query: CallHandle<EmailQuery>, get: CallHandle<EmailGet>)] =
+                []
         var builder: RequestBuilder
 
         do {
             builder = RequestBuilder(session: try await client.session())
         } catch {
             logger.error("Could not reach the server to count unread: \(error, privacy: .public)")
-            return []
+            return UnreadSelection(targets: [], remaining: 0)
         }
 
         for account in accounts {
@@ -320,6 +340,7 @@ public final class MailSyncService {
             calls.append(
                 (
                     account,
+                    query,
                     builder.add(
                         EmailGet(
                             accountID: account.accountID,
@@ -329,7 +350,7 @@ public final class MailSyncService {
                 ))
         }
 
-        guard calls.isEmpty == false else { return [] }
+        guard calls.isEmpty == false else { return UnreadSelection(targets: [], remaining: 0) }
 
         let results: MethodResults
 
@@ -337,15 +358,23 @@ public final class MailSyncService {
             results = try await client.send(builder)
         } catch {
             logger.error("Could not list unread mail: \(error, privacy: .public)")
-            return []
+            return UnreadSelection(targets: [], remaining: 0)
         }
 
         var targets: [ActionTarget] = []
+        var remaining = 0
 
         for call in calls {
             // Per account, like everything else here: one mailbox refusing
             // must not stop the others being marked read.
             guard let list = try? results.result(of: call.get).list else { continue }
+
+            // What the mailbox holds against what one write can carry. The
+            // caller has to be able to say so: "mark all as read" that marks
+            // five hundred of six hundred and reports nothing is the app
+            // quietly doing less than it was told.
+            remaining += Self.remainingBeyondLimit(
+                total: try? results.result(of: call.query).total, fetched: list.count)
 
             var byThread: [String: [EmailID]] = [:]
 
@@ -365,7 +394,20 @@ public final class MailSyncService {
             }
         }
 
-        return targets
+        return UnreadSelection(targets: targets, remaining: remaining)
+    }
+
+    /// How many unread messages one press will leave behind.
+    ///
+    /// `total` is what the server says matches the filter; `fetched` is what
+    /// came back under ``bulkLimit``. A server that declines to count answers
+    /// nil, and the honest reading of that is "nothing known to remain" rather
+    /// than a guess — claiming leftovers that may not exist would send the
+    /// user pressing a button that does nothing.
+    nonisolated static func remainingBeyondLimit(total: Int?, fetched: Int) -> Int {
+        guard let total else { return 0 }
+
+        return max(0, total - fetched)
     }
 
     /// Re-reads mailbox structure, and with it the server's unread counts.

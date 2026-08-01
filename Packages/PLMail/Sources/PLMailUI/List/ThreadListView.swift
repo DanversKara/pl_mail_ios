@@ -49,6 +49,9 @@ public struct ThreadListView: View {
     /// two requests and a structure refresh, which is long enough on a home
     /// server for somebody to press it twice.
     @State private var isMarkingAllRead = false
+    /// How much unread mail one press could not reach, when there was any.
+    /// Nil is the normal case: everything fitted in one write.
+    @State private var bulkNotice: Int?
     @State private var isPickingBulkLabel = false
     @State private var isPickingSwipeActions = false
 
@@ -174,6 +177,21 @@ public struct ThreadListView: View {
                 checked = []
             }
         }
+        .alert(
+            .ui("Not everything fitted"),
+            isPresented: Binding(
+                get: { bulkNotice != nil },
+                set: { if $0 == false { bulkNotice = nil } }
+            ),
+            presenting: bulkNotice
+        ) { _ in
+            Button(.ui("OK"), role: .cancel) {}
+        } message: { remaining in
+            Text(
+                .ui(
+                    "Your server accepts a limited number of changes per request, so \(remaining) messages are still unread. Press Mark all as read again to continue."
+                ))
+        }
         .sheet(isPresented: $isPickingSwipeActions) {
             SwipeActionSettingsView(preference: swipes)
         }
@@ -233,7 +251,10 @@ public struct ThreadListView: View {
                 }
 
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(allChecked ? .ui("Deselect all") : .ui("Select all")) {
+                    // Named for what it does. "Select all" next to a paged
+                    // list reads as the whole mailbox, and it is not — it is
+                    // the rows that have actually loaded.
+                    Button(allChecked ? .ui("Deselect all") : .ui("Select all loaded")) {
                         checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
                     }
                 }
@@ -303,16 +324,23 @@ public struct ThreadListView: View {
         Task {
             defer { isMarkingAllRead = false }
 
-            let targets = await sync.unreadTargets(in: feed)
+            let selection = await sync.unreadTargets(in: feed)
 
-            guard targets.isEmpty == false else { return }
+            guard selection.targets.isEmpty == false else { return }
 
-            await actions.perform(.setSeen(true), on: targets)
+            await actions.perform(.setSeen(true), on: selection.targets)
 
             // Unread counts come from `Mailbox/get` and nothing local
             // recomputes them, so without this the sidebar goes on claiming
             // unread mail in a list the user has just cleared.
             await sync.refreshStructure()
+
+            // Said plainly rather than left to the badge. One write carries at
+            // most `maxObjectsInSet` objects, so a mailbox with more unread
+            // than that is not cleared by one press — and "mark all as read"
+            // that silently marked some of it would have the user believing a
+            // mailbox is empty when it is not.
+            bulkNotice = selection.remaining > 0 ? selection.remaining : nil
         }
     }
 
