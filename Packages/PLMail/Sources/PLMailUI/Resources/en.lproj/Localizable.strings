@@ -565,3 +565,14 @@
 "%lld in total" = "%lld in total";
 
 "Clear search" = "Clear search";
+
+"Dock the calendar" = "Dock the calendar";
+
+/* The calendar docked beside the mail. "Happening soon" heads the band above
+   the day, and it names events the app extracted from a message rather than
+   ones somebody typed in — so the word is about a thing arriving, not about a
+   meeting. "Open the full calendar" is the expand mark: the column shows one
+   day and cannot change range or mode, and this is the way to the screen that
+   can. */
+"Happening soon" = "Happening soon";
+"Open the full calendar" = "Open the full calendar";

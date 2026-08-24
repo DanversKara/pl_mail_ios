@@ -24,6 +24,16 @@ struct TimeGridView: View {
     /// hour by `DayGridLayout.slotAt`, because a tap just above the 10:00 line
     /// meaning *ten* is the same gesture as one just below it.
     var onCreate: ((LocalDateTime) -> Void)?
+    /// How tall an hour is, as a multiple of the default row.
+    ///
+    /// The docked column draws the same grid at twice the height: it has one
+    /// day where the full screen has seven, so it can spend the width on
+    /// legibility, and a quarter-hour block is unreadable at the default row.
+    var hourScale: CGFloat = 1
+    /// Whether the weekday names sit above the columns. A single-day grid
+    /// already says its date in the pane's own header, and repeating it is a
+    /// row of chrome spent on nothing.
+    var showsDayHeader = true
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -43,11 +53,16 @@ struct TimeGridView: View {
         window.days.map { DayGridLayout.place(clusters, on: $0) }
     }
 
-    private var columnHeight: CGFloat { hourHeight * 24 }
+    private var rowHeight: CGFloat { hourHeight * hourScale }
+
+    private var columnHeight: CGFloat { rowHeight * 24 }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
+            if showsDayHeader {
+                header
+            }
+
             allDayBand
 
             ScrollViewReader { proxy in
@@ -96,14 +111,23 @@ struct TimeGridView: View {
         let bands = grids.filter { $0.allDay.isEmpty == false }
 
         if bands.isEmpty == false {
-            HStack(alignment: .top, spacing: 0) {
+            HStack(alignment: .top, spacing: 8) {
+                // Upper case and small, in the gutter's own width: the band's
+                // label is a column heading rather than a row of its own, and
+                // at body size a long translation of "All day" is wider than
+                // the axis it has to line up with.
                 Text(.ui("All day"))
-                    .font(.caption2)
+                    .font(.system(size: 10, weight: .regular))
+                    .textCase(.uppercase)
+                    .kerning(0.6)
                     .foregroundStyle(.secondary)
-                    .frame(width: gutterWidth)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(width: gutterWidth, alignment: .trailing)
+                    .padding(.top, 5)
 
                 ForEach(grids, id: \.date) { grid in
-                    VStack(spacing: 2) {
+                    VStack(spacing: 4) {
                         ForEach(grid.allDay) { cluster in
                             Button {
                                 onOpen(cluster)
@@ -116,7 +140,8 @@ struct TimeGridView: View {
                     .frame(maxWidth: .infinity, alignment: .top)
                 }
             }
-            .padding(.bottom, 4)
+            .padding(.trailing, 8)
+            .padding(.vertical, 8)
             .overlay(alignment: .bottom) { Divider() }
         }
     }
@@ -127,7 +152,7 @@ struct TimeGridView: View {
                 Text(hourLabel(hour))
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .frame(height: hourHeight, alignment: .top)
+                    .frame(height: rowHeight, alignment: .top)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.trailing, 4)
                     .id(hour)
@@ -148,6 +173,10 @@ struct TimeGridView: View {
 
                 ForEach(grid.timed) { placed in
                     block(placed, in: geometry.size)
+                }
+
+                if grid.date == CalendarDay(.now, in: timeZone) {
+                    nowLine(in: geometry.size)
                 }
             }
             .contentShape(.rect)
@@ -176,10 +205,53 @@ struct TimeGridView: View {
         )
     }
 
+    /// Where the day has got to.
+    ///
+    /// A `TimelineView` around the line and nothing else: the minute it counts
+    /// is the only thing on this screen that changes without the data
+    /// changing, and wrapping the whole column in it would redraw every block
+    /// once a minute for a line two points tall.
+    ///
+    /// Drawn only on today's column, and never on a week that does not contain
+    /// today — a red rule across a fortnight-old Tuesday is a lie about where
+    /// the day is.
+    private func nowLine(in size: CGSize) -> some View {
+        TimelineView(.periodic(from: .now, by: 60)) { context in
+            let fraction = Self.fraction(of: context.date, in: timeZone)
+
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(Color.red)
+                    .frame(height: 1.5)
+                    .offset(y: size.height * fraction)
+
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 7, height: 7)
+                    .offset(x: -3.5, y: size.height * fraction - 2.75)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .allowsHitTesting(false)
+        // Scenery. The current time is on the status bar, said better.
+        .accessibilityHidden(true)
+    }
+
+    /// How far through the day `instant` is, as 0…1.
+    static func fraction(of instant: Date, in zone: TimeZone) -> Double {
+        var calendar = Foundation.Calendar(identifier: .gregorian)
+        calendar.timeZone = zone
+
+        let parts = calendar.dateComponents([.hour, .minute], from: instant)
+        let minutes = (parts.hour ?? 0) * 60 + (parts.minute ?? 0)
+
+        return Double(minutes) / Double(DayGridLayout.minutesInDay)
+    }
+
     private var hourLines: some View {
         VStack(spacing: 0) {
             ForEach(0..<24, id: \.self) { _ in
-                Divider().frame(height: hourHeight, alignment: .top)
+                Divider().frame(height: rowHeight, alignment: .top)
             }
         }
         .accessibilityHidden(true)

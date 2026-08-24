@@ -72,6 +72,15 @@ public struct MailView: View {
     /// view modes, and two different actions on one key is a coin toss rather
     /// than a shortcut.
     @State private var isShowingCalendar = false
+
+    /// Whether the calendar is docked beside the mail rather than taking the
+    /// window. The design's three-way pane switch: with it on, the sidebar
+    /// drops to an icon rail and the calendar becomes a card of its own.
+    @State private var isCalendarDocked = false
+
+    /// The label manager, reachable from the rail — where the sidebar's own
+    /// "Edit labels" row has no room to exist.
+    @State private var isShowingLabelManager = false
     @State private var isSelectionActive = false
     @State private var composing: ComposeModel.Kind?
     /// What an intent asked us to fill in, consumed when the composer opens.
@@ -751,6 +760,27 @@ public struct MailView: View {
             .accessibilityLabel(Text(.ui("Check now")))
 
             if calendar.availability.isAvailable {
+                // The three-way pane switch. Tinted while the calendar is
+                // docked, because a toggle that looks the same in both states
+                // says nothing about what it just did.
+                Button {
+                    isCalendarDocked.toggle()
+                } label: {
+                    Image(systemName: "rectangle.split.2x1")
+                        .font(.system(size: 15))
+                        .frame(width: 36, height: 36)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                .fill(isCalendarDocked ? palette.accentSoft.color : .clear))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(
+                    isCalendarDocked
+                        ? AnyShapeStyle(ThemeAccent()) : AnyShapeStyle(palette.inkSoft.color)
+                )
+                .accessibilityLabel(Text(.ui("Dock the calendar")))
+                .accessibilityAddTraits(isCalendarDocked ? [.isButton, .isSelected] : .isButton)
+
                 Button {
                     isShowingCalendar = true
                 } label: {
@@ -842,12 +872,25 @@ public struct MailView: View {
             globalHeader
 
             HStack(spacing: PanelStyle.inset) {
-                if columns != .detailOnly {
+                if isCalendarDocked {
+                    // Icons only: at 56pt the sidebar's words do not fit, and a
+                    // column of truncated names is worse than a column of marks.
+                    SidebarRail(
+                        sync: sync,
+                        compose: { newMessage() },
+                        openLabels: { isShowingLabelManager = true },
+                        openSettings: { isShowingSettings = true },
+                        selection: $selectedFeed)
+                } else if columns != .detailOnly {
                     sidebarContent
                         .frame(width: Self.sidebarWidth)
                 }
 
                 paneCard
+
+                if isCalendarDocked, calendar.availability.isAvailable {
+                    calendarCard
+                }
             }
         }
         .padding(PanelStyle.outerMargin)
@@ -866,20 +909,25 @@ public struct MailView: View {
             NavigationStack {
                 listContent
             }
-            .frame(width: Self.listWidth)
+            // Fixed beside a reader, elastic beside the calendar: with the
+            // reader gone the list is the only thing that can use the width.
+            .frame(width: isCalendarDocked ? nil : Self.listWidth)
+            .frame(maxWidth: isCalendarDocked ? .infinity : Self.listWidth)
 
-            Rectangle()
-                .fill(palette.line.color)
-                .frame(width: 1)
+            if isCalendarDocked == false {
+                Rectangle()
+                    .fill(palette.line.color)
+                    .frame(width: 1)
 
-            NavigationStack {
-                if let selectedThread {
-                    reader(for: selectedThread)
-                        .id(selectedThread)
-                } else {
-                    ContentUnavailableView(
-                        .ui("No conversation selected"), systemImage: "envelope",
-                        description: Text(.ui("Pick a message to read it here.")))
+                NavigationStack {
+                    if let selectedThread {
+                        reader(for: selectedThread)
+                            .id(selectedThread)
+                    } else {
+                        ContentUnavailableView(
+                            .ui("No conversation selected"), systemImage: "envelope",
+                            description: Text(.ui("Pick a message to read it here.")))
+                    }
                 }
             }
         }
@@ -893,7 +941,31 @@ public struct MailView: View {
         .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
     }
 
-    /// The sidebar's width, and the list's, as the design draws them.
+    /// The calendar, docked as a card of its own beside the mail.
+    ///
+    /// **Its own card, not a third column inside the mail's.** The design draws
+    /// two separate surfaces with a gap between them, and that gap is what says
+    /// these are two things rather than one screen split three ways — the mail
+    /// keeps its list and its reader, the calendar keeps its day.
+    private var calendarCard: some View {
+        NavigationStack {
+            DockedCalendarView(service: calendar, expand: { isShowingCalendar = true })
+        }
+        .frame(width: Self.calendarWidth)
+        .background(palette.surface.color)
+        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                .strokeBorder(PanelStyle.paneBorder, lineWidth: 1)
+        }
+        .shadow(color: PanelStyle.paneShadow, radius: 6, y: 3)
+        .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
+    }
+
+    /// The sidebar's width, the list's, and the docked calendar's, as the
+    /// design draws them.
+    private static let calendarWidth: CGFloat = 392
+
     private static let sidebarWidth: CGFloat = 224
     private static let listWidth: CGFloat = 404
 
@@ -1099,6 +1171,10 @@ public struct MailView: View {
                 // Consumed when the sheet closes, so opening the composer by hand
                 // afterwards does not resurrect a dictated recipient.
                 if kind == nil { prefilled = nil }
+            }
+            .sheet(isPresented: $isShowingLabelManager) {
+                LabelManagerView(sync: sync, labels: labels)
+                    .environment(\.theme, theme)
             }
             .sheet(isPresented: $isShowingSettings) {
                 SettingsView(

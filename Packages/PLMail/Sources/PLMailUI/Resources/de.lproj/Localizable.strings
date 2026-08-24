@@ -569,3 +569,9 @@
 "%lld in total" = "%lld insgesamt";
 
 "Clear search" = "Suche löschen";
+
+"Dock the calendar" = "Kalender andocken";
+
+/* Der angedockte Kalender neben der Mail. */
+"Happening soon" = "Steht bevor";
+"Open the full calendar" = "Vollen Kalender öffnen";
