@@ -43,7 +43,7 @@ public struct ThreadListView: View {
     /// it. **Temporary, for the performance investigation** — remove it once the
     /// reader is fast, because a version string does not belong in a mailbox
     /// title.
-    static let buildStamp = "e2"
+    static let buildStamp = "e3"
 
     /// How many threads the join will hold at once. See the descriptor in
     /// `init` for why this is bounded rather than open.
@@ -595,18 +595,19 @@ public struct ThreadListView: View {
 
             selectAllBox
 
-            // **No mailbox name here.** The design gives this row a checkbox, a
-            // gap and a count — nothing else. Which mailbox is open is answered
-            // by the selected row in the sidebar, two inches to the left, and
-            // repeating it here spends the widest part of the row saying what is
-            // already on screen. The selection count is the one thing that has
-            // nowhere else to go.
-            if isSelecting {
-                Text(verbatim: "\(checked.count) selected")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.ink.color)
-                    .lineLimit(1)
-            }
+            // The mailbox, named. The design puts it here, and the docked
+            // calendar is the case that proves it needs to be: the sidebar
+            // shrinks to a 56pt rail of icons there, and this becomes the only
+            // place on screen that says which list you are looking at. While a
+            // selection is up the count takes the slot instead — it is the one
+            // number with nowhere else to go.
+            Text(
+                verbatim: isSelecting
+                    ? "\(checked.count) selected" : feed.title(mailboxes: sync.mailboxes)
+            )
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(palette.ink.color)
+            .lineLimit(1)
 
             Spacer(minLength: 8)
 
