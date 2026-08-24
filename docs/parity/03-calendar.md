@@ -1720,3 +1720,28 @@ swift-testing suites, sentences about behaviour, per the house style.
    one field, and it is what turns "why is this flight on my calendar?" into a tap through to the
    confirmation mail — the single best piece of mail↔calendar integration available without any
    new write path.
+
+## Blocked on the server: the RSVP band
+
+The Claude Design mock puts a second band above the day grid — **Needs an
+answer**, one line naming the invitation, and Yes / Maybe / No. It cannot be
+built against the API as it stands.
+
+`src/JMAP/Mapper/CalendarEventMapper.php` publishes `kind` and `source` on a
+`CalendarEvent` and no attendee data at all. `JmapEventWriter` says so
+explicitly: *participants — an RSVP is answered through the invite flow
+(`InviteResponder`)*, which is a web route, not a JMAP method. So the client
+can neither read whether an invitation is outstanding nor write an answer to
+one, and three buttons that cannot answer are worse than no band.
+
+What the server would have to add, smallest first:
+
+1. `myParticipation` on the `CalendarEvent` read vocabulary — the column
+   already exists on `calendar_event`, so this is a mapper line, and it is
+   enough on its own to draw the band read-only and deep-link the answer to
+   the web UI.
+2. A writable participation, or a `CalendarEvent/respond` method wrapping
+   `InviteResponder`, so the answer can be given from the app.
+
+Until (1) lands, the docked column draws the **Happening soon** band only,
+which needs nothing the server does not already send.

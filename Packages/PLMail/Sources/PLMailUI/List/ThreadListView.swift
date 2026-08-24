@@ -43,7 +43,7 @@ public struct ThreadListView: View {
     /// it. **Temporary, for the performance investigation** — remove it once the
     /// reader is fast, because a version string does not belong in a mailbox
     /// title.
-    static let buildStamp = "c8"
+    static let buildStamp = "d7"
 
     /// How many threads the join will hold at once. See the descriptor in
     /// `init` for why this is bounded rather than open.

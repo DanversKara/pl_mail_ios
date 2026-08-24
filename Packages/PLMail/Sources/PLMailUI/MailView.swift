@@ -931,14 +931,7 @@ public struct MailView: View {
                 }
             }
         }
-        .background(palette.surface.color)
-        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
-                .strokeBorder(PanelStyle.paneBorder, lineWidth: 1)
-        }
-        .shadow(color: PanelStyle.paneShadow, radius: 6, y: 3)
-        .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
+        .paneSurface(palette)
     }
 
     /// The calendar, docked as a card of its own beside the mail.
@@ -952,14 +945,7 @@ public struct MailView: View {
             DockedCalendarView(service: calendar, expand: { isShowingCalendar = true })
         }
         .frame(width: Self.calendarWidth)
-        .background(palette.surface.color)
-        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
-                .strokeBorder(PanelStyle.paneBorder, lineWidth: 1)
-        }
-        .shadow(color: PanelStyle.paneShadow, radius: 6, y: 3)
-        .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
+        .paneSurface(palette)
     }
 
     /// The sidebar's width, the list's, and the docked calendar's, as the
@@ -1013,16 +999,12 @@ public struct MailView: View {
             ) {
                 // Not `CalendarScreen`: a full-screen cover supplies no back
                 // button, and `CalendarView`'s own toolbar has none either — it
-                // relied on the pushed presentation for the way out. Wrapping the
-                // stack here keeps `CalendarView` reusable as a plain column while
-                // making sure a cover can always be left.
+                // relied on the pushed presentation for the way out. The way out
+                // is handed in instead, and `CalendarBar` draws it as the design's
+                // collapse mark at the end of the calendar's own bar rather than
+                // as a Done button floating above the card.
                 NavigationStack {
-                    CalendarView(service: calendar)
-                        .toolbar {
-                            ToolbarItem(placement: .confirmationAction) {
-                                Button(.ui("Done")) { isShowingCalendar = false }
-                            }
-                        }
+                    CalendarView(service: calendar) { isShowingCalendar = false }
                 }
             }
             // Measured rather than classified. A size class reports two widths and

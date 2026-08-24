@@ -28,6 +28,8 @@ import UniformTypeIdentifiers
 /// The window is re-queried when it appears and when the reader pulls, and
 /// stepping to another period is another window rather than another poll.
 public struct CalendarView: View {
+    private let onCollapse: (() -> Void)?
+
     @State private var service: CalendarService
     @State private var mode: CalendarViewMode
     @State private var anchor: CalendarDay
@@ -47,6 +49,10 @@ public struct CalendarView: View {
     @State private var writeFailure: WriteFailure?
     @State private var sharing: ICSDocument?
     @State private var searchText = ""
+    /// Whether the bar's magnifier has opened the field beneath it. Only a
+    /// regular width has one — a compact width keeps `.searchable`, which is
+    /// what a phone reader already knows how to reach.
+    @State private var isShowingSearchField = false
     /// Zero until the first layout pass. `MailLayout.resolve` treats that as
     /// "unmeasured" and falls back to the size class.
     @State private var containerWidth: CGFloat = 0
@@ -81,6 +87,10 @@ public struct CalendarView: View {
     @Environment(\.calendar) private var calendar
     @Environment(\.timeZone) private var timeZone
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
 
     /// - Parameters:
     ///   - service: the calendar stack this screen drives.
@@ -88,7 +98,14 @@ public struct CalendarView: View {
     ///     inside the app wants; a window scene restored from disk passes the
     ///     day it was persisted with, so reopening the app does not silently
     ///     drag a window the reader left on next March back to this morning.
-    public init(service: CalendarService, day: CalendarDay? = nil) {
+    ///   - onCollapse: the way back out, drawn as the design's collapse mark at
+    ///     the right of the calendar's own bar. Nil where the presentation
+    ///     already supplies one — a pushed column, a window scene — because two
+    ///     ways out of one screen is how they drift apart.
+    public init(
+        service: CalendarService, day: CalendarDay? = nil, onCollapse: (() -> Void)? = nil
+    ) {
+        self.onCollapse = onCollapse
         _service = State(wrappedValue: service)
         let stored = CalendarPreferences().mode
         _mode = State(wrappedValue: stored)
@@ -124,17 +141,23 @@ public struct CalendarView: View {
             } action: {
                 containerWidth = $0
             }
+            // Said once. ``CalendarBar`` carries the heading wherever it is
+            // drawn, and a navigation bar repeating it above the card is the
+            // same date twice in two type sizes.
             .navigationTitle(
-                CalendarHeading.text(
-                    mode: mode,
-                    anchor: anchor,
-                    locale: locale,
-                    calendar: calendar,
-                    timeZone: timeZone
-                )
+                layout.mode == .single
+                    ? CalendarHeading.text(
+                        mode: mode,
+                        anchor: anchor,
+                        locale: locale,
+                        calendar: calendar,
+                        timeZone: timeZone
+                    )
+                    : ""
             )
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { toolbar }
+            .toolbarVisibility(layout.mode == .single ? .automatic : .hidden, for: .navigationBar)
             .searchable(
                 text: $searchText,
                 placement: .toolbar,
@@ -257,23 +280,72 @@ public struct CalendarView: View {
                 description: Text(.ui("Calendars are set up in plMail on the web."))
             )
         } else {
-            HStack(spacing: 0) {
-                if layout.mode == .triple {
-                    CalendarRailView(service: service, mode: $mode, onToday: goToToday)
-                        .frame(width: 220)
-                        .mailPane(isSeparated: layout.isSeparated)
+            VStack(spacing: 0) {
+                // The bar and the week span the **whole** card, above the rule
+                // rather than beside it: they are about the calendar, and a
+                // heading that stopped two thirds of the way across would read
+                // as belonging to the grid alone.
+                if layout.mode != .single {
+                    CalendarBar(
+                        heading: CalendarHeading.text(
+                            mode: mode, anchor: anchor, locale: locale, calendar: calendar,
+                            timeZone: timeZone),
+                        mode: $mode,
+                        canPage: mode.isPageable,
+                        onStep: { step($0) },
+                        onToday: goToToday,
+                        onCreate: canCreate ? { editing = .create(proposedStart) } : nil,
+                        isSearching: $isShowingSearchField,
+                        onCollapse: onCollapse)
+
+                    if isShowingSearchField {
+                        CalendarSearchField(text: $searchText) {
+                            searchText = ""
+                            isShowingSearchField = false
+                        }
+                    }
+
+                    // Only above a day. A week grid already draws its seven
+                    // days, and a month grid draws thirty of them — a strip
+                    // over either is the same week said twice.
+                    if mode == .day || mode == .agenda {
+                        WeekStrip(anchor: anchor, clusters: service.clusters, selection: $anchor)
+                    }
                 }
 
-                board
-                    .frame(maxWidth: .infinity)
-                    .mailPane(isSeparated: layout.isSeparated)
+                HStack(spacing: 0) {
+                    // **No sidebar of its own.** It used to carry Today, the five
+                    // view modes and the calendar toggles in a 220pt column; the
+                    // design puts the first two in the bar across the top of the
+                    // card, and a screen offering the same state twice is a screen
+                    // where the two drift. The toggles moved to the overflow menu,
+                    // which is where every width now finds them.
+                    // **One card, divided by a rule** — not two cards side by
+                    // side. The container already draws the card: whoever presents
+                    // this view carries `paneSurface`, and a pane drawing a second
+                    // one inside it is the "card inside a card" the redesign spent
+                    // three rounds removing from the mail side.
+                    board
+                        .frame(maxWidth: .infinity)
 
-                if layout.mode != .single {
-                    inspector
-                        .frame(width: inspectorWidth)
-                        .mailPane(isSeparated: layout.isSeparated)
+                    if layout.mode != .single {
+                        Rectangle()
+                            .fill(palette.line.color)
+                            .frame(width: 1)
+
+                        inspector
+                            .frame(width: inspectorWidth)
+                    }
                 }
             }
+            // The card, drawn here rather than by whoever presents this: a
+            // cover, a window scene and a sheet all present it, and three
+            // presenters each remembering to draw the same card is three
+            // chances for one of them to forget. Regular widths only — a
+            // phone's calendar fills its screen, and a 12pt moat around it
+            // would be twelve points taken off a day that already has none to
+            // spare.
+            .modifier(CalendarCard(isDrawn: layout.isSeparated, palette: palette))
         }
     }
 
@@ -353,7 +425,12 @@ public struct CalendarView: View {
                     // the quarter hour, and rounding again would move a tap on
                     // the 14:15 line to 15:00 — the one thing the gesture
                     // promises not to do.
-                    onCreate: canCreate ? { editing = .create($0) } : nil
+                    onCreate: canCreate ? { editing = .create($0) } : nil,
+                    // A week names its seven columns; a day does not need to.
+                    // The bar says the date and the strip above it says the
+                    // week, so a third row saying "Tue 25" is the same fact a
+                    // third time.
+                    showsDayHeader: mode == .week
                 )
             case .month:
                 MonthGridView(
@@ -454,41 +531,32 @@ public struct CalendarView: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
-        if mode.isPageable {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    step(-1)
-                } label: {
-                    Label(.ui("Previous"), systemImage: "chevron.left")
+        // Paging, the mode switch and Today live in ``CalendarBar`` wherever
+        // that bar is drawn. They stay here for a compact width, which has no
+        // room for the bar and keeps the system's navigation bar instead —
+        // offering both at once would be two controls for one piece of state.
+        if layout.mode == .single {
+            if mode.isPageable {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        step(-1)
+                    } label: {
+                        Label(.ui("Previous"), systemImage: "chevron.left")
+                    }
+                }
+
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        step(1)
+                    } label: {
+                        Label(.ui("Next"), systemImage: "chevron.right")
+                    }
                 }
             }
 
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    step(1)
-                } label: {
-                    Label(.ui("Next"), systemImage: "chevron.right")
-                }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(.ui("Today")) { goToToday() }
             }
-        }
-
-        // A segmented control where there is room for one, a menu where there
-        // is not. Both drive the same binding, so the keyboard's ⌘1…⌘5 cannot
-        // mean something the visible control does not offer.
-        if layout.mode != .single {
-            ToolbarItem(placement: .principal) {
-                Picker(selection: $mode) {
-                    modeChoices
-                } label: {
-                    Text(.ui("View"))
-                }
-                .pickerStyle(.segmented)
-                .fixedSize()
-            }
-        }
-
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(.ui("Today")) { goToToday() }
         }
 
         ToolbarItem(placement: .topBarTrailing) {
@@ -541,7 +609,7 @@ public struct CalendarView: View {
                     }
                 }
 
-                if layout.mode != .triple, service.calendars.isEmpty == false {
+                if service.calendars.isEmpty == false {
                     Divider()
 
                     calendarToggles
@@ -1024,6 +1092,23 @@ public struct CalendarWindowValue: Codable, Hashable, Sendable {
 
     public init(dayKey: String) {
         self.dayKey = dayKey
+    }
+}
+
+/// The card around the calendar, or nothing at all on a compact width.
+private struct CalendarCard: ViewModifier {
+    let isDrawn: Bool
+    let palette: ThemePalette
+
+    func body(content: Content) -> some View {
+        if isDrawn {
+            content
+                .paneSurface(palette)
+                .padding(PanelStyle.outerMargin)
+                .background(palette.window.color.ignoresSafeArea())
+        } else {
+            content
+        }
     }
 }
 

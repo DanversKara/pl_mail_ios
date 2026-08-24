@@ -374,4 +374,25 @@ private struct MailPane: ViewModifier {
     }
 }
 
+extension View {
+    /// The card the design draws every pane on: the surface colour, the
+    /// twelve-point radius, a hairline border and the two-step shadow.
+    ///
+    /// One modifier rather than the same six lines in three places — the mail
+    /// card, the docked calendar and the calendar screen are the *same* object
+    /// in the design, and three copies is three chances for one of them to
+    /// grow a different radius.
+    func paneSurface(_ palette: ThemePalette) -> some View {
+        self
+            .background(palette.surface.color)
+            .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                    .strokeBorder(PanelStyle.paneBorder, lineWidth: 1)
+            }
+            .shadow(color: PanelStyle.paneShadow, radius: 6, y: 3)
+            .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
+    }
+}
+
 #endif

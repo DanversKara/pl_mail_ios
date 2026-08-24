@@ -89,7 +89,11 @@ struct TimeGridView: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            Color.clear.frame(width: gutterWidth)
+            // Height zero, deliberately. `Color.clear` is greedy in **both**
+            // axes, and constraining only the width let this spacer eat every
+            // spare point of the column — a day grid opened with six hundred
+            // points of nothing above it and the hours pushed off the bottom.
+            Color.clear.frame(width: gutterWidth, height: 0)
 
             ForEach(window.days, id: \.self) { day in
                 Text(CalendarHeading.day(day, locale: locale, timeZone: timeZone))

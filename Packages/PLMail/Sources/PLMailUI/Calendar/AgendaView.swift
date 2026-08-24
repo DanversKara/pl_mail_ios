@@ -48,6 +48,10 @@ struct AgendaView: View {
                         }
                         .buttonStyle(.plain)
                         .listRowSeparator(.hidden)
+                        // The card underneath is the surface. A `List` paints
+                        // its own rows over it, which is how a chip on cream
+                        // ended up on a white band the design never drew.
+                        .listRowBackground(Color.clear)
                     }
                 } header: {
                     Text(
@@ -64,6 +68,7 @@ struct AgendaView: View {
             }
         }
         .listStyle(.plain)
+        .scrollContentBackground(.hidden)
     }
 }
 
