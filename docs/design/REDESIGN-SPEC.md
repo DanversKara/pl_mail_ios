@@ -149,3 +149,53 @@ As drawn (3a, width 224):
 **Wave 3 (after answers to Q11)**: search screen, onboarding, appearance settings, calendar — all net-new views, fully parallel.
 
 Verification each wave: `PaletteContrastTests`, `AvatarPaletteTests`, a11y restack paths, both size classes.
+
+---
+
+# What has landed against the Claude Design file, and what has not
+
+Written at the end of an autonomous refinement pass driven against the real
+`pl_mail` stack in Docker (`app:test:seed-demo`, `app:test:seed-grid-events`,
+`app:test:seed-extracted-event`) with the app installed on a 13-inch iPad
+simulator and an iPhone simulator.
+
+## Landed
+
+**The shell.** Hand-built regular layout: global header with the mark, the
+centred search field and the pane controls; sidebar drawn straight onto the
+window; list and reader in one card divided by a hairline. The sidebar drops to
+its 56pt rail on a dual-width window and beside the docked calendar
+(`MailLayout.usesSidebarRail`).
+
+**The mark and the icon.** `Theme/PLMark.swift` draws the design's seven strokes;
+`scripts/render-app-icon.swift` renders the 1024pt tile from the same numbers.
+The icon set was empty before this.
+
+**The list.** Three-line rows with the label chip in front of the preview.
+Category tabs carry unread counts, counted from the cache because the server has
+no per-category figure. The header names the mailbox on a card and leaves it to
+the navigation bar on a phone.
+
+**The calendar.** `DockedCalendarView` — grabber, one day on an hour axis at
+twice the screen's row height, and a *Happening soon* band reading the server's
+`kind`. The calendar screen has the design's own bar (`CalendarChrome.swift`:
+`CalendarBar`, `ModeSwitch`, `WeekStrip`) inside one card, replacing five
+floating toolbar capsules and a 220pt sidebar that duplicated it. `TimeGridView`
+gained a now-line, an `hourScale`, and a fix for a greedy `Color.clear` that had
+been eating six hundred points of every day grid.
+
+**The theme, everywhere.** `themedFormSurface` puts the composer and the whole
+settings tree on the theme's surfaces; `themedSheet` gives every sheet the
+theme's *appearance* as well as its palette, which is what was making a themed
+sheet render its rows for the system's colour scheme.
+
+## Not landed, and why
+
+- **The RSVP band.** Blocked on the server — see `docs/parity/03-calendar.md`.
+- **A phone tab bar** (spec Q1). Still unanswered; the phone keeps the pushed
+  sidebar.
+- **834-point widths** are unit-tested but never looked at — see
+  `docs/parity/05-search-labels-design-ipad.md`.
+- **Drag-to-resize on the docked calendar.** The grabber is drawn because the
+  design draws it, and it currently says something the pane cannot do. Either
+  wire a width drag to it or take it off.
