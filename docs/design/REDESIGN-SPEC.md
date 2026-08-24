@@ -196,6 +196,7 @@ sheet render its rows for the system's colour scheme.
   sidebar.
 - **834-point widths** are unit-tested but never looked at — see
   `docs/parity/05-search-labels-design-ipad.md`.
-- **Drag-to-resize on the docked calendar.** The grabber is drawn because the
-  design draws it, and it currently says something the pane cannot do. Either
-  wire a width drag to it or take it off.
+- **A width drag between the two cards.** The grabber now closes the docked
+  calendar when pulled down — a grabber that cannot be grabbed is worse than no
+  control — but the 392pt column is still a constant. A drag handle *between*
+  the cards, which is what mock 3b draws, would make it the reader's choice.

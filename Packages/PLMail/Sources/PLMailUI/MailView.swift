@@ -943,7 +943,10 @@ public struct MailView: View {
     /// keeps its list and its reader, the calendar keeps its day.
     private var calendarCard: some View {
         NavigationStack {
-            DockedCalendarView(service: calendar, expand: { isShowingCalendar = true })
+            DockedCalendarView(
+                service: calendar,
+                expand: { isShowingCalendar = true },
+                dismiss: { isCalendarDocked = false })
         }
         .frame(width: Self.calendarWidth)
         .paneSurface(palette)

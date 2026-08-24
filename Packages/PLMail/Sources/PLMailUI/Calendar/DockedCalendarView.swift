@@ -24,11 +24,14 @@ struct DockedCalendarView: View {
     /// Opens the full calendar. The column deliberately cannot change range,
     /// mode or which calendars are shown — all three belong to the screen.
     let expand: () -> Void
+    /// Puts the column away and gives the width back to the mail.
+    let dismiss: () -> Void
 
     @State private var day = CalendarDay(.now, in: .current)
     @State private var creating: NewEventAt?
     @State private var opened: EventCluster?
     @State private var openedSeries: CalendarEventSnapshot?
+    @State private var isGrabbed = false
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -101,15 +104,39 @@ struct DockedCalendarView: View {
 
     // MARK: - Chrome
 
-    /// The grabber. It says the column can be pulled about before anybody
-    /// tries, which is the whole reason the design put it there.
+    /// The grabber, and the gesture it promises.
+    ///
+    /// **Drawn only because it does something.** A grabber that cannot be
+    /// grabbed is a worse control than no control: it advertises a gesture,
+    /// the gesture fails, and the reader concludes the pane is broken rather
+    /// than that it was decoration. Pulled down, it puts the column away —
+    /// which is what a grabber means everywhere else on the platform.
+    ///
+    /// The hit area is the row, not the four-point capsule. The capsule is the
+    /// mark; a target the size of the mark would be a target nobody could hit.
     private var grabber: some View {
         Capsule()
-            .fill(PanelStyle.hairline)
+            .fill(isGrabbed ? PanelStyle.paneBorder : PanelStyle.hairline)
             .frame(width: 44, height: 4)
-            .padding(.top, 7)
-            .padding(.bottom, 3)
-            .accessibilityHidden(true)
+            .frame(maxWidth: .infinity, minHeight: 20)
+            .contentShape(.rect)
+            .gesture(
+                DragGesture(minimumDistance: 4)
+                    .onChanged { _ in isGrabbed = true }
+                    .onEnded { drag in
+                        isGrabbed = false
+
+                        // Downwards, and far enough to be meant. A pane that
+                        // closed on a four-point twitch would close every time
+                        // somebody rested a thumb on it.
+                        if drag.translation.height > 44 { dismiss() }
+                    }
+            )
+            .padding(.top, 3)
+            .accessibilityElement()
+            .accessibilityLabel(Text(.ui("Close the calendar")))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityAction { dismiss() }
     }
 
     private var header: some View {
