@@ -1148,6 +1148,14 @@ public struct MailView: View {
                     // themed, which reads as opening a different app.
                     .environment(\.theme, theme)
                     .resolvedMotion(theme.motion, reduced: reduceMotion)
+                    // A page, not the stock form sheet. The form sheet is
+                    // sized for a settings pane: on an iPad it left the body
+                    // field a few lines tall with the formatting bar half off
+                    // the bottom edge, and there was nowhere for a software
+                    // keyboard to go. (`.fitted` was tried in between and is
+                    // worse still — a `Form` reports no intrinsic height, so
+                    // the sheet collapses to its toolbar.)
+                    .presentationSizing(.page)
                 }
             }
             .onChange(of: composing) { _, kind in

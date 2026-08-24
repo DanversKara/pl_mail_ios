@@ -19,6 +19,7 @@ public struct ComposeView: View {
     /// way to its one filled button. Injected explicitly by whoever presents
     /// this sheet — see `MailView` and `ThreadReaderView`.
     @Environment(\.theme) private var theme
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focus: Field?
 
@@ -80,16 +81,29 @@ public struct ComposeView: View {
     public var body: some View {
         NavigationStack {
             Form {
-                recipients
-                subjectField
-                bodyField
-                quotedSection
-                attachmentsSection
+                Group {
+                    recipients
+                    subjectField
+                    bodyField
+                    quotedSection
+                    attachmentsSection
+                }
+                // On the sections, not on the `Form`: a row background set on
+                // the container does not reach the rows, and the composer came
+                // up with white cards on a Paper ground — half themed, which
+                // reads worse than not themed at all.
+                .listRowBackground(palette.surface.color)
             }
-            // Same reasoning as the reader: a composer stretched across an
-            // iPad puts the send button a hand's width from the text.
-            .frame(maxWidth: 700)
-            .frame(maxWidth: .infinity)
+            // **The theme, on every surface the composer has.** A `Form`
+            // paints itself out of the system's own materials, so the composer
+            // came up as a grey-and-white iOS sheet in front of a Paper
+            // mailbox — which is exactly the "feels like opening a different
+            // app" the redesign set out to fix. The scroll background goes and
+            // the tokens take its place: window behind, surface on the rows.
+            .scrollContentBackground(.hidden)
+            .background(palette.window.color)
+            .toolbarBackground(palette.surface.color, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
             .navigationTitle(
                 model.subject.isEmpty ? String(localized: .ui("New message")) : model.subject
             )
@@ -626,7 +640,13 @@ public struct ComposeView: View {
                 // A form row sizes to its content; a text editor has none until
                 // there is text, so without a floor the field opens as a
                 // one-line slot that nobody reads as "write here".
-                .frame(minHeight: 220)
+                //
+                // Twice as tall where there is a page sheet to be tall in. A
+                // `Form` row cannot stretch to fill what is left, so the floor
+                // is what decides how much of the sheet the body gets, and one
+                // number tuned for a phone leaves an iPad composer with half
+                // its sheet empty under the last row.
+                .frame(minHeight: sizeClass == .regular ? 460 : 260)
                 .focused($focus, equals: .body)
 
             // Under the field rather than on the keyboard's accessory bar.
