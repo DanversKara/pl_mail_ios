@@ -43,7 +43,7 @@ public struct ThreadListView: View {
     /// it. **Temporary, for the performance investigation** — remove it once the
     /// reader is fast, because a version string does not belong in a mailbox
     /// title.
-    static let buildStamp = "e8"
+    static let buildStamp = "e9"
 
     /// How many threads the join will hold at once. See the descriptor in
     /// `init` for why this is bounded rather than open.
@@ -453,10 +453,12 @@ public struct ThreadListView: View {
             paneWidth = $0
         }
         .task(id: chipKey) { await loadChips() }
-        // Recounted on the same key the chips use: both answer to "the visible
-        // conversations changed", and a second trigger would be a second thing
-        // to keep in step with the first.
-        .task(id: chipKey) { await loadCategoryCounts() }
+        // Its own key. The chips answer to "which conversations are visible";
+        // a category count answers to "how many are unread", and reading one
+        // message changes the second without touching the first — so sharing
+        // the chips' key left every tab showing the figure it had when the
+        // mailbox was opened.
+        .task(id: categoryCountKey) { await loadCategoryCounts() }
         // Applying a label changes neither the feed table nor the mailbox list,
         // so nothing else would tell the chips to re-resolve and the row would
         // go on showing the labels it had before the sheet opened.
@@ -523,13 +525,20 @@ public struct ThreadListView: View {
         .overlay { emptyState }
         // The title carries the count while selecting, so the number is where
         // the eye already is rather than in a second bar.
-        // **Empty on purpose.** A navigation bar with text in it paints an
-        // opaque background, and over a pane card that lands as a square band
-        // across the card's top edge — the card appears to start below the bar
-        // instead of behind it. The reader has looked right all along precisely
-        // because its title is empty and the bar collapses. The name of the
-        // list belongs inside the card anyway; see `listHeader`.
-        .navigationTitle(.ui(""))
+        // **Empty on a card, named on a phone.** A navigation bar with text in
+        // it paints an opaque background, and over a pane card that lands as a
+        // square band across the card's top edge — the card appears to start
+        // below the bar instead of behind it. So on a separated layout the
+        // title is empty and the bar collapses, and `listHeader` names the list
+        // inside the card.
+        //
+        // A phone has no card and no such problem, and an empty title there
+        // left a hundred and thirty points of nothing above the categories with
+        // a back chevron floating in it.
+        .navigationTitle(
+            layout.isSeparated
+                ? Text(verbatim: "") : Text(verbatim: feed.title(mailboxes: sync.mailboxes))
+        )
         // **Gone entirely on a separated layout**, which is what reclaims the
         // band of empty pane above the header. The bar was already carrying no
         // title — see above — so all it drew was one floating ellipsis in
@@ -601,13 +610,18 @@ public struct ThreadListView: View {
             // place on screen that says which list you are looking at. While a
             // selection is up the count takes the slot instead — it is the one
             // number with nowhere else to go.
-            Text(
-                verbatim: isSelecting
-                    ? "\(checked.count) selected" : feed.title(mailboxes: sync.mailboxes)
-            )
-            .font(.system(size: 13, weight: .semibold))
-            .foregroundStyle(palette.ink.color)
-            .lineLimit(1)
+            // Not on a phone, where the navigation bar above it already says
+            // the name — the same name in two bars two lines apart reads as a
+            // mistake rather than as emphasis.
+            if isSelecting || layout.isSeparated {
+                Text(
+                    verbatim: isSelecting
+                        ? "\(checked.count) selected" : feed.title(mailboxes: sync.mailboxes)
+                )
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(palette.ink.color)
+                .lineLimit(1)
+            }
 
             Spacer(minLength: 8)
 
@@ -1460,6 +1474,13 @@ public struct ThreadListView: View {
         let threads: [String]
         let labels: [String]
         let revision: Int
+    }
+
+    /// What a category count depends on: the mailboxes' own unread figures,
+    /// which the server refreshes on every sync and which move the moment a
+    /// message is read.
+    private var categoryCountKey: String {
+        sync.mailboxes.map { "\($0.id)|\($0.unreadThreads)" }.joined(separator: ",")
     }
 
     private var chipKey: ChipKey {
