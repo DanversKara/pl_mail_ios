@@ -286,6 +286,29 @@ extension ResolvedTheme {
     }
 }
 
+#if os(iOS)
+
+extension View {
+    /// Everything a sheet needs to look like the rest of the app.
+    ///
+    /// A sheet is presented in its own hosting context, so **none** of the
+    /// three reaches it from the root: the theme, the resolved motion, and —
+    /// the one that was still missing — the forced appearance. Without the
+    /// last, a themed sheet asked its palette for the *system's* scheme rather
+    /// than the theme's, and Settings came up with near-white rows on a
+    /// near-black ground the first time somebody chose Dark.
+    ///
+    /// One modifier so the next sheet cannot get two of the three.
+    public func themedSheet(_ theme: ResolvedTheme, reduceMotion: Bool) -> some View {
+        self
+            .environment(\.theme, theme)
+            .resolvedMotion(theme.motion, reduced: reduceMotion)
+            .preferredColorScheme(theme.colorScheme)
+    }
+}
+
+#endif
+
 extension EnvironmentValues {
     @Entry public var theme: ResolvedTheme = .placeholder
 

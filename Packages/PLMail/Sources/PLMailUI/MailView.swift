@@ -1013,6 +1013,10 @@ public struct MailView: View {
                 NavigationStack {
                     CalendarView(service: calendar) { isShowingCalendar = false }
                 }
+                // A cover is its own hosting context too, and the calendar's
+                // card is drawn from the palette — so without this it asked for
+                // the system's appearance rather than the theme's.
+                .themedSheet(theme, reduceMotion: reduceMotion)
             }
             // Measured rather than classified. A size class reports two widths and
             // Stage Manager produces every width, so this is the only honest input
@@ -1152,8 +1156,7 @@ public struct MailView: View {
                     // modifier chain does not reliably reach it — so the composer
                     // came up on the placeholder theme while the mail behind it was
                     // themed, which reads as opening a different app.
-                    .environment(\.theme, theme)
-                    .resolvedMotion(theme.motion, reduced: reduceMotion)
+                    .themedSheet(theme, reduceMotion: reduceMotion)
                     // A page, not the stock form sheet. The form sheet is
                     // sized for a settings pane: on an iPad it left the body
                     // field a few lines tall with the formatting bar half off
@@ -1171,7 +1174,7 @@ public struct MailView: View {
             }
             .sheet(isPresented: $isShowingLabelManager) {
                 LabelManagerView(sync: sync, labels: labels)
-                    .environment(\.theme, theme)
+                    .themedSheet(theme, reduceMotion: reduceMotion)
             }
             .sheet(isPresented: $isShowingSettings) {
                 SettingsView(
@@ -1180,8 +1183,7 @@ public struct MailView: View {
                     store: store,
                     onSignOut: onSignOut
                 )
-                .environment(\.theme, theme)
-                .resolvedMotion(theme.motion, reduced: reduceMotion)
+                .themedSheet(theme, reduceMotion: reduceMotion)
             }
             // Applied here as well as at the app's root, which owns the
             // `AppearanceSettings` this view only reads. The root is in another

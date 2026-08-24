@@ -39,12 +39,6 @@ public struct ThreadListView: View {
     @Query private var entries: [StoredFeedEntry]
     @Query private var threads: [StoredThread]
 
-    /// A visible marker so a build on a device can be told from the one before
-    /// it. **Temporary, for the performance investigation** — remove it once the
-    /// reader is fast, because a version string does not belong in a mailbox
-    /// title.
-    static let buildStamp = "f4"
-
     /// How many threads the join will hold at once. See the descriptor in
     /// `init` for why this is bounded rather than open.
     private static let joinableThreadLimit = 2_000
@@ -638,10 +632,6 @@ public struct ThreadListView: View {
                 // Counted from the feed table rather than from `rows`, which is
                 // the *built window* and would read "150 conversations" in a
                 // 60,000-message mailbox.
-                Text(verbatim: Self.buildStamp)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(palette.inkFaint.color)
-
                 Text(.ui("\(entries.count) conversations"))
                     .font(.system(size: 12))
                     .monospacedDigit()
