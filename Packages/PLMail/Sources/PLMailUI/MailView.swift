@@ -726,9 +726,10 @@ public struct MailView: View {
             .accessibilityLabel(Text(.ui("Show or hide the sidebar")))
 
             HStack(spacing: 8) {
-                Text(verbatim: "plMail")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(palette.ink.color)
+                // The mark, not the word. The design puts the seven-stroke
+                // glyph here and nothing else — a wordmark beside it would say
+                // the app's name twice to somebody who has already opened it.
+                PLMark(size: 26)
 
                 // Green while the last check succeeded, amber once the server
                 // has failed often enough to be worth mentioning. The design
