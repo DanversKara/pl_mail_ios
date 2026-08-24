@@ -43,7 +43,7 @@ public struct ThreadListView: View {
     /// it. **Temporary, for the performance investigation** — remove it once the
     /// reader is fast, because a version string does not belong in a mailbox
     /// title.
-    static let buildStamp = "d9"
+    static let buildStamp = "e2"
 
     /// How many threads the join will hold at once. See the descriptor in
     /// `init` for why this is bounded rather than open.
@@ -162,6 +162,11 @@ public struct ThreadListView: View {
     /// reading its messages' mailbox ids out of the store, and doing that
     /// inside a scrolling `ForEach` is a store read per row per redraw.
     @State private var chips: [String: [LabelChipModel]] = [:]
+
+    /// Unread conversations per category, for the strip's counts. Held rather
+    /// than computed in `body` for the same reason ``chips`` is: four store
+    /// counts per redraw of a scrolling list is four store counts a frame.
+    @State private var categoryCounts: [MessageCategory: Int] = [:]
     /// Bumped when something in this view changes a conversation's labels.
     ///
     /// Neither the feed table nor the mailbox list changes when a label is
@@ -448,6 +453,10 @@ public struct ThreadListView: View {
             paneWidth = $0
         }
         .task(id: chipKey) { await loadChips() }
+        // Recounted on the same key the chips use: both answer to "the visible
+        // conversations changed", and a second trigger would be a second thing
+        // to keep in step with the first.
+        .task(id: chipKey) { await loadCategoryCounts() }
         // Applying a label changes neither the feed table nor the mailbox list,
         // so nothing else would tell the chips to re-resolve and the row would
         // go on showing the labels it had before the sheet opened.
@@ -762,7 +771,8 @@ public struct ThreadListView: View {
     @ViewBuilder
     private var categoryStrip: some View {
         if let categorySelection {
-            InboxCategoryPicker(selection: categorySelection, isStrip: true)
+            InboxCategoryPicker(
+                selection: categorySelection, isStrip: true, unreadCounts: categoryCounts)
         }
     }
 
@@ -1467,6 +1477,21 @@ public struct ThreadListView: View {
     /// one account, so the projections have to be asked for per account anyway;
     /// what this avoids is asking per conversation, inside a `ForEach`, while
     /// the list is being flung.
+    /// Counts the unread mail under each tab.
+    ///
+    /// Silent on failure, and deliberately: a strip with no numbers on it is
+    /// the state it was in before this existed, and an alert about a count is
+    /// an alert about nothing the reader can act on.
+    private func loadCategoryCounts() async {
+        guard categorySelection != nil else {
+            categoryCounts = [:]
+
+            return
+        }
+
+        categoryCounts = (try? await sync.store.unreadCountsByCategory()) ?? [:]
+    }
+
     private func loadChips() async {
         let mailboxes = sync.mailboxes
 

@@ -162,8 +162,7 @@ public struct ThreadRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 topLine
                 subjectLine
-                snippetLine
-                badges
+                snippetAndBadges
             }
             // The rule between rows starts where the text does, not at the
             // pane edge — an unbroken line under the avatars would draw a
@@ -517,6 +516,29 @@ public struct ThreadRowView: View {
         return highlighted(marked, in: .subheadline)
     }
 
+    /// The third and last line: what the user labelled it, then what it says.
+    ///
+    /// **One line, not two.** The design puts the label chip in front of the
+    /// preview rather than under it, and the difference is a quarter of the
+    /// row's height on every row in the list — a mailbox that shows twelve
+    /// conversations instead of nine on the same screen. The chips keep the
+    /// leading edge because a label is the one thing on this line the reader
+    /// put there themselves; the preview takes whatever is left and truncates,
+    /// which is what a preview is for.
+    @ViewBuilder
+    private var snippetAndBadges: some View {
+        if hasBadges || theme.previewLines > 0 {
+            HStack(alignment: .center, spacing: 6) {
+                badges
+                snippetLine
+            }
+        }
+    }
+
+    private var hasBadges: Bool {
+        thread.snoozedUntil != nil || labels.isEmpty == false
+    }
+
     /// The preview, at whatever depth the theme asks for.
     ///
     /// **Zero lines means no view at all, not a `lineLimit(0)`.** SwiftUI reads
@@ -534,11 +556,13 @@ public struct ThreadRowView: View {
                     .font(.footnote)
                     .foregroundStyle(palette.inkFaint.color)
                     .lineLimit(theme.previewLines)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             } else if thread.snippet.isEmpty == false {
                 Text(thread.snippet)
                     .font(.footnote)
                     .foregroundStyle(palette.inkFaint.color)
                     .lineLimit(theme.previewLines)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
     }
@@ -578,7 +602,7 @@ public struct ThreadRowView: View {
     /// top line now; see ``accountDot``.
     @ViewBuilder
     private var badges: some View {
-        if thread.snoozedUntil != nil || labels.isEmpty == false {
+        if hasBadges {
             HStack(spacing: 8) {
                 // First on the line, because a label is the one thing here the
                 // user put there themselves. The cluster draws nothing at all
@@ -598,7 +622,10 @@ public struct ThreadRowView: View {
                         .background(ThemeAccent().opacity(0.12), in: Capsule())
                 }
             }
-            .padding(.top, 2)
+            // Never squeezed by the preview beside it: a chip clipped to three
+            // characters says less than no chip, and the preview is the thing
+            // on this line that is allowed to end in an ellipsis.
+            .fixedSize(horizontal: true, vertical: false)
             .accessibilityHidden(true)
         }
     }

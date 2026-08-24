@@ -1227,6 +1227,35 @@ public actor SyncStore {
         return try modelContext.fetchCount(descriptor) > 0
     }
 
+    /// How many unread conversations this device holds under each category.
+    ///
+    /// **What this device holds**, and the tab says so by being a count rather
+    /// than a claim about the server. There is no server-side figure to ask
+    /// for: `Mailbox/get` counts a mailbox, and a category is not one — the
+    /// classifier writes it onto the conversation. So the number is exactly
+    /// what the list beneath the strip would show if you tapped the tab, which
+    /// is the one definition that can never disagree with what is on screen.
+    ///
+    /// A `fetchCount` per category — four small indexed counts — rather than
+    /// fetching the rows and grouping them in Swift. This runs whenever the
+    /// feed changes, and on a sixty-thousand-message mailbox the difference
+    /// between counting and materialising is the difference between a query
+    /// and a stall.
+    public func unreadCountsByCategory() throws -> [MessageCategory: Int] {
+        var counts: [MessageCategory: Int] = [:]
+
+        for category in MessageCategory.allCases {
+            let raw = category.rawValue
+            let descriptor = FetchDescriptor<StoredThread>(
+                predicate: #Predicate { $0.isUnread && $0.category == raw })
+            let count = try modelContext.fetchCount(descriptor)
+
+            if count > 0 { counts[category] = count }
+        }
+
+        return counts
+    }
+
     /// Applies a whole batch of projection decisions in one transaction.
     ///
     /// One save for the batch, not one per row: this runs on the sync path

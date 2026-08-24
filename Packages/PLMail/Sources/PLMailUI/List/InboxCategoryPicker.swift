@@ -37,6 +37,10 @@ struct InboxCategoryPicker: View {
 
     /// Drawn as a strip when true and left to ``menu`` when false.
     let isStrip: Bool
+    /// How many unread conversations sit under each tab. Empty until the first
+    /// count lands, and a category missing from it has none — a tab that said
+    /// "0" would be a tab claiming to have been counted when it has not.
+    var unreadCounts: [MessageCategory: Int] = [:]
 
     /// The tab strip's own ground and its underline both come from the
     /// palette, so the strip separates from the rows below it on every theme
@@ -123,15 +127,28 @@ struct InboxCategoryPicker: View {
             selection = isChosen ? nil : category
         } label: {
             VStack(spacing: 6) {
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Image(systemName: category?.symbolName ?? "tray.2")
                         .font(.system(size: 11))
 
                     Text(Self.title(of: category))
                         .font(.system(size: 13, weight: isChosen ? .semibold : .regular))
+                        // A tab is four words in English and one long compound
+                        // in German. Shrinking the name a little beats
+                        // truncating it, because "Allge…" names nothing.
+                        .minimumScaleFactor(0.8)
+
+                    if let category, let count = unreadCounts[category] {
+                        // Bolder than the name beside it, always — the number
+                        // is the thing that changed since you last looked, and
+                        // the word never is.
+                        Text(verbatim: "\(count)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .monospacedDigit()
+                    }
                 }
                 .lineLimit(1)
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 6)
                 .padding(.top, 9)
 
                 Rectangle()
@@ -146,6 +163,19 @@ struct InboxCategoryPicker: View {
         .buttonStyle(.plain)
         .id(Self.id(of: category))
         .hoverEffect(.highlight)
+        // Said as a sentence rather than left as "Promotions, 3" — a bare
+        // number after a tab name is as likely to be read as a position in the
+        // strip as a count of anything.
+        .accessibilityLabel(
+            {
+                guard let category, let count = unreadCounts[category] else {
+                    return Text(Self.title(of: category))
+                }
+
+                return Text(Self.title(of: category)) + Text(verbatim: ", ")
+                    + Text(.ui("\(count) unread"))
+            }()
+        )
         .accessibilityAddTraits(isChosen ? [.isButton, .isSelected] : .isButton)
     }
 
