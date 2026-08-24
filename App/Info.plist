@@ -45,6 +45,29 @@
 				<string>plmail</string>
 			</array>
 		</dict>
+		<dict>
+			<!-- So an address tapped anywhere on the device can open this
+			     composer. Registering the scheme is what makes plMail
+			     *offerable*; it is not what makes it the default. Being the
+			     system's default mail app additionally needs the managed
+			     com.apple.developer.mail-app entitlement, which Apple grants
+			     by request and a free personal team cannot hold — see
+			     docs/parity/02-compose-send.md. Without it a mailto: still
+			     reaches this app when something opens the URL directly, which
+			     is every "open in" sheet and every other app that asks.
+
+			     Viewer rather than Editor: the app is opened *with* the link,
+			     it does not claim ownership of the scheme. Two clients both
+			     claiming a scheme as Editor is undefined behaviour on iOS. -->
+			<key>CFBundleURLName</key>
+			<string>de.plmail.mailto</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>mailto</string>
+			</array>
+		</dict>
 	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
@@ -70,6 +93,53 @@
 		     extension: the push says "something changed" and the app does an
 		     ordinary delta pull. -->
 		<string>remote-notification</string>
+	</array>
+
+	<!--
+	  Communication notifications. A new-mail banner is donated as an
+	  INSendMessageIntent so it carries the sender's name and contact photo,
+	  can be allowed through a Focus per person, and is read aloud as a
+	  message rather than as an app alert. Without this declaration
+	  `UNNotificationContent.updating(from:)` refuses the intent and every
+	  banner falls back to the plain form — silently, which is the failure
+	  worth guarding against here.
+	-->
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+		<!-- Handoff for "reading this conversation". Undeclared, the system
+		     drops the activity silently: Handoff simply never appears on the
+		     other device and nothing is logged. The payload is two ids, so the
+		     mail itself is fetched by the receiving device from the server it
+		     already has a credential for and never passes through iCloud. -->
+		<string>de.plmail.reading-thread</string>
+	</array>
+
+	<!--
+	  The drag payload one plMail pane hands another, declared so the system
+	  knows the identifier belongs to this app. Drags *inside* the app work
+	  without this — which is every drag the app itself makes — but a
+	  conversation dragged out lands as the plain-text fallback, so another
+	  copy of plMail on the same iPad could not recognise its own type.
+
+	  Conforms to public.data and public.content: it is an opaque payload, not
+	  text, and a target that accepts plain text must not light up for it.
+	-->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>de.plmail.threads</string>
+			<key>UTTypeDescription</key>
+			<string>plMail conversations</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict/>
+		</dict>
 	</array>
 
 	<key>NSLocalNetworkUsageDescription</key>

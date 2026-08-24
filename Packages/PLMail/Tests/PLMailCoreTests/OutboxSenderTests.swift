@@ -49,14 +49,16 @@ struct OutboxSenderTests {
     }
 
     /// The whole feature in one assertion: a drain is not evidence that a
-    /// scheduled message is ready.
+    /// scheduled message is ready to **leave**.
     ///
-    /// The held message is queued *first* deliberately. The drain works oldest
-    /// first and stops at the first failure, so a sender that ignored the
-    /// schedule would try this one and never reach the other — which is
-    /// exactly the pair of counts asserted below.
-    @Test("A message scheduled for later is left alone by a drain")
-    func skipsWhatIsNotDue() async throws {
+    /// What changed with server-side scheduling is that a drain now *offers*
+    /// the schedule to the server. What must not change is the thing that
+    /// matters: the message is still here, still held, and still this device's
+    /// until a server says otherwise. The server is unreachable in this suite,
+    /// so the offer fails and the fallback is what is left — which is precisely
+    /// the case the outbox exists for.
+    @Test("A message scheduled for later is offered to the server, never sent from here")
+    func offersButDoesNotSend() async throws {
         let outbox = makeOutbox()
 
         var held = message(subject: "Tomorrow")
@@ -75,14 +77,52 @@ struct OutboxSenderTests {
         let reloadedHeld = try #require(stored.first { $0.subject == "Tomorrow" })
         let reloadedNow = try #require(stored.first { $0.subject == "Now" })
 
-        #expect(reloadedHeld.attempts == 0)
-        #expect(reloadedHeld.lastFailure == nil)
+        // Still ours. No handover was recorded, so nothing on this device
+        // believes the server is holding mail that it is not.
+        #expect(reloadedHeld.handover == nil)
+        #expect(reloadedHeld.isDeviceHeld)
+        #expect(reloadedHeld.isDue(at: .now) == false)
+        #expect(reloadedHeld.sendAfter != nil, "the schedule survives a failed handover")
+
         #expect(reloadedNow.attempts == 1)
         #expect(reloadedNow.lastFailure != nil)
     }
 
+    /// A message the server has taken over is never sent from here again.
+    ///
+    /// The one invariant the whole handover rests on. Written against the
+    /// record rather than against a drain, because it has to hold however the
+    /// clock moves: a handed-over message that is a day overdue is still not
+    /// this device's to send.
+    @Test("A handed-over message is never due again, however late it gets")
+    func handoverIsFinal() async throws {
+        let outbox = makeOutbox()
+
+        var held = message(subject: "Handed over")
+        held.sendAfter = .now.addingTimeInterval(60)
+
+        try await outbox.enqueue(held)
+        await outbox.recordHandover(
+            held.id,
+            Outbox.PendingMessage.Handover(
+                submissionID: "77", sendAt: .now.addingTimeInterval(60)))
+
+        let stored = try #require(await outbox.pending().first)
+
+        #expect(stored.isDue(at: .now) == false)
+        #expect(stored.isDue(at: .now.addingTimeInterval(86_400)) == false)
+        #expect(stored.isDeviceHeld == false)
+
+        // And a drain agrees: nothing is sent from here.
+        await drainAndSettle(makeSender(outbox))
+
+        let after = try #require(await outbox.pending().first)
+
+        #expect(after.handover?.submissionID == "77")
+    }
+
     /// A queue holding nothing but scheduled mail must not look like one that
-    /// is trying and failing — no spinner, no attempt, no request.
+    /// is trying to send — no spinner, and nothing leaves.
     @Test("A queue of nothing but scheduled mail does not start sending")
     func nothingDue() async throws {
         let outbox = makeOutbox()
@@ -96,9 +136,12 @@ struct OutboxSenderTests {
 
         await drainAndSettle(sender)
 
+        // `isSending` is about mail on its way out, not about a handover being
+        // offered: a spinner over a message that is still an hour away is the
+        // app claiming to do something it is not.
         #expect(sender.isSending == false)
         #expect(sender.pendingCount == 1, "it is still waiting, and the sidebar should say so")
-        #expect(await outbox.pending().first?.attempts == 0)
+        #expect(await outbox.pending().first?.isDeviceHeld == true)
     }
 
     /// What the app asks the system to wake it for. The earliest one, because

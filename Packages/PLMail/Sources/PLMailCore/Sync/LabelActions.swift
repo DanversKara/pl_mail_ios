@@ -59,13 +59,19 @@ public final class LabelActions {
 
     /// Creates a label on one account.
     ///
+    /// `color` is the colour to give it, or nil for "no colour chosen". Nil is
+    /// a real third state and not a synonym for `.gray`: a label with no colour
+    /// falls back to the hashed tint, and one coloured grey on purpose stays
+    /// grey.
+    ///
     /// - Returns: The new mailbox's id, or nil if the server refused. Returned
     ///   rather than discarded so a picker can create a label and apply it in
     ///   one gesture, which is the only reason to offer creation from a picker
     ///   at all.
     @discardableResult
     public func create(
-        named name: String, parentID: MailboxID? = nil, accountID: AccountID
+        named name: String, parentID: MailboxID? = nil, color: LabelColor? = nil,
+        accountID: AccountID
     ) async -> MailboxID? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -75,7 +81,8 @@ public final class LabelActions {
         // outcomes the user waits for.
         guard let complaint = Self.complaint(about: name) else {
             return await send(
-                MailboxSet.create(name: name, parentID: parentID, accountID: accountID),
+                MailboxSet.create(
+                    name: name, parentID: parentID, color: color, accountID: accountID),
                 accountID: accountID
             ) { result in
                 result.created?[MailboxSet.creationID]?.id
@@ -154,6 +161,64 @@ public final class LabelActions {
             // with every bucket empty has neither done it nor refused it, and
             // reporting that as a rename leaves the sidebar showing a name
             // nothing else in the world agrees with.
+            result.updated?.keys.contains(mailboxID) == true ? true : nil
+        } ?? false
+    }
+
+    // MARK: - Recolouring
+
+    /// Sets or clears one label's colour, leaving its name and parent alone.
+    ///
+    /// Its own request rather than a parameter on ``rename(_:to:accountID:)``:
+    /// the server treats every property *mentioned* in a patch as a change, so
+    /// folding the two together would mean a rename that also sent the colour
+    /// the client last knew about — overwriting whatever the web UI did in the
+    /// meantime with stale data the user never touched.
+    ///
+    /// A nil `color` clears it. Allowed on system labels too: plMail
+    /// deliberately does not gate `color` on mutability, because recolouring
+    /// Inbox's chip breaks none of the invariants that renaming it would.
+    ///
+    /// - Returns: Whether the server said it did it. False covers both a
+    ///   refusal and a 200 whose `updated` bucket never mentions the label,
+    ///   which is a server that has neither done it nor said why.
+    public func recolor(
+        _ mailboxID: MailboxID, to color: LabelColor?, accountID: AccountID
+    ) async -> Bool {
+        await send(
+            MailboxSet.recolor(mailboxID, to: color, accountID: accountID),
+            accountID: accountID
+        ) { result in
+            result.updated?.keys.contains(mailboxID) == true ? true : nil
+        } ?? false
+    }
+
+    // MARK: - Re-parenting
+
+    /// Moves a label under `parentID`, or to the top level when that is nil.
+    ///
+    /// The parent is a **binding** id in this account. Passing one from
+    /// another account would be an id the server cannot resolve, which comes
+    /// back as `invalidProperties` and reads to the user as "there's already a
+    /// label with that name here" — so callers filter by `accountKey` first.
+    ///
+    /// - Returns: Whether the server said it did it.
+    public func reparent(
+        _ mailboxID: MailboxID, under parentID: MailboxID?, accountID: AccountID
+    ) async -> Bool {
+        // A label cannot be its own parent, and the server answers that with a
+        // refusal the UI would then have to explain. Refusing here costs a
+        // round trip and says the same thing.
+        guard parentID != mailboxID else {
+            failure = String(
+                localized: "A label can't be nested inside itself.", bundle: .module)
+            return false
+        }
+
+        return await send(
+            MailboxSet.reparent(mailboxID, to: parentID, accountID: accountID),
+            accountID: accountID
+        ) { result in
             result.updated?.keys.contains(mailboxID) == true ? true : nil
         } ?? false
     }

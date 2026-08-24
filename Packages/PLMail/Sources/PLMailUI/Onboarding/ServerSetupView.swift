@@ -30,12 +30,19 @@ public struct ServerSetupView: View {
 
     private enum Field { case address, secret }
 
+    /// Pre-filling `address` is what makes this screen usable for replacing a
+    /// rejected app password rather than only for signing in the first time:
+    /// the server has not moved, and making somebody retype their own hostname
+    /// to fix a credential the server revoked invites a typo into a flow that
+    /// was working.
     public init(
         pairingLink: URL? = nil,
+        address: String = "",
         onConnected: @escaping @MainActor (ServerConnection) -> Void
     ) {
         self.pairingLink = pairingLink
-        _model = State(wrappedValue: ServerSetupModel(onConnected: onConnected))
+        _model = State(
+            wrappedValue: ServerSetupModel(address: address, onConnected: onConnected))
     }
 
     public var body: some View {
@@ -125,10 +132,26 @@ public struct ServerSetupView: View {
         } header: {
             Text(.ui("Server"))
         } footer: {
-            Text(
-                .ui(
-                    "The address you use to open plMail in a browser. https is assumed unless you type otherwise."
-                ))
+            // Before Connect can be pressed, deliberately. The app password is
+            // a 71-character secret that cannot be un-sent, and a warning
+            // shown afterwards — which is where the diagnostics screen puts it
+            // — tells the user about something that has already happened.
+            if model.warnsAboutCleartext {
+                Label {
+                    Text(
+                        .ui(
+                            "This address is unencrypted. Your app password and your mail will travel in the clear, so only use it on a network you trust."
+                        ))
+                } icon: {
+                    Image(systemName: "lock.open.trianglebadge.exclamationmark")
+                }
+                .foregroundStyle(.orange)
+            } else {
+                Text(
+                    .ui(
+                        "The address you use to open plMail in a browser. https is assumed unless you type otherwise."
+                    ))
+            }
         }
     }
 

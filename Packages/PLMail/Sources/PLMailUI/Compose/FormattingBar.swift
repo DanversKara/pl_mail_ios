@@ -66,9 +66,18 @@ struct FormattingBar: View {
                 .frame(width: 32, height: 30)
                 .background(
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isOn ? Color.accentColor.opacity(0.18) : .clear)
+                        // Erased rather than left as a ternary of colours. The
+                        // accent is a `ShapeStyle` that resolves itself from the
+                        // environment, so its branch and `.clear` are different
+                        // types and the ternary has nowhere to land — the same
+                        // reason ``ThemeAccent`` is a style rather than a
+                        // `Color` in the first place.
+                        .fill(
+                            isOn
+                                ? AnyShapeStyle(ThemeAccent().opacity(0.18))
+                                : AnyShapeStyle(.clear))
                 )
-                .foregroundStyle(isOn ? Color.accentColor : .primary)
+                .foregroundStyle(isOn ? AnyShapeStyle(.themeAccent) : AnyShapeStyle(.primary))
         }
         .accessibilityLabel(Text(label))
         .accessibilityAddTraits(isOn ? [.isSelected] : [])

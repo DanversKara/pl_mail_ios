@@ -102,3 +102,98 @@
 
 "No matches" = "No matches";
 "%lld of %lld" = "%lld of %lld";
+"Mail copied to a person" = "Mail copied to a person";
+"One label, by its exact name" = "One label, by its exact name";
+
+/* Onboarding: the typed address carried user:password@, which would be baked
+   into every request and into the Keychain metadata. */
+"Leave the username and password out of the address — the app password goes in the field below." = "Leave the username and password out of the address — the app password goes in the field below.";
+
+/* Labels: refused locally rather than by the server, because the round trip
+   would come back as a bare invalidProperties with nothing naming the rule. */
+"A label can't be nested inside itself." = "A label can't be nested inside itself.";
+
+/* Notifications. These are read aloud by Announce Notifications and shown on a
+   lock screen, which is the one place in the app the user cannot correct a
+   wrong language by looking somewhere else — the Android client shipped a
+   German device reading a German inbox out in English. */
+"Unknown sender" = "Unknown sender";
+"(no subject)" = "(no subject)";
+"Mark as read" = "Mark as read";
+"Reply" = "Reply";
+"Send" = "Send";
+"Reply to this message" = "Reply to this message";
+"Your reply hasn't been sent" = "Your reply hasn't been sent";
+"It's queued and will go out when the server answers." = "It's queued and will go out when the server answers.";
+"Try again" = "Try again";
+"%lld new messages" = "%lld new messages";
+
+/* Drafts. A composer that silently saves and one that silently does not look
+   identical, so every one of these names where the text actually is. */
+"Couldn't reach the server. Showing the draft last synced." = "Couldn't reach the server. Showing the draft last synced.";
+"The server wouldn't save this draft." = "The server wouldn't save this draft.";
+"This draft changed somewhere else. Reopen it to see the newest copy." = "This draft changed somewhere else. Reopen it to see the newest copy.";
+"Sign in again to save this." = "Sign in again to save this.";
+"Couldn't reach the server. This is still on your phone." = "Couldn't reach the server. This is still on your phone.";
+
+/* Attachments refused at pick time, by name. A message that goes out with the
+   first 25 MB of a video looks to the sender like it worked. */
+"%@ is %@. This server accepts attachments up to %@." = "%1$@ is %2$@. This server accepts attachments up to %3$@.";
+"%@ is stored on %@ and can't move to another account. Remove it, or send from %@." = "%@ is stored on %@ and can't move to another account. Remove it, or send from %@.";
+"Adding %@ would take this message to %@. The limit is %@." = "Adding %1$@ would take this message to %2$@. The limit is %3$@.";
+
+/* The quoted original and the forward header block. Hardcoded English above a
+   German thread is the failure these replace. */
+"On %@, %@ wrote:" = "On %1$@, %2$@ wrote:";
+"---------- Forwarded message ----------" = "---------- Forwarded message ----------";
+"From:" = "From:";
+"Date:" = "Date:";
+"Subject:" = "Subject:";
+"To:" = "To:";
+"Cc:" = "Cc:";
+
+/* The offline action queue. Three sentences, deliberately distinct: the server
+   knows, the server has not been told yet, or the server said no. Collapsing
+   the middle one tells someone on a train that their mail has moved when it
+   has not. */
+"waiting for the server" = "waiting for the server";
+"Put back" = "Put back";
+"That server's certificate no longer matches." = "That server's certificate no longer matches.";
+"You're offline." = "You're offline.";
+"Nothing on %@ answered." = "Nothing on %@ answered.";
+"Your server won't hold mail this far ahead. This phone will send it." = "Your server won't hold mail this far ahead. This phone will send it.";
+
+/* Inbox categories — the Gmail tabs. The exact words the web UI's own tab bar
+   uses (translations/messages.en.yaml, `tabs:`), so the two clients cannot
+   disagree about what a slice of the inbox is called. */
+
+"Primary" = "Primary";
+"Social" = "Social";
+"Promotions" = "Promotions";
+"Updates" = "Updates";
+"Forums" = "Forums";
+
+/* The home-screen and Lock Screen widgets. In this catalogue rather than
+   PLMailUI's because the widget extension links PLMailCore only — PLMailUI
+   reaches for UIApplication.shared, which an app extension may not — and a
+   string it cannot reach is a string that ships in English. */
+
+"Needs a paid developer account" = "Needs a paid developer account";
+"Open plMail to sign in" = "Open plMail to sign in";
+"unread message" = "unread message";
+"unread messages" = "unread messages";
+"No unread mail" = "No unread mail";
+"%lld unread" = "%lld unread";
+"Unread mail" = "Unread mail";
+"How much unread mail is waiting." = "How much unread mail is waiting.";
+"Today's events" = "Today's events";
+"What is left on your calendar today." = "What is left on your calendar today.";
+"Nothing left today" = "Nothing left today";
+"No calendar loaded" = "No calendar loaded";
+"This server has no calendar" = "This server has no calendar";
+
+/* Draft conflicts. `ifInState` is checked against the account's Email state,
+   so this is only ever shown once the change log has confirmed that this
+   draft itself moved — not merely that mail arrived. */
+
+"This draft changed on another device. Nothing here has been lost." = "This draft changed on another device. Nothing here has been lost.";

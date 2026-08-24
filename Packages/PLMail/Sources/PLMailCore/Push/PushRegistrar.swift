@@ -97,7 +97,15 @@ public actor PushRegistrar {
 /// batch, and so the server can reuse its existing method dispatch.
 public struct PushSubscriptionSet: JMAPMethod {
     public static let name = "PushSubscription/set"
-    public static let capability = Capability.apns
+    /// **Core, not `apns`.**
+    ///
+    /// `PushSubscription/set` is RFC 8620 §7.2, so the only URN the server
+    /// will accept for it is `urn:ietf:params:jmap:core`. Declaring the vendor
+    /// APNs URN instead put a capability the server has never heard of into
+    /// `using`, and an unknown capability refuses the **entire** request — so
+    /// the first push registration would have taken every other call in that
+    /// batch down with it. It was latent only because entitlements gate push.
+    public static let capability = Capability.core
 
     public struct Subscription: Encodable, Sendable {
         /// Hex, lowercase — what `didRegisterForRemoteNotificationsWithDeviceToken`

@@ -9,6 +9,13 @@ public struct MailboxGet: JMAPMethod {
     public struct Arguments: Encodable, Sendable {
         public var accountID: AccountID
         public var ids: [MailboxID]?
+        /// **Leave this nil.** An account has a handful of mailboxes, so there
+        /// is nothing to save by narrowing the property set — and narrowing it
+        /// is how the two plMail extensions get lost: `toJmapWithProperties`
+        /// filters against the requested names, so a list written from RFC 8621
+        /// alone omits `labelId` and `color` and the client silently falls back
+        /// to hashed tints and per-account labels, with a well-formed response
+        /// and nothing to debug.
         public var properties: [String]?
 
         private enum CodingKeys: String, CodingKey {

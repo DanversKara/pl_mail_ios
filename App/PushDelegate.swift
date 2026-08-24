@@ -26,6 +26,12 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
     ) -> Bool {
         logger.notice("Push delegate installed.")
 
+        // Set here rather than from the scene: a notification action taken
+        // while the app is not running is delivered as part of launch, and a
+        // delegate assigned any later than this misses it entirely — the
+        // press appears to do nothing.
+        UNUserNotificationCenter.current().delegate = self
+
         return true
     }
 
@@ -33,6 +39,8 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
     var onToken: ((Data) async -> Void)?
     /// Called when a push says the mailbox moved.
     var onSilentPush: (() async -> Void)?
+    /// Called when someone presses an action on a banner, or taps one.
+    var onNotificationResponse: ((UNNotificationResponse) async -> Void)?
 
     func application(
         _ application: UIApplication,
@@ -91,6 +99,50 @@ final class PushDelegate: NSObject, UIApplicationDelegate {
             logger.notice("Silent push handled.")
             finish.value(.newData)
         }
+    }
+}
+
+/// The half of notifications that is not push at all.
+///
+/// Local notifications for new mail need no APNs key, no App Group and no paid
+/// account: a background refresh that finds mail can post one today. The
+/// delegate is shared with push only because iOS has exactly one — the two
+/// mechanisms are otherwise unrelated, and conflating them is what left this
+/// app posting nothing.
+extension PushDelegate: UNUserNotificationCenterDelegate {
+    /// A press on Archive, Mark as read or Reply — or a tap on the banner.
+    ///
+    /// The completion handler form again, for the same reason as the silent
+    /// push above: the `async` variant is not the selector UIKit looks up, and
+    /// the app is suspended the moment this returns. Calling it early would
+    /// cut the server request off mid-flight.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let finish = UncheckedSendable(completionHandler)
+        let carried = UncheckedSendable(response)
+
+        Task { @MainActor in
+            await onNotificationResponse?(carried.value)
+            finish.value()
+        }
+    }
+
+    /// What a banner does while the app is open.
+    ///
+    /// `.list` and `.badge`, never `.banner`. Mail arriving in a list someone
+    /// is already looking at does not need a card drawn over the top of it —
+    /// the row appears by itself — but it does belong in Notification Centre
+    /// afterwards, so it is there when they put the phone down.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler:
+            @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        completionHandler([.list, .badge])
     }
 }
 

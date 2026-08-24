@@ -24,6 +24,18 @@ public struct Mailbox: Hashable, Sendable, Codable {
     /// this account — a child never points at an id the client cannot resolve.
     public var parentID: MailboxID?
 
+    /// The colour the user gave this label, or nil for "no colour chosen".
+    ///
+    /// A plMail extension, not RFC 8621: `MailboxMapper::toJmap` emits
+    /// `label.color`, and without reading it the phone can only draw every
+    /// chip in a hashed tint while the web draws the colour the user picked —
+    /// which reads as two different label systems rather than one.
+    ///
+    /// **Nil is a third state and not grey.** Only nil may fall back to a
+    /// hashed tint; a label deliberately coloured grey has to stay grey. An
+    /// unrecognised token also lands here as nil — see ``init(from:)``.
+    public var color: LabelColor?
+
     public var role: MailboxRole?
     public var sortOrder: Int?
 
@@ -47,9 +59,37 @@ public struct Mailbox: Hashable, Sendable, Codable {
         case labelID = "labelId"
         case name
         case parentID = "parentId"
+        case color
         case role, sortOrder
         case totalEmails, unreadEmails, totalThreads, unreadThreads
         case myRights, isSubscribed
+    }
+
+    /// Hand-written for one reason: ``color`` has to survive a token this
+    /// build has never heard of.
+    ///
+    /// The synthesised decoder would throw `dataCorrupted` on an unknown raw
+    /// value, and a `Mailbox` that fails to decode takes the whole
+    /// `Mailbox/get` response down with it — so one tenth colour added to the
+    /// server would empty every sidebar on every older client. Reading the
+    /// token as a string and mapping it through ``LabelColor/init(wire:)``
+    /// degrades that to a label drawn in its fallback tint.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        id = try container.decode(MailboxID.self, forKey: .id)
+        labelID = try container.decodeIfPresent(LabelID.self, forKey: .labelID)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        parentID = try container.decodeIfPresent(MailboxID.self, forKey: .parentID)
+        color = LabelColor(wire: try container.decodeIfPresent(String.self, forKey: .color))
+        role = try container.decodeIfPresent(MailboxRole.self, forKey: .role)
+        sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder)
+        totalEmails = try container.decodeIfPresent(Int.self, forKey: .totalEmails)
+        unreadEmails = try container.decodeIfPresent(Int.self, forKey: .unreadEmails)
+        totalThreads = try container.decodeIfPresent(Int.self, forKey: .totalThreads)
+        unreadThreads = try container.decodeIfPresent(Int.self, forKey: .unreadThreads)
+        myRights = try container.decodeIfPresent(MailboxRights.self, forKey: .myRights)
+        isSubscribed = try container.decodeIfPresent(Bool.self, forKey: .isSubscribed)
     }
 }
 

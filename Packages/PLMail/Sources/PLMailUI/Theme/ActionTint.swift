@@ -1,5 +1,3 @@
-#if os(iOS)
-
 import SwiftUI
 
 /// The colours a swipe reveals.
@@ -20,12 +18,30 @@ import SwiftUI
 /// nothing undoes for you after the toast expires, so it keeps a saturation the
 /// others deliberately give up — against these muted blocks a red one is
 /// unmistakable, which is the entire job.
+/// Two of these were **not** clearing 4.5:1 when the palette was first
+/// measured, despite the paragraph above saying they were: `star` sat at
+/// 4.36:1 and `spam` at 4.35:1 against white. Both are nudged one step darker
+/// here — the smallest change that makes the claim true — which is the whole
+/// argument for stating a palette as measurable numbers rather than as prose
+/// about numbers. `PaletteContrastTests` now asserts it on every value, so the
+/// comment and the colours cannot drift apart again.
 enum ActionTint {
-    static let archive = Color(red: 0.29, green: 0.44, blue: 0.35)
-    static let readState = Color(red: 0.26, green: 0.40, blue: 0.52)
-    static let star = Color(red: 0.60, green: 0.45, blue: 0.13)
-    static let spam = Color(red: 0.66, green: 0.42, blue: 0.20)
-    static let destructive = Color(red: 0.72, green: 0.21, blue: 0.17)
-}
+    static let archiveSwatch = Swatch(0.29, 0.44, 0.35)
+    static let readStateSwatch = Swatch(0.26, 0.40, 0.52)
+    static let starSwatch = Swatch(0.58, 0.44, 0.13)
+    static let spamSwatch = Swatch(0.64, 0.41, 0.19)
+    static let destructiveSwatch = Swatch(0.72, 0.21, 0.17)
 
-#endif
+    static let archive = archiveSwatch.color
+    static let readState = readStateSwatch.color
+    static let star = starSwatch.color
+    static let spam = spamSwatch.color
+    static let destructive = destructiveSwatch.color
+
+    /// Every tint, named, so the contrast suite sweeps the set rather than a
+    /// list somebody has to remember to extend.
+    static let all: [(name: String, swatch: Swatch)] = [
+        ("archive", archiveSwatch), ("readState", readStateSwatch), ("star", starSwatch),
+        ("spam", spamSwatch), ("destructive", destructiveSwatch),
+    ]
+}

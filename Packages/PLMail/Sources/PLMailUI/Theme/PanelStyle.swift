@@ -1,5 +1,3 @@
-#if os(iOS)
-
 import SwiftUI
 
 /// How the app's surfaces are separated.
@@ -33,14 +31,38 @@ enum PanelStyle {
     /// Dark keeps the near-black the system uses. Warming a dark background
     /// does not read as paper, it reads as a colour cast, and it eats the
     /// contrast the muted avatars need.
-    static let surface = Color(
-        light: Color(red: 0.988, green: 0.976, blue: 0.957),
-        dark: Color(red: 0.086, green: 0.086, blue: 0.090)
-    )
-    static let window = Color(
-        light: Color(red: 0.961, green: 0.945, blue: 0.918),
-        dark: .black
-    )
+    /// The light pane, stated as a ``Swatch`` rather than a `Color` so the
+    /// contrast suite can measure it. The rendered value is unchanged.
+    static let surfaceLight = Swatch(0.988, 0.976, 0.957)
+    static let surfaceDark = Swatch(0.086, 0.086, 0.090)
+    static let windowLight = Swatch(0.961, 0.945, 0.918)
+    static let windowDark = Swatch(0, 0, 0)
+
+    /// plMail's own accent, `#7d6b4f`.
+    ///
+    /// **The server's default, not a colour invented here.** It is what
+    /// `Appearance::DEFAULT_ACCENT` seeds and what the web draws before a user
+    /// picks anything, so a phone that chose its own would disagree with the
+    /// browser on every fresh account. It is also what `App/Assets.xcassets`
+    /// carries as `AccentColor`, which is what stops `Color.accentColor`
+    /// resolving to system blue — a warm cream app with iOS blue checkmarks in
+    /// it looks like an app that forgot to finish.
+    static let defaultAccent = Swatch(hex: "#7d6b4f") ?? Swatch(0.49, 0.42, 0.31)
+
+    /// The same accent for a near-black surface, `#c2a67e`.
+    ///
+    /// **Stated rather than derived, because deriving it repaints dark mode.**
+    /// `AccentColor.colorset` has always carried this as its dark variant, so
+    /// it is what every `Color.accentColor` in the app has been drawing since
+    /// the asset landed. Walking ``defaultAccent`` up to the palette's 4.5:1
+    /// floor instead stops at the first passing step — a dull `#9a8c76` — which
+    /// is legible and visibly not the colour that ships. Naming it here is what
+    /// lets views start reading ``ThemePalette/accent`` without anyone noticing
+    /// a change in the default theme, which is the whole point of this pass.
+    static let defaultAccentDark = Swatch(hex: "#c2a67e") ?? Swatch(0.76, 0.65, 0.49)
+
+    static let surface = Color(light: surfaceLight.color, dark: surfaceDark.color)
+    static let window = Color(light: windowLight.color, dark: windowDark.color)
 
     /// The rule between rows, and anywhere else one surface abuts another.
     ///
@@ -71,6 +93,8 @@ extension Color {
     }
 }
 
+#if os(iOS)
+
 extension View {
     /// Drops a label's text, conditionally.
     ///
@@ -97,12 +121,12 @@ extension View {
     /// The radius is the pane radius, not the control one: a message is a
     /// surface, and matching the panes it sits inside is what keeps the reader
     /// from looking like a list of buttons.
+    ///
+    /// A modifier rather than a `@ViewBuilder` function because the fill is now
+    /// the theme's ``ThemePalette/surface``, and a free function on `View` has
+    /// no environment to read it from.
     func messageCard() -> some View {
-        clipShape(.rect(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
-            .background {
-                RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
-                    .fill(PanelStyle.surface)
-            }
+        modifier(MessageCard())
     }
 
     /// Makes this pane a distinct surface on a wide layout, and leaves it
@@ -111,10 +135,99 @@ extension View {
     /// The compact case is not an oversight: insetting a full-screen pane on a
     /// phone would waste the only width there is and leave a rounded rectangle
     /// floating on a background nobody can see around it.
+    ///
+    /// A modifier rather than a `@ViewBuilder` function because the radius is
+    /// now the theme's: the server's `radius` reaches panes and only panes, and
+    /// a free function on `View` has no environment to read it from.
+    func mailPane(isSeparated: Bool, column: PaneColumn = .middle) -> some View {
+        modifier(MailPane(isSeparated: isSeparated, column: column))
+    }
+}
+
+/// One message card, filled from the theme rather than from a fixed cream.
+///
+/// **The radius stays ``PanelStyle/cornerRadius`` and is deliberately not the
+/// theme's.** The server's `radius` is documented as reaching panes and only
+/// panes; a message is a card *inside* a pane, and letting a 2.0rem radius
+/// through here would round a collapsed row into a lozenge.
+///
+/// An unpopulated ``EnvironmentValues/theme`` is ``ResolvedTheme/placeholder``,
+/// whose light and dark surfaces are ``PanelStyle/surfaceLight`` and
+/// ``PanelStyle/surfaceDark`` verbatim — so a card in a preview, or under a
+/// root that never injected a theme, draws the cream it always did rather than
+/// nothing.
+private struct MessageCard: ViewModifier {
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+
+    func body(content: Content) -> some View {
+        let surface = theme.palette(for: colorScheme).surface.color
+
+        return
+            content
+            .clipShape(.rect(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
+            .background {
+                RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                    .fill(surface)
+            }
+    }
+}
+
+/// The pane treatment, with the theme's corner radius and surfaces applied.
+///
+/// Split out of ``SwiftUI/View/mailPane(isSeparated:)`` so it can hold an
+/// `@Environment` — an unpopulated one is ``ResolvedTheme/placeholder``, whose
+/// `paneCornerRadius` is ``PanelStyle/cornerRadius`` and whose surfaces are
+/// ``PanelStyle``'s own, so a pane outside the injected tree keeps the 20pt and
+/// the cream everybody has been looking at.
+///
+/// The appearance is read from the environment rather than baked in with
+/// `Color(light:dark:)`: a themed palette has one surface, not a pair, and
+/// `ThemeChoice` already forces the appearance a theme is drawn in — so
+/// resolving here is what keeps nord's slate from being handed to a
+/// light-appearance trait collection and coming out as cream.
+/// Which of the split view's columns a pane is, so its margins can differ.
+///
+/// **The outer edges are not gutters.** The gap *between* two panes is the sum
+/// of their facing margins, so each contributes half; but the gap between the
+/// first pane and the window is that pane's margin alone, and halving it there
+/// pulls the sidebar towards the screen edge and makes the border look wrong.
+public enum PaneColumn: Sendable {
+    case leading
+    case middle
+    case trailing
+
+    /// Full margin against the window, half against another pane.
+    var leadingInset: CGFloat {
+        self == .leading ? PanelStyle.inset : PanelStyle.inset / 2
+    }
+
+    var trailingInset: CGFloat {
+        self == .trailing ? PanelStyle.inset : PanelStyle.inset / 2
+    }
+}
+
+private struct MailPane: ViewModifier {
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+
+    let isSeparated: Bool
+    let column: PaneColumn
+
     @ViewBuilder
-    func mailPane(isSeparated: Bool) -> some View {
+    func body(content: Content) -> some View {
+        let palette = theme.palette(for: colorScheme)
+
         if isSeparated {
-            self
+            content
+                // Inset to match the card behind it. The card is drawn as a
+                // *background* with its own padding, so without this the
+                // content — a sidebar row and its selection highlight most
+                // visibly — runs past the card's edge and the pane stops
+                // looking like one. The vertical inset is deliberately not
+                // applied: the bar has to reach the top of the card.
+                .padding(.leading, column.leadingInset)
+                .padding(.trailing, column.trailingInset)
                 // The navigation bar is part of the pane, not something
                 // sitting above it. Left opaque, it draws its own surface
                 // across the top and the card appears to start below the
@@ -130,7 +243,7 @@ extension View {
                         // which is the vertical rule this layout is trying not
                         // to have. Filling the column's own bounds puts the
                         // window colour where that rule was.
-                        PanelStyle.window
+                        palette.window.color
 
                         // The shape is inset and *then* told to ignore the safe
                         // area, so the card reaches up behind the bar and out
@@ -138,23 +251,26 @@ extension View {
                         // the content instead would leave the bar stranded
                         // outside.
                         RoundedRectangle(
-                            cornerRadius: PanelStyle.cornerRadius, style: .continuous
+                            cornerRadius: theme.paneCornerRadius, style: .continuous
                         )
-                        // No border. With the surface reading lighter than the
-                        // window, the edge carries itself; a stroke on top of
-                        // that draws the rule back in.
-                        .fill(PanelStyle.surface)
-                        .padding(PanelStyle.inset)
-                        // Halved on the leading edge: the gap between two panes
-                        // is the sum of their facing margins, so a full inset
-                        // on both would make the gutters twice the window
-                        // margin.
-                        .padding(.leading, -PanelStyle.inset / 2)
+                        // The surface reads about three per cent lighter than
+                        // the window, which on a device is not enough to say
+                        // "these are separate objects" — the columns looked
+                        // like one sheet with gaps cut in it. A soft shadow
+                        // does what a stroke would, without drawing the rule
+                        // this layout exists to avoid.
+                        .fill(palette.surface.color)
+                        .shadow(color: .black.opacity(0.10), radius: 8, y: 2)
+                        .padding(.vertical, PanelStyle.inset)
+                        // Asymmetric by column: full against the window, half
+                        // against another pane. See ``PaneColumn``.
+                        .padding(.leading, column.leadingInset)
+                        .padding(.trailing, column.trailingInset)
                     }
                     .ignoresSafeArea()
                 }
         } else {
-            self
+            content
         }
     }
 }

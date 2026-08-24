@@ -45,10 +45,33 @@ struct SearchQueryTests {
         #expect(query.isRead == true)
     }
 
-    @Test("in: lowercases its value without validating it")
-    func mailboxRole() {
-        #expect(SearchQuery.parse("in:INBOX").mailboxRole == "inbox")
-        #expect(SearchQuery.parse("in:nonsense").mailboxRole == "nonsense")
+    /// The alias table is the server's, twelve words onto eight roles. Passing
+    /// the typed word through instead broke in both directions at once.
+    @Test(
+        "in: resolves the server's aliases and nothing else",
+        arguments: [
+            ("in:INBOX", "inbox"), ("in:draft", "drafts"), ("in:drafts", "drafts"),
+            ("in:deleted", "trash"), ("in:bin", "trash"), ("in:trash", "trash"),
+            ("in:spam", "spam"), ("in:junk", "spam"),
+            ("in:archive", "archive"), ("in:archived", "archive"),
+            ("in:sent", "sent"), ("in:snoozed", "snoozed"),
+        ]
+    )
+    func mailboxRole(input: String, role: String) {
+        #expect(SearchQuery.parse(input).mailboxRole == role)
+    }
+
+    /// These narrowed here and are free text in the browser, which is the same
+    /// query meaning two different things depending on where it was typed.
+    @Test(
+        "a mailbox the server does not know is free text, not a filter",
+        arguments: ["in:flagged", "in:important", "in:all", "in:nonsense"]
+    )
+    func unknownMailbox(input: String) {
+        let query = SearchQuery.parse(input)
+
+        #expect(query.mailboxRole == nil)
+        #expect(query.freeText == input)
     }
 
     // MARK: - Quirks
@@ -62,17 +85,24 @@ struct SearchQueryTests {
         #expect(query.freeText == "weird:thing")
     }
 
-    /// Unlike an unknown *operator*, an unknown *value* for a known operator is
-    /// dropped entirely. It narrows nothing and it searches for nothing.
+    /// The behaviour that inverted. A dropped operator narrowed nothing and
+    /// searched for nothing, which is to say it answered with the whole
+    /// mailbox and looked exactly like a search that had been ignored. As free
+    /// text it finds little or nothing, which is at least the truth.
     @Test(
-        "a bad value for a known operator is dropped, not searched for",
-        arguments: ["is:bogus", "has:nonsense", "after:notadate", "before:whenever"]
+        "an unrecognised value for a known operator becomes free text",
+        arguments: [
+            "is:bogus", "has:nonsense", "after:notadate", "before:whenever", "in:nowhere",
+        ]
     )
-    func droppedValues(input: String) {
+    func unknownValues(input: String) {
         let query = SearchQuery.parse(input)
 
-        #expect(query.freeText.isEmpty, "\(input) must not leak into free text")
-        #expect(query.isEmpty, "\(input) must not set any filter")
+        #expect(query.freeText == input, "\(input) must be searched for as words")
+        var expected = ParsedSearchQuery()
+        expected.freeText = input
+
+        #expect(query == expected, "\(input) must set no filter")
     }
 
     /// Only the first colon splits, so a value may contain colons of its own.

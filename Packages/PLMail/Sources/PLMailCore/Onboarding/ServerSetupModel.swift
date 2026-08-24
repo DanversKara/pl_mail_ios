@@ -46,9 +46,11 @@ public final class ServerSetupModel {
 
     public init(
         store: CredentialStore = CredentialStore(),
+        address: String = "",
         onConnected: @escaping @MainActor (ServerConnection) -> Void
     ) {
         self.store = store
+        addressText = address
         self.onConnected = onConnected
     }
 
@@ -61,6 +63,21 @@ public final class ServerSetupModel {
         addressText.trimmingCharacters(in: .whitespaces).isEmpty == false
             && secretText.trimmingCharacters(in: .whitespaces).isEmpty == false
             && isBusy == false
+    }
+
+    /// Whether the typed address would send the app password in the clear.
+    ///
+    /// Read live, from the address field, **before** ``connect()`` can be
+    /// pressed. `ServerAddress.isCleartext` already existed and was consumed
+    /// only by the diagnostics screen — which is reachable only once the
+    /// secret has already crossed the wire, so the warning arrived after the
+    /// thing it warns about. A 71-character app password sent over `http` on a
+    /// café network cannot be un-sent, and the user cannot tell that it was.
+    ///
+    /// False while the address is unparseable: a warning shown under text
+    /// somebody is halfway through typing teaches them to ignore it.
+    public var warnsAboutCleartext: Bool {
+        (try? ServerAddress.parse(addressText))?.isCleartext ?? false
     }
 
     /// Whether the secret is the right shape. Not an error while typing — only
@@ -274,6 +291,13 @@ public final class ServerSetupModel {
             "\(scheme):// isn't something this app can talk to. Use https, or http on a local network."
         case ServerAddress.ParseError.missingHost:
             String(localized: "That address is missing a hostname.", bundle: .module)
+        case ServerAddress.ParseError.credentialsInAddress:
+            String(
+                localized: """
+                    Leave the username and password out of the address — the app password goes in \
+                    the field below.
+                    """,
+                bundle: .module)
         default:
             String(localized: "That address couldn't be read.", bundle: .module)
         }

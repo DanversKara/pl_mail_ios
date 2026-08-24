@@ -22,16 +22,41 @@ struct LabelManagerView: View {
     let labels: LabelActions
 
     @Environment(\.dismiss) private var dismiss
+    /// The Inbox row's colour and the Edit button's tint both come from here
+    /// rather than from `Color.accentColor`, which ignores a server-set accent.
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+
+    /// The order the user dragged their accounts into on the accounts screen.
+    ///
+    /// Read here because this screen is where a label gets created without a
+    /// conversation to say which account it belongs to: the first section is
+    /// the first "New label" button anyone reaches, so the account at the top
+    /// is where a new label lands. Leaving it at whatever order the store
+    /// happened to return made dragging an account to the top a change that
+    /// visibly did nothing outside Settings.
+    @State private var order = AccountOrder.shared
 
     @State private var creatingIn: AccountSnapshot?
     @State private var renaming: MailboxSnapshot?
+    /// The built-in label whose colour is being changed.
+    ///
+    /// Its own state rather than a flag on ``renaming``: the two sheets do
+    /// different things, and one binding for both would let a stale rename
+    /// target decide which label a colour lands on.
+    @State private var recolouring: MailboxSnapshot?
     @State private var deleting: MailboxSnapshot?
     @State private var draftName = ""
+    /// The sheet's pending colour and parent, held here rather than inside the
+    /// sheet so that dismissing and reopening starts from the label's real
+    /// state instead of from whatever was last typed.
+    @State private var draftColor: LabelColor?
+    @State private var draftParent: MailboxID?
 
     var body: some View {
         NavigationStack {
             List {
-                ForEach(sync.accounts) { account in
+                ForEach(orderedAccounts) { account in
                     Section {
                         ForEach(rows(for: account), id: \.id) { mailbox in
                             row(mailbox)
@@ -39,6 +64,8 @@ struct LabelManagerView: View {
 
                         Button {
                             draftName = ""
+                            draftColor = nil
+                            draftParent = nil
                             labels.dismissFailure()
                             creatingIn = account
                         } label: {
@@ -63,28 +90,41 @@ struct LabelManagerView: View {
                     title: .ui("New label"),
                     confirm: .ui("Create"),
                     name: $draftName,
+                    color: $draftColor,
+                    parentID: $draftParent,
                     labels: labels,
                     accountKey: account.accountKey,
                     mailboxes: sync.mailboxes
-                ) { name in
-                    await labels.create(named: name, accountID: account.accountID) != nil
+                ) { name, color, parentID in
+                    await labels.create(
+                        named: name, parentID: parentID, color: color,
+                        accountID: account.accountID) != nil
                 }
             }
             .sheet(item: $renaming) { mailbox in
                 LabelNameSheet(
-                    title: .ui("Rename label"),
+                    title: .ui("Edit label"),
                     confirm: .ui("Save"),
                     name: $draftName,
+                    color: $draftColor,
+                    parentID: $draftParent,
                     labels: labels,
                     accountKey: mailbox.accountKey,
                     mailboxes: sync.mailboxes,
-                    // Its own name is not a clash with itself.
+                    // Its own name is not a clash with itself, and neither it
+                    // nor anything under it can become its own parent.
                     ignoring: mailbox.mailboxID
-                ) { name in
-                    guard let accountID = accountID(for: mailbox) else { return false }
-
-                    return await labels.rename(
-                        mailbox.mailboxID, to: name, accountID: accountID)
+                ) { name, color, parentID in
+                    await save(mailbox, name: name, color: color, parentID: parentID)
+                }
+            }
+            .sheet(item: $recolouring) { mailbox in
+                if let accountID = accountID(for: mailbox) {
+                    LabelColorSheet(
+                        mailbox: mailbox,
+                        accountID: accountID,
+                        labels: labels,
+                        color: $draftColor)
                 }
             }
             .alert(
@@ -114,19 +154,72 @@ struct LabelManagerView: View {
         }
     }
 
+    // MARK: - Saving
+
+    /// Applies whatever the sheet changed, one property per request.
+    ///
+    /// Three requests rather than one patch, because plMail treats every
+    /// property *mentioned* in a patch as a change: sending name, colour and
+    /// parent together would overwrite whatever the web UI did to the other two
+    /// while this sheet was open, with values this client read before it was.
+    /// Each is skipped when it did not move, so a pure rename is still one
+    /// round trip.
+    private func save(
+        _ mailbox: MailboxSnapshot, name: String, color: LabelColor?, parentID: MailboxID?
+    ) async -> Bool {
+        guard let accountID = accountID(for: mailbox) else { return false }
+
+        if name.trimmingCharacters(in: .whitespacesAndNewlines) != mailbox.name {
+            guard await labels.rename(mailbox.mailboxID, to: name, accountID: accountID)
+            else { return false }
+        }
+
+        if color != mailbox.color {
+            guard await labels.recolor(mailbox.mailboxID, to: color, accountID: accountID)
+            else { return false }
+        }
+
+        if parentID != mailbox.parentID {
+            guard
+                await labels.reparent(
+                    mailbox.mailboxID, under: parentID, accountID: accountID)
+            else { return false }
+        }
+
+        return true
+    }
+
     // MARK: - Rows
 
     @ViewBuilder
     private func row(_ mailbox: MailboxSnapshot) -> some View {
+        let hierarchy = LabelHierarchy(sync.mailboxes)
+
         HStack(spacing: 12) {
             Image(systemName: mailbox.role?.symbolName ?? "tag.fill")
                 .foregroundStyle(
-                    MailboxSidebarView.tint(for: mailbox.role)
-                        ?? AvatarPalette.color(
-                            for: mailbox.labelID?.rawValue ?? mailbox.name))
+                    MailboxSidebarView.tint(
+                        for: mailbox.role, accent: theme.accentColor(in: colorScheme))
+                        ?? LabelTint.color(
+                            for: mailbox.color,
+                            seed: mailbox.labelID?.rawValue ?? mailbox.name))
 
-            Text(mailbox.name)
-                .foregroundStyle(mailbox.mayRename ? .primary : .secondary)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(mailbox.name)
+                    .foregroundStyle(mailbox.mayRename ? .primary : .secondary)
+
+                // Drawn only where there is nesting, and above the leaf in
+                // weight order rather than instead of it: this screen renames
+                // and deletes, and acting on the wrong `Q1` of two is exactly
+                // the mistake the path is here to prevent.
+                if let parents = hierarchy.parentPath(for: mailbox) {
+                    Text(parents)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
 
             Spacer(minLength: 8)
 
@@ -151,14 +244,65 @@ struct LabelManagerView: View {
             if mailbox.mayRename {
                 Button {
                     draftName = mailbox.name
+                    draftColor = mailbox.color
+                    draftParent = mailbox.parentID
                     labels.dismissFailure()
                     renaming = mailbox
                 } label: {
-                    Label(.ui("Rename"), systemImage: "pencil")
+                    Label(.ui("Edit"), systemImage: "pencil")
                 }
-                .tint(.accentColor)
+                .tint(theme.accentColor(in: colorScheme))
+            }
+
+            // The colour arm of `Mailbox/set` is not gated by `assertMutable`,
+            // so this is the one change a built-in label accepts — and without
+            // a control of its own it was unreachable, because Edit above
+            // renames and is gated on `mayRename`.
+            if mailbox.mayRename == false {
+                Button {
+                    draftColor = mailbox.color
+                    labels.dismissFailure()
+                    recolouring = mailbox
+                } label: {
+                    Label(.ui("Colour"), systemImage: "paintpalette")
+                }
+                .tint(theme.accentColor(in: colorScheme))
             }
         }
+        // Combined so the path is read with the name rather than as a second
+        // stop, and labelled explicitly so "Q1" in a list of four "Q1"s is
+        // still identifiable by ear.
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(spokenLabel(for: mailbox, in: hierarchy)))
+        // Named outright as well as offered as a swipe. A swipe is the only
+        // route to this on a built-in row, and a gesture with no spoken
+        // equivalent is a capability VoiceOver users do not have.
+        .accessibilityActions {
+            if mailbox.mayRename == false {
+                Button(.ui("Colour")) {
+                    draftColor = mailbox.color
+                    labels.dismissFailure()
+                    recolouring = mailbox
+                }
+            }
+        }
+    }
+
+    /// What the row reads out as: the label's place in the hierarchy, then the
+    /// colour by **name**.
+    ///
+    /// The hue is drawn on the icon and nowhere else, so without this the one
+    /// property a built-in label has — and the only one this screen can change
+    /// about it — is invisible to anyone reading the screen rather than looking
+    /// at it, and to anyone who cannot separate two of the nine.
+    private func spokenLabel(
+        for mailbox: MailboxSnapshot, in hierarchy: LabelHierarchy
+    ) -> String {
+        let path = hierarchy.spokenPath(for: mailbox)
+
+        guard let color = mailbox.color else { return path }
+
+        return "\(path), \(String(localized: LabelTint.name(for: color)))"
     }
 
     @ViewBuilder
@@ -188,6 +332,12 @@ struct LabelManagerView: View {
 
     // MARK: - Contents
 
+    /// Accounts in the user's order, with any the stored order does not know
+    /// about kept where they were rather than promoted to the top.
+    private var orderedAccounts: [AccountSnapshot] {
+        order.ordered(sync.accounts, key: \.accountKey)
+    }
+
     /// This account's mailboxes: custom labels first, since they are what can
     /// be acted on here, then the built-ins.
     private func rows(for account: AccountSnapshot) -> [MailboxSnapshot] {
@@ -216,11 +366,17 @@ struct LabelNameSheet: View {
     let title: LocalizedStringResource
     let confirm: LocalizedStringResource
     @Binding var name: String
+    /// Nil is "no colour chosen", which is a state the label can be returned
+    /// to — not a synonym for grey, and not the same as leaving the colour
+    /// alone. See ``LabelTint``.
+    @Binding var color: LabelColor?
+    /// The parent binding id, nil for a top-level label.
+    @Binding var parentID: MailboxID?
     let labels: LabelActions
     let accountKey: String
     let mailboxes: [MailboxSnapshot]
     var ignoring: MailboxID?
-    let perform: (String) async -> Bool
+    let perform: (String, LabelColor?, MailboxID?) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
     @FocusState private var isFocused: Bool
@@ -244,6 +400,40 @@ struct LabelNameSheet: View {
                             .foregroundStyle(.orange)
                     }
                 }
+
+                Section {
+                    // Only same-account labels: a parent is a *binding* id, so
+                    // another account's would be an id this account cannot
+                    // resolve, refused as `invalidProperties` and reported to
+                    // the user as a name clash.
+                    Picker(selection: $parentID) {
+                        Text(.ui("None")).tag(MailboxID?.none)
+
+                        ForEach(parentOptions, id: \.mailboxID) { option in
+                            Text(hierarchy.path(for: option))
+                                .tag(MailboxID?.some(option.mailboxID))
+                        }
+                    } label: {
+                        Text(.ui("Nested under"))
+                    }
+                } footer: {
+                    // Names the rule the picker's own contents already enforce,
+                    // because a missing row is not an explanation.
+                    Text(
+                        .ui(
+                            "A label can be nested under another on the same account. Its own name never contains a slash."
+                        ))
+                }
+
+                Section {
+                    LabelColorPicker(selection: $color, fallbackSeed: name)
+                } header: {
+                    Text(.ui("Colour"))
+                } footer: {
+                    // Says what nil means, since the swatch for it looks like
+                    // a colour.
+                    Text(.ui("Without a colour, plMail picks one from the name."))
+                }
             }
             .navigationTitle(title)
             .navigationBarTitleDisplayMode(.inline)
@@ -264,13 +454,44 @@ struct LabelNameSheet: View {
 
     private func submit() {
         let name = name
+        let color = color
+        let parentID = parentID
 
         Task {
             // Only closes if the server agreed. A sheet that dismisses on a
             // refusal drops the user back to a list unchanged, with the
             // explanation behind them.
-            if await perform(name) { dismiss() }
+            if await perform(name, color, parentID) { dismiss() }
         }
+    }
+
+    private var hierarchy: LabelHierarchy {
+        LabelHierarchy(mailboxes)
+    }
+
+    /// The labels this one may be nested under.
+    ///
+    /// Excludes itself and everything already beneath it — that is a cycle, and
+    /// the server refuses it after a round trip — and every system label, whose
+    /// children plMail does not model as user labels.
+    private var parentOptions: [MailboxSnapshot] {
+        let hierarchy = hierarchy
+
+        return
+            mailboxes
+            .filter { candidate in
+                guard candidate.accountKey == accountKey, candidate.role == nil else {
+                    return false
+                }
+
+                guard let ignoring else { return true }
+
+                return hierarchy.isDescendant(candidate, of: ignoring) == false
+            }
+            .sorted {
+                hierarchy.path(for: $0).localizedStandardCompare(hierarchy.path(for: $1))
+                    == .orderedAscending
+            }
     }
 
     private var complaint: String? {
@@ -292,10 +513,14 @@ struct LabelNameSheet: View {
         return nil
     }
 
+    /// Siblings are siblings *under the chosen parent*, which is why this reads
+    /// ``parentID`` rather than passing nil. Checking against the top level
+    /// instead would refuse "Invoices" under `Work` because a top-level
+    /// "Invoices" exists — a name the server would have accepted.
     private var isTaken: Bool {
         LabelActions.nameIsTaken(
             name,
-            parentID: nil,
+            parentID: parentID,
             accountKey: accountKey,
             among: mailboxes.filter { $0.mailboxID != ignoring }
         )

@@ -205,9 +205,9 @@ public enum SearchSuggestions {
         if let colon = token.firstIndex(of: ":") {
             let name = String(token[..<colon])
 
-            // Only the two operators that name a person. `subject:re` wants no
-            // address book.
-            guard name == "from" || name == "to" else { return [] }
+            // Only the operators that name a person. `subject:re` wants no
+            // address book, and neither does `label:re`.
+            guard ["from", "to", "cc"].contains(name) else { return [] }
 
             operatorName = name
             fragment = String(token[token.index(after: colon)...])

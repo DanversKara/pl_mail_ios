@@ -1,144 +1,124 @@
 # What's left
 
-Written at the end of a long session, for whoever picks this up — likely me,
+Written at the end of the parity programme, for whoever picks this up — likely me,
 with no memory of any of it. Ordered by what I would do next, not by size.
 
-Current state: 337 tests green, iOS build clean, **not yet pushed** — see the
-last section. The app pairs,
-syncs, reads, writes, sends, schedules, searches and looks like itself in both
-appearances.
+Current state: **991 tests green** (from 337), iOS builds clean on iPhone and
+iPad, `swift format lint --strict` silent across the tree, catalogues at 453/453
+and 115/115 keys with en/de in exact parity. **Nothing is committed** — all of it
+is in the working tree.
+
+The app pairs, syncs, reads, writes, sends, schedules, searches, snoozes,
+categorises, notifies, themes itself from the server, and now has a calendar. It
+went from 171 Swift files / ~30k lines to **300 files / ~65k lines**; plMail for
+Android is 357 Kotlin files / ~81k lines.
+
+The gap analysis it was all built from is in [parity/](parity/) — six audit
+documents, a plan, and [parity/WIRING-TODO.md](parity/WIRING-TODO.md), which is
+the ledger of every seam between agents and the honest record of what was handed
+back rather than finished.
+
+---
+
+## The thing to do before believing any of this
+
+**Almost none of it has run against a live server.** The seeded test stack was
+down throughout, so the work was verified against fakes, captured fixtures, a
+hand-seeded cache and — in the best cases — a throwaway JMAP server built in a
+scratch directory. Tests being green means the logic holds. It does **not** mean
+pairing, syncing and sending work end to end.
+
+Specifically **verified by construction, not demonstration**: the ⌘ menu bar,
+multi-window, Spotlight, Handoff, drag and drop, the calendar widget, and every
+notification path. One agent found a **launch-terminating crash** in the menu bar
+only because it ran the app — iPadOS installs its own ⌘⌃S for a
+`NavigationSplitView`, and a duplicate makes `UIKitMainMenuController.buildMenu`
+throw. That is the argument for doing a real device pass before trusting the list
+above.
 
 ---
 
 ## Blocked on you, not on work
 
-**Push notifications.** The client half is built and documented in
-[PUSH.md](PUSH.md). What is missing is an APNs key, which needs a paid Apple
-developer account, and a sender on the plMail side. Until then there is no
-background delivery at all — the app checks on foreground and on a background
-schedule, and the interface says "last checked N minutes ago" rather than
-implying it is live.
+**Push notifications.** The client half is built. What is missing is an APNs key
+(paid Apple account) **and** a sender on the plMail side. The good news:
+`PushSenderRegistry` is built from an iterable of tagged senders and
+`PushDispatcher` never names one, so an APNs sender is one enum case, one class
+and one create-shape — the dispatcher, delivery log and verification handshake
+come free. Note the client previously declared an invented `…:apns` URN in
+`using`, which would have made the server refuse **every** request with
+`unknownCapability`; that is fixed, and a test now scans the package to assert
+every declared capability is declarable.
 
-**The widget's data.** It installs and renders but cannot read the app's
-numbers, because that needs an App Group. Same paid account. It says so on its
-face rather than showing a zero it cannot justify.
+**The widget's data, and a share extension.** Both need an App Group, and the
+build resolves to the deliberately empty `plMail-free.entitlements`. Do not build
+a share extension before that: in the Simulator a group container resolves
+*without* the entitlement, so it would look like it worked here and silently drop
+every file on a device. First step when a paid team exists: create
+`App/Config/Signing.xcconfig` with a `DEVELOPMENT_TEAM`, switch both entitlement
+variables to the paid files, confirm `SharedMailStore.isShared` is true **on a
+device**, and only then add the target.
 
-**A share extension.** Sending *to* plMail from Photos or Safari needs an App
-Group or Keychain sharing to hand the data over. Also paid. This is the biggest
-remaining hole in attachments and it is not a large piece of work once the
-account exists.
-
----
-
-## Unfinished, on a branch
-
-The reader agent was stopped mid-task. Its two finished commits are merged —
-find-in-thread with a match count, and the header "show details" — but the work it had in
-flight is on the branch **`worktree-agent-a40b911e6cef28b10`**, as a single
-commit marked WIP. Its worktree has been removed; the branch is the only copy.
-
-It touches `PLMailCore/Reader/ThreadFind.swift`, `ThreadFindBar.swift` and an
-untracked `UITests/ReaderSmokeTests.swift`, and it stopped midway through
-exercising find-in-thread against a seeded thread. Finish it or delete the
-branch — do not merge it unread.
-
-**Not started from that brief:** the attachment grid. `AttachmentRow` still
-lists filenames where Gmail shows thumbnails, and there is no save or share
-without opening. Read `BlobCache` first — this app deliberately does not
-download eagerly, because the server is somebody's NAS.
+**The app has no icon.** `App/Assets.xcassets/AppIcon.appiconset` exists and is
+empty; it was added only because `xcodebuild` fails without it.
 
 ---
 
 ## Known gaps, roughly in order
 
-**Threading is per-message, not per-conversation, in one place.** The reader
-collapses a long thread well, but the list's participant summary and count come
-from denormalised fields recomputed on write. If they ever disagree with the
-server, nothing notices. A contract test against a real multi-message thread
-would catch it.
+**The README overstates a limitation that is gone.** `README.md:21` says a
+scheduled message "goes out at the first check after the time you chose". That is
+now true only of the *fallback*. The default path is a server-held `HOLDUNTIL` and
+the mail leaves on time with the phone flat on a table. The in-app strings are
+already conditional; only the README is stale. Left alone deliberately — product
+copy is the maintainer's call.
 
-**Undo send only reaches as far as the outbox.** The five-second window is
-local; once submitted the message is gone. The server deliberately does not
-apply its web UI's grace period to JMAP submissions, so a longer window would
-have to be entirely ours — which is what schedule-send already does. Worth
-unifying the two ideas rather than having a countdown and a schedule that share
-no code.
+**The calendar's system integration is half-wired.** App Intents, Spotlight
+continuation and a multi-window scene all need files in `App/`; the routers and
+roots are ready and named in the wiring ledger.
 
-**Filters and rules are invisible.** plMail has them; the app neither shows nor
-edits them. Read `src/Jmap/Method/` before promising anything — the pattern in
-this codebase is to check what the server supports first and say plainly when
-it does not, as the signature editor and label management both ended up doing.
+**Two calendar wire gaps.** `CalendarEventGet.occurrenceProperties` omits
+`calendarId`, which the UID collapse needs — `CalendarStore` appends it locally.
+`StoredCalendarOccurrence` has no zone column, so an occurrence's zone is derived
+series-first; right except for a `recurrenceOverrides` that patches `timeZone`.
 
-**Conversation actions at scale.** `MailActions` caps a bulk set at 500 because
-`maxObjectsInSet` says so, and the app now refuses to silently act on fewer
-messages than you asked for. But there is no paging over a larger selection —
-"select all" in a mailbox of 5,000 still means "the first 500, twice".
+**`AccountOrder` is read by one screen** when it should also decide the composer's
+default account and where a new label is created.
 
-**Attachment picker beyond the obvious.** Photos and local files work. Other
-document providers are untested.
+**`ifInState` is plumbed through `DraftUpdate` and never passed**, because nothing
+hands the composer the account's `emailState`. Two devices editing one draft still
+clobber each other.
 
-**Contacts.** Autocomplete merges synced correspondents with the system address
-book, ranked. There is no way to see or edit a contact, and no CardDAV.
-
----
-
-## Quality debt
-
-**VoiceOver has never had a real pass.** Dynamic Type has — every screen was
-walked at accessibility sizes and the list, reader and composer restack rather
-than truncate. But nobody has driven the app with the screen curtain on.
-
-**The UI tests flake when run back to back.** Each does a full reset and a live
-sign-in against the dev server. Individually reliable; in sequence, not always.
-Worth making the reset cheaper rather than adding retries.
-
-**`swift format lint --strict` has two pre-existing failures** in
-`IdentitiesView.swift` and `IdentityEditorTests.swift`. Neither is mine and
-neither is interesting, but they make the lint output useless as a signal.
-
-**The README screenshots are stale.** They were taken before the restyle, so
-they show saturated avatars, a grey-white background and no status column —
-none of which the app looks like now. Retaking them needs the dev server up;
-Docker died before I could. Reset and reseed first (`app:reset -n`, then the
-`app:test:seed-*` commands), because the seeded inbox is thin and reads as test
-data in a screenshot.
+**Invitations are invisible, not merely unanswerable.** RSVP is what materialises
+occurrence rows, so an unanswered invitation is absent from `CalendarEvent/query`
+entirely. Answering it over JMAP is the **top** server-side ask — until then the
+calendar is silently incomplete rather than visibly so.
 
 ---
 
-## Things that will bite you
+## Traps that cost real time to rediscover
 
-**`swift test` passing is not `xcodebuild` passing.** `PLMailUI` is
-`#if os(iOS)` and compiles away entirely on the host, so the whole view layer
-can be broken while the test suite is green. This shipped a broken sidebar
-once. Always run both.
+**The `pl_mail` checkout is stale.** Its working tree sits at `71d5474`
+(2026-07-31) and has no calendar code and an older filter compiler. The real
+server is `origin/main`. **Four separate agents drew a wrong conclusion from it**,
+two of which would have changed a design — including "the server has no
+`futureRelease`", which is what the README's apology was built on. Read the server
+with `cd pl_mail && git show origin/main:<path>`, and `cd` first: the shell's
+working directory resets between calls and a bare `git show origin/main:…`
+resolves against the wrong repository and returns plausible, wrong output.
 
-**A git conflict marker in a `.strings` file is not a syntax error.** The parser
-stops at the marker and every key after it silently falls back to English. Line
-counts look fine. Use `scripts/resolve-catalogues.py`, or at minimum
-`plutil -convert json -o - <file>` and compare *parsed* key counts.
+**Never run a formatting or sorting pass over a `.strings` file.** One agent did.
+It orphaned every multi-line comment, broke plist parsing, and failed the whole
+suite for everybody. Two agents restored the files independently. Add keys in
+place — and check whether a key already exists first, because generic words like
+`Cancel` and `Save` always do.
 
-**`String(localized:locale:)` does not choose the translation.** The locale
-formats numbers and dates inside the string; the bundle picks the language. A
-test asserting German output while passing `locale:` silently tests nothing,
-because every lookup falls back to English and every assertion passes.
+**`SwiftData cannot type-check `body == nil` inside `#Predicate`.**
+`messagesWithoutBody` uses `modelContext.enumerate` with an early-exit sentinel.
+Do not "simplify" it back.
 
-**Mutation-test the mutation harness.** One agent's run reported all fifteen
-mutations surviving. `--filter` had matched zero tests — exit 0 reads as green —
-and `git checkout` cannot revert an untracked file, so the mutations were still
-in the tree. Commit before mutating and assert the test count per run.
-
-**Free-tier signing.** `App/Config/Signing.xcconfig` points at the `-free`
-entitlements by default so a clone builds onto a device with a free Apple ID.
-Requesting APNs or an App Group there does not degrade — it fails the build
-outright. See [INSTALL-ON-DEVICE.md](INSTALL-ON-DEVICE.md).
-
-**Agents need their own simulator.** Two sharing one device overwrote each
-other's builds mid-verification and produced screenshots of the wrong binary.
-Create one per agent with `xcrun simctl create` and put the UDID in the brief;
-the ones from this session have been deleted.
-
-**`git push` has no credentials here.** `origin` is set to
-`git@github.com:karatektus/pl_mail_ios.git` but the SSH key is not available to
-this environment, so nothing has been pushed. 47 commits are waiting. If the
-remote does not exist yet, create it empty — no README — or the first push will
-be rejected as diverged.
+**A patch type that cannot say "explicitly null" is a bug waiting to happen.**
+`ThreadSet.Patch` originally could not distinguish "not mentioned" from "null", so
+reporting a display would have sent `snoozedUntil: null` and **woken every snoozed
+conversation the list drew**. There is a test for it now. The same distinction
+matters for identity signatures and mailbox colours.

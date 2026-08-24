@@ -10,12 +10,18 @@ import Observation
 /// identities are synced with every refresh — and re-fetches behind that so a
 /// rename made in the web UI turns up.
 ///
-/// **Signatures are not editable, and that is a server fact, not an omission
-/// here.** plMail stores an Identity as an alias row: an address and a display
-/// name. `Identity/set` rejects `textSignature`, `htmlSignature`, `replyTo` and
-/// `bcc` outright rather than accepting and discarding them, so there is no
-/// honest way to offer a signature field. The screen says so instead of
-/// presenting a text box that would silently lose what was typed into it.
+/// **Signatures are editable, and this used to say they were not.** The claim
+/// was read from a stale checkout of the server; the current `IdentitySetMethod`
+/// stores `htmlSignature` in the same per-alias setting the web composer reads,
+/// so a signature written here is the one the browser signs with. `replyTo` and
+/// `bcc` genuinely are refused, and are still not offered.
+///
+/// Signatures are saved and cleared through two separate calls on purpose —
+/// ``save(signature:for:in:)`` and ``clearSignature(for:in:)`` — because the
+/// server distinguishes *omitting* `htmlSignature` (leave it alone) from
+/// sending it *empty* (this address signs with nothing). One method taking an
+/// optional would make the destructive case the one a caller reaches by
+/// accident.
 @MainActor
 @Observable
 public final class IdentityEditor {
@@ -128,6 +134,86 @@ public final class IdentityEditor {
             saveFailure = String(
                 localized: "Couldn't reach the server. The name wasn't saved.", bundle: .module)
             logger.error("Rename failed: \(error, privacy: .public)")
+
+            return false
+        }
+
+        await refresh()
+
+        return true
+    }
+
+    /// Stores a plain-text signature for one address.
+    ///
+    /// Sent as `textSignature`, not as hand-built HTML. The server escapes it —
+    /// a signature containing `<b>` is a signature containing those five
+    /// characters — and escaping in the client instead would mean two
+    /// implementations of one rule, disagreeing on the first signature with an
+    /// ampersand in it.
+    ///
+    /// A blank string is routed to ``clearSignature(for:in:)`` rather than sent
+    /// as text, because the two are different requests and only one of them
+    /// says *"sign with nothing"* in the spelling the server records.
+    ///
+    /// - Returns: Whether it was saved.
+    @discardableResult
+    public func save(
+        signature text: String, for identity: IdentitySnapshot, in group: Group
+    ) async -> Bool {
+        guard SignatureText.isBlank(text) == false else {
+            return await clearSignature(for: identity, in: group)
+        }
+
+        return await apply(
+            IdentitySet(
+                accountID: group.accountID,
+                update: [identity.id: IdentitySet.IdentityPatch(textSignature: text)]))
+    }
+
+    /// Records that this address signs with nothing.
+    ///
+    /// An explicitly empty `htmlSignature`, which is a **stored statement** and
+    /// not the absence of one: on an account that has its own signature it is
+    /// the only way to stop this alias inheriting it. Omitting the key would
+    /// leave the inherited signature in place and look, from here, exactly the
+    /// same.
+    ///
+    /// - Returns: Whether it was saved.
+    @discardableResult
+    public func clearSignature(for identity: IdentitySnapshot, in group: Group) async -> Bool {
+        await apply(
+            IdentitySet.setHTMLSignature("", for: identity.id, accountID: group.accountID))
+    }
+
+    /// Sends one `Identity/set` and reports honestly on what came back.
+    ///
+    /// Factored out because a 200 is not success: `Identity/set` reports
+    /// per-object refusals in `notUpdated`, the same trap as `Email/set`, and
+    /// each caller writing that check itself is how one of them ends up
+    /// without it.
+    private func apply(_ method: IdentitySet) async -> Bool {
+        saveFailure = nil
+
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let call = builder.add(method)
+            let results = try await client.send(builder)
+
+            if let error = results.failure(of: call) { throw error }
+
+            let result = try results.result(of: call)
+
+            if let refused = result.notUpdated, refused.isEmpty == false {
+                saveFailure = Self.describe(refused)
+                logger.error(
+                    "Identity/set refused: \(String(describing: refused), privacy: .public)")
+
+                return false
+            }
+        } catch {
+            saveFailure = String(
+                localized: "Couldn't reach the server. Nothing was changed.", bundle: .module)
+            logger.error("Identity/set failed: \(error, privacy: .public)")
 
             return false
         }

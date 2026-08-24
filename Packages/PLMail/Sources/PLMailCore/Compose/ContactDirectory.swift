@@ -154,3 +154,170 @@ public enum RecipientSuggestions {
         return Array((prefix + substring).prefix(limit))
     }
 }
+
+// MARK: - The server's address book
+
+/// Whether recipient suggestions may be asked for from the server.
+///
+/// **This exists because the answer changes a promise the app makes.** Every
+/// other suggestion in this client is computed on the device: from mail already
+/// synced, and from the system address book, which is what
+/// `NSContactsUsageDescription` tells the user. Calling `Contact/autocomplete`
+/// sends a prefix of what is being typed to the server on a debounce.
+///
+/// Two halves, worth separating before deciding:
+///
+/// - The **addresses** are not new information. The server harvested them from
+///   the user's own mail headers and already holds every one of them.
+/// - The **keystrokes** are. The server learns what was typed, when, and from
+///   which account — and when a match comes from the device address book rather
+///   than from mail, it learns a name it had no other way to know.
+///
+/// On a box the user owns and administers this is a small thing, and it is the
+/// whole premise of the product. It is still a change, so it is asked rather
+/// than assumed: ``undecided`` is the shipped default and means "ask", not
+/// "yes". A silent opt-in would be the app quietly editing its own privacy
+/// notice.
+public enum ServerSuggestionConsent: String, Sendable, CaseIterable {
+    /// Never asked. Nothing is sent, and the composer offers the choice the
+    /// first time the question is live — while somebody is actually typing a
+    /// recipient, where it can be answered in context rather than in a settings
+    /// screen nobody visits.
+    case undecided
+    case allowed
+    case declined
+
+    /// Whether a lookup may go out. Only an explicit yes counts.
+    public var permitsLookup: Bool { self == .allowed }
+}
+
+/// Where the answer is kept.
+///
+/// `UserDefaults` rather than the SwiftData store, deliberately: the store's
+/// governing rule is that everything in it is reconstructible from the server,
+/// and it is deleted and rebuilt on any open failure. A privacy answer rebuilt
+/// as "ask again" would be merely annoying; rebuilt as anything else it would
+/// be the app forgetting a decision about what it may disclose.
+public struct ServerSuggestionPreference: Sendable {
+    /// Namespaced like every other key this app writes, so a rename of the
+    /// bundle cannot collide with a system default.
+    static let key = "de.plmail.compose.serverSuggestions"
+
+    /// `UserDefaults` is thread-safe but not `Sendable`, and this value is read
+    /// from an actor on every keystroke. Held unchecked rather than made a
+    /// global: a test needs its own suite so one run cannot answer the privacy
+    /// question for the next.
+    private nonisolated(unsafe) let defaults: UserDefaults
+
+    public init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+    }
+
+    public var consent: ServerSuggestionConsent {
+        get {
+            defaults.string(forKey: Self.key)
+                .flatMap(ServerSuggestionConsent.init(rawValue:)) ?? .undecided
+        }
+        nonmutating set { defaults.set(newValue.rawValue, forKey: Self.key) }
+    }
+}
+
+/// The server's own address book, ranked by how often each address is written
+/// to or heard from.
+///
+/// The one thing a composing client cannot do for itself: ranking has to be
+/// over the whole address book, and a phone set up this morning has synced too
+/// little mail to have one.
+///
+/// **Fails silently and completely.** An instance without the extension answers
+/// `unknownMethod` for this call, which is an ordinary supported server rather
+/// than a fault, and a phone in a lift answers nothing at all. Either way the
+/// caller gets an empty list and the device's own suggestions are what the user
+/// sees — which is exactly what they saw before this existed.
+public actor ServerContacts: ContactSource {
+    private let client: JMAPClient
+    private let accountID: AccountID
+    private let preference: ServerSuggestionPreference
+    private let logger = Logger(subsystem: "de.plmail", category: "contacts")
+
+    public init(
+        client: JMAPClient,
+        accountID: AccountID,
+        preference: ServerSuggestionPreference = ServerSuggestionPreference()
+    ) {
+        self.client = client
+        self.accountID = accountID
+        self.preference = preference
+    }
+
+    public func addresses(matching fragment: String) async -> [EmailAddress] {
+        let fragment = fragment.trimmingCharacters(in: .whitespaces)
+
+        // The consent is read per lookup rather than captured at init: a
+        // composer left open across a change of mind must not go on sending
+        // fragments because it was built before the answer changed.
+        guard preference.consent.permitsLookup else { return [] }
+
+        // The same floor the device address book applies, and for the stronger
+        // reason here: one letter matches most of an address book, so the round
+        // trip buys nothing and the keystroke is disclosed for no result.
+        guard fragment.count >= ContactAutocomplete.minimumQueryLength else { return [] }
+
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let suggest = builder.add(
+                ContactAutocomplete(accountID: accountID, query: fragment))
+            let results = try await client.send(builder)
+
+            if let error = results.failure(of: suggest) { throw error }
+
+            let result = try results.result(of: suggest)
+
+            // The server echoes the query because it normalised it. A reply to
+            // a fragment that is no longer being typed is discarded rather than
+            // merged, so a slow answer cannot overwrite a fresh one.
+            guard result.query.caseInsensitiveCompare(fragment) == .orderedSame else { return [] }
+
+            // Already ranked — frequency, then recency. Kept in the order it
+            // arrived, because re-sorting it here would be a second ranking and
+            // the whole point of asking is that there is only one.
+            return result.list.map(\.address)
+        } catch {
+            logger.error("Server suggestions unavailable: \(error, privacy: .public)")
+
+            return []
+        }
+    }
+}
+
+/// Two sources asked at once, merged in the order they were given.
+///
+/// The device address book is a **supplement**, not a re-ranking: it holds
+/// people the user has never mailed, which is precisely what the server cannot
+/// know. Merging by lowercased address with first-source-wins keeps the
+/// server's ranking on top, and the local answer is what remains when the
+/// request fails — so a phone in a lift still suggests.
+public struct CombinedContacts: ContactSource {
+    private let sources: [any ContactSource]
+
+    public init(_ sources: [any ContactSource]) {
+        self.sources = sources
+    }
+
+    public func addresses(matching fragment: String) async -> [EmailAddress] {
+        var found: [EmailAddress] = []
+
+        // Sequentially, not concurrently. The server half is a request to
+        // hardware that is frequently a Raspberry Pi advertising four
+        // concurrent slots, shared with the message list the user may still be
+        // scrolling; the address-book half is a permission prompt the first
+        // time. Neither is worth a millisecond of overlap on a keystroke.
+        for source in sources {
+            found += await source.addresses(matching: fragment)
+        }
+
+        var seen: Set<String> = []
+
+        return found.filter { seen.insert($0.email.lowercased()).inserted }
+    }
+}

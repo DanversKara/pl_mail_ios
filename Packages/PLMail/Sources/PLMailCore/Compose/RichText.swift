@@ -165,6 +165,15 @@ public enum MailHTML {
         return parser.run()
     }
 
+    /// The inline styles plMail's own reply wrapper carries.
+    ///
+    /// **These, not the marker, are what survives a save.** `data-quoted` is a
+    /// `data-` attribute and the server's `MailBodySanitizer` allow-list drops
+    /// every one of them from a stored draft body, exactly as it drops
+    /// `class`. `style` is allowed, so after one round trip through Drafts the
+    /// styling is the only signal left that a wrapper was ever a quote.
+    static let quoteStyleMarkers = ["border-top", "font-size:0.85em"]
+
     /// Separates a trailing quoted original from the part someone wrote.
     ///
     /// Reply quotes are kept out of the editor entirely — see
@@ -172,11 +181,9 @@ public enum MailHTML {
     /// back where it came from rather than parsing a stranger's newsletter into
     /// an editable rich-text buffer and mangling it.
     public static func splitQuote(fromHTML html: String) -> (body: String, quote: String?) {
-        guard let range = html.range(of: "<blockquote", options: .caseInsensitive) else {
-            return (html, nil)
-        }
+        guard let cut = quoteStart(in: html) else { return (html, nil) }
 
-        return (String(html[html.startIndex..<range.lowerBound]), String(html[range.lowerBound...]))
+        return (String(html[html.startIndex..<cut]), String(html[cut...]))
     }
 
     /// Splits a received message into what was written and the history under
@@ -208,8 +215,26 @@ public enum MailHTML {
     /// Where the history begins, including the "On … wrote:" line that
     /// introduces it — Gmail hides the attribution with the quote, and leaving
     /// it behind strands a sentence pointing at nothing.
+    ///
+    /// Tried in order of how much each signal means: the `data-quoted` marker
+    /// is exact but same-session only, the wrapper's inline styles are what
+    /// survives a save, the attribution heuristic covers every other client,
+    /// and a bare `<blockquote>` is the last resort. Both wrapper signals are
+    /// only believed when a blockquote follows them — a real message body
+    /// carries `border-top` on tables and rules, and cutting there would hide
+    /// something somebody wrote.
     private static func quoteStart(in html: String) -> String.Index? {
         var candidates: [String.Index] = []
+
+        for marker in ["data-quoted"] + quoteStyleMarkers {
+            guard let found = html.range(of: marker, options: .caseInsensitive),
+                let blockquote = html.range(of: "<blockquote", options: .caseInsensitive)
+            else { continue }
+
+            let start = blockStart(in: html, containing: found.lowerBound)
+
+            if blockquote.lowerBound >= start { candidates.append(start) }
+        }
 
         if let blockquote = html.range(of: "<blockquote", options: .caseInsensitive) {
             var start = blockquote.lowerBound
@@ -311,28 +336,60 @@ public enum MailHTML {
         return count
     }
 
+    /// The wrapper plMail's own web composer writes around a quote.
+    ///
+    /// Both halves matter and for different lifetimes: `data-quoted` is what
+    /// the server splits the *incoming* body on, and the inline `style` is what
+    /// is still there after the sanitiser has stored it. Emitting the marker
+    /// alone would work for one save and then stop.
+    static let quoteWrapperStyle =
+        "border-top:1px solid #e0e0e0;margin-top:12px;padding-top:12px;font-size:0.85em"
+
     /// A quoted original, in the shape every mail client renders as a quote.
     ///
     /// The attribution line matches what the web UI writes, so a thread replied
-    /// to from both clients reads consistently.
+    /// to from both clients reads consistently — and it is **localised**, which
+    /// it was not: a German user replying to a German colleague sent "On 3
+    /// March 2026, Ada wrote:" above a German thread.
     public static func quote(
         author: String, date: Date?, html: String?, text: String?
     ) -> String {
         let when = date?.formatted(date: .long, time: .shortened) ?? ""
-        let header = escape("On \(when), \(author) wrote:")
+        let header = escape(String(localized: "On \(when), \(author) wrote:", bundle: .module))
 
-        let quoted =
-            html
-            ?? text.map { plain in
-                plain
-                    .components(separatedBy: "\n")
-                    .map { "<div>\(escape($0))</div>" }
-                    .joined()
-            }
-            ?? ""
+        return wrapQuote(attribution: header, body: quotedBody(html: html, text: text))
+    }
+
+    /// A forwarded original: a header block rather than an attribution line.
+    public static func forwarded(block: String, html: String?, text: String?) -> String {
+        wrapQuote(attribution: nil, prologue: block, body: quotedBody(html: html, text: text))
+    }
+
+    /// Escapes a plain-text original before it is quoted.
+    ///
+    /// A message whose text contains `<b>` must not start rendering as markup
+    /// on the recipient's screen — and the person forwarding it would never see
+    /// that it had.
+    private static func quotedBody(html: String?, text: String?) -> String {
+        if let html { return html }
+
+        guard let text else { return "" }
 
         return
-            "<div>\(header)</div><blockquote style=\"margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex\">\(quoted)</blockquote>"
+            text
+            .components(separatedBy: "\n")
+            .map { "<div>\(escape($0))</div>" }
+            .joined()
+    }
+
+    private static func wrapQuote(
+        attribution: String?, prologue: String = "", body: String
+    ) -> String {
+        let head = attribution.map { "<div>\($0)</div>" } ?? prologue
+
+        return "<div data-quoted=\"1\" style=\"\(quoteWrapperStyle)\">\(head)"
+            + "<blockquote style=\"margin:0 0 0 0.8ex;border-left:2px solid #ccc;padding-left:1ex\">"
+            + "\(body)</blockquote></div>"
     }
 
     /// A hand-written scanner rather than a real HTML parser.

@@ -104,5 +104,29 @@ struct MailShortcuts: AppShortcutsProvider {
             shortTitle: "Unread count",
             systemImageName: "envelope.badge"
         )
+
+        // The calendar's two, declared here rather than in a provider of their
+        // own: the system takes one `AppShortcutsProvider` per app, and a
+        // second one does not fail loudly — it simply leaves whichever set lost
+        // the race absent from Shortcuts with nothing said.
+        AppShortcut(
+            intent: ShowCalendarIntent(),
+            phrases: [
+                "Open my calendar in \(.applicationName)",
+                "Show my \(.applicationName) calendar",
+            ],
+            shortTitle: "Open calendar",
+            systemImageName: "calendar"
+        )
+
+        AppShortcut(
+            intent: CreateEventIntent(),
+            phrases: [
+                "New event in \(.applicationName)",
+                "Add an event to \(.applicationName)",
+            ],
+            shortTitle: "New event",
+            systemImageName: "calendar.badge.plus"
+        )
     }
 }

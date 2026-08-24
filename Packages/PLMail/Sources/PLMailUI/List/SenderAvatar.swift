@@ -21,9 +21,24 @@ struct SenderAvatar: View {
     /// reflows the list.
     var isSelected = false
 
+    /// The checkmark's own curve, already reconciled with Reduce Motion.
+    ///
+    /// Read from the environment rather than written as a literal because a
+    /// multi-select sweep animates one of these per row: somebody who set
+    /// Reduce Motion because movement makes them ill got the whole list
+    /// pulsing at them, which is precisely the case the setting exists for.
+    @Environment(\.fastAnimation) private var fastAnimation
+
     var body: some View {
         Circle()
-            .fill(isSelected ? Color.accentColor : AvatarPalette.color(for: seed))
+            // `AnyShapeStyle` because the two branches are different types —
+            // the accent is resolved from the environment and the avatar hue
+            // is a plain colour, and a ternary has nowhere to land without it.
+            .fill(
+                isSelected
+                    ? AnyShapeStyle(ThemeAccent())
+                    : AnyShapeStyle(AvatarPalette.color(for: seed))
+            )
             .frame(width: diameter, height: diameter)
             .overlay {
                 if isSelected {
@@ -37,7 +52,7 @@ struct SenderAvatar: View {
                         .minimumScaleFactor(0.6)
                 }
             }
-            .animation(.snappy(duration: 0.15), value: isSelected)
+            .animation(fastAnimation, value: isSelected)
             .accessibilityHidden(true)
     }
 

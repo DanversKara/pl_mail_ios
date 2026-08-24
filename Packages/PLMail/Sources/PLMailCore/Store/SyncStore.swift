@@ -100,6 +100,11 @@ public actor SyncStore {
             stored.name = mailbox.name ?? stored.name
             stored.parentID = mailbox.parentID?.rawValue
             stored.role = mailbox.role?.rawValue
+            // Without this line every label reads back as "no colour chosen"
+            // and falls into the hashed fallback tint, so a colour the user
+            // picked on the web is stored on the wire, decoded, and silently
+            // dropped one assignment short of the row.
+            stored.color = mailbox.color?.rawValue
             stored.sortOrder = mailbox.sortOrder ?? 0
             stored.totalEmails = mailbox.totalEmails ?? 0
             stored.unreadEmails = mailbox.unreadEmails ?? 0
@@ -147,6 +152,21 @@ public actor SyncStore {
             .map { MailboxID($0.mailboxID) }
     }
 
+    /// The user-scoped label id behind a binding, if it has one.
+    ///
+    /// The translation the other way round, and it exists for the offline
+    /// queue: a queued label change may only hold the user-scoped id, because a
+    /// binding id is valid against one account, can be recreated with a
+    /// different number when a label is deleted and remade, and would then
+    /// apply the wrong label on a drain. Nil for a role mailbox, which has no
+    /// `labelId` at all.
+    public func labelID(mailboxID: String, accountKey: String) throws -> LabelID? {
+        try mailboxRows(accountKey: accountKey)
+            .first { $0.mailboxID == mailboxID }?
+            .labelID
+            .map { LabelID($0) }
+    }
+
     public func mailboxes(accountKey: String) throws -> [MailboxSnapshot] {
         try mailboxRows(accountKey: accountKey).map(snapshot(of:))
     }
@@ -173,10 +193,14 @@ public actor SyncStore {
     ) throws {
         var threadEmailIDs: [String: [String]] = [:]
         var snoozedUntil: [String: Date] = [:]
+        var category: [String: MessageCategory] = [:]
+        var isNew: [String: Bool] = [:]
 
         for thread in threads {
             threadEmailIDs[thread.id.rawValue] = thread.emailIDs.map(\.rawValue)
             snoozedUntil[thread.id.rawValue] = thread.snoozedUntil?.date
+            category[thread.id.rawValue] = thread.category
+            isNew[thread.id.rawValue] = thread.isNew
         }
 
         for email in emails {
@@ -193,7 +217,13 @@ public actor SyncStore {
                 // that fetched emails without their threads must not read a
                 // missing key as "no longer snoozed" and clear the badge.
                 snoozedUntil: threadEmailIDs[threadID] != nil
-                    ? .some(snoozedUntil[threadID]) : nil
+                    ? .some(snoozedUntil[threadID]) : nil,
+                // Same discipline, and it matters more here: nil category is a
+                // real value ("no tab"), so a page that fetched emails without
+                // their threads must not be read as the classifier having
+                // changed its mind and emptied every tab.
+                category: threadEmailIDs[threadID] != nil ? .some(category[threadID]) : nil,
+                isNew: isNew[threadID]
             )
         }
 
@@ -263,7 +293,16 @@ public actor SyncStore {
         /// about the snooze", `.some(nil)` means "the server says it is not
         /// snoozed". Collapsing the two would clear the badge on every page
         /// that fetched emails without their threads.
-        snoozedUntil: Date??
+        snoozedUntil: Date??,
+        /// Double optional for the same reason as the snooze, and a sharper
+        /// one: nil is a *meaningful* category — "no tab" — so there is no
+        /// sentinel value left to mean "this batch said nothing".
+        category: MessageCategory?? = nil,
+        /// Single optional: nil means the batch carried no thread for this
+        /// conversation. Never written back to true from a page that did not
+        /// mention it, because a locally-retired marker would otherwise
+        /// reappear on the next page that happened to omit the thread.
+        isNew: Bool? = nil
     ) throws {
         let uid = StoreKey.object(accountKey: accountKey, id: threadID)
 
@@ -288,6 +327,17 @@ public actor SyncStore {
         // arriving late must still not drop it.
         if let snoozedUntil {
             thread.snoozedUntil = snoozedUntil
+        }
+
+        // Also thread-level, and also before the newest-message guard: the
+        // category is resolved most-recent-wins by the server, and the New
+        // marker belongs to the conversation rather than to any message in it.
+        if let category {
+            thread.category = category?.rawValue
+        }
+
+        if let isNew {
+            thread.isNew = isNew
         }
 
         // The row renders from the newest message, so older ones arriving
@@ -535,6 +585,12 @@ public actor SyncStore {
             )
             stored.name = identity.name
             stored.textSignature = identity.textSignature
+            // Stored verbatim, empty string included: `Identity/get` reports
+            // `""` for an address the user has deliberately given no signature,
+            // and collapsing that to nil here would make the settings screen
+            // offer to "inherit the account's" on an address that has already
+            // said it does not.
+            stored.htmlSignature = identity.htmlSignature
             modelContext.insert(stored)
         }
 
@@ -561,8 +617,35 @@ public actor SyncStore {
         .map {
             IdentitySnapshot(
                 id: IdentityID(rawValue: $0.identityID), name: $0.name, email: $0.email,
-                textSignature: $0.textSignature)
+                textSignature: $0.textSignature, htmlSignature: $0.htmlSignature)
         }
+    }
+
+    /// What this device actually holds for one account.
+    ///
+    /// `fetchCount` rather than fetching and counting: the accounts screen asks
+    /// this for every connected mailbox at once, and materialising a hundred
+    /// thousand `StoredEmail` objects to learn how many there are is the kind
+    /// of thing that makes a settings screen hang on the machines this app is
+    /// built for.
+    ///
+    /// The oldest row is a separate one-row descriptor with `fetchLimit = 1`
+    /// for the same reason — sorted ascending by `receivedAt`, so the store
+    /// walks the index rather than the table.
+    public func cachedWindow(accountKey: String) throws -> CachedWindowSnapshot {
+        let count = try modelContext.fetchCount(
+            FetchDescriptor<StoredEmail>(predicate: #Predicate { $0.accountKey == accountKey }))
+
+        guard count > 0 else { return CachedWindowSnapshot(messageCount: 0) }
+
+        var oldest = FetchDescriptor<StoredEmail>(
+            predicate: #Predicate { $0.accountKey == accountKey },
+            sortBy: [SortDescriptor(\.receivedAt, order: .forward)])
+        oldest.fetchLimit = 1
+
+        return CachedWindowSnapshot(
+            messageCount: count,
+            oldestReceivedAt: try modelContext.fetch(oldest).first?.receivedAt)
     }
 
     /// Addresses this account has corresponded with.
@@ -1006,6 +1089,258 @@ public actor SyncStore {
         }
     }
 
+    // MARK: - Feed projection
+
+    /// Every list this account has actually paged, with how deep.
+    ///
+    /// A feed exists on disk only once something has paged it, and the only
+    /// record of which those are is the cursor table. ``FeedProjection`` needs
+    /// the whole set: correcting the list on screen and no other is what leaves
+    /// a conversation archived in the browser sitting in every cached list the
+    /// user has not looked at lately.
+    public func pagedFeeds(accountKey: String) throws -> [PagedFeed] {
+        try modelContext.fetch(
+            FetchDescriptor<StoredFeedCursor>(
+                predicate: #Predicate { $0.accountKey == accountKey }
+            )
+        )
+        .map {
+            PagedFeed(
+                feedID: $0.feedID,
+                cursor: FeedCursorSnapshot(
+                    lastSortDate: $0.lastSortDate,
+                    boundaryIDs: Set($0.boundaryIDs),
+                    isExhausted: $0.isExhausted
+                )
+            )
+        }
+    }
+
+    /// What a projection needs to know about the conversations a sync touched.
+    ///
+    /// Read in one pass rather than per feed: the union of mailbox ids over a
+    /// forty-message thread is the expensive part, and computing it once per
+    /// list would multiply it by however many lists the account has paged.
+    public func threadProjections(
+        threadIDs: [String], accountKey: String
+    ) throws -> [ThreadProjection] {
+        var projections: [ThreadProjection] = []
+
+        for threadID in threadIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+            guard let thread = try existing(StoredThread.self, uid: uid) else { continue }
+
+            var mailboxIDs: Set<String> = []
+
+            for emailID in thread.emailIDs {
+                let emailUID = StoreKey.object(accountKey: accountKey, id: emailID)
+
+                guard let email = try existing(StoredEmail.self, uid: emailUID) else { continue }
+
+                mailboxIDs.formUnion(email.mailboxIDs)
+            }
+
+            projections.append(
+                ThreadProjection(
+                    threadID: threadID,
+                    mailboxIDs: mailboxIDs,
+                    sortDate: thread.latestReceivedAt,
+                    newestEmailID: thread.newestEmailID ?? thread.emailIDs.last ?? threadID,
+                    category: MessageCategory(wire: thread.category)
+                ))
+        }
+
+        return projections
+    }
+
+    // MARK: - The New marker
+
+    /// Records locally that these conversations have been drawn.
+    ///
+    /// Called only after the server has accepted the retirement, so a report
+    /// that never reached the server leaves the column alone and the row is
+    /// badged again next time it is drawn. Losing a marker the server still
+    /// holds would be the worse failure of the two: the badge would be gone
+    /// here and still up in the browser, with nothing left to retire it.
+    ///
+    /// One save for the batch. This runs behind a scrolling list, and a save
+    /// per row is what turns a fling into a write per frame.
+    public func clearNewMarkers(threadIDs: [String], accountKey: String) throws {
+        guard threadIDs.isEmpty == false else { return }
+
+        var changed = false
+
+        for threadID in threadIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+            guard let thread = try existing(StoredThread.self, uid: uid), thread.isNew else {
+                continue
+            }
+
+            thread.isNew = false
+            changed = true
+        }
+
+        if changed { try modelContext.save() }
+    }
+
+    /// Which of these conversations still carry the New marker.
+    ///
+    /// A value out of the actor rather than a `@Model`, because `@Model`
+    /// objects must never cross an actor boundary — the rule the whole snapshot
+    /// layer exists to keep. Ids rather than a dictionary: the question is
+    /// membership, and an absent id means "not new" whether the conversation is
+    /// unmarked or not cached at all.
+    public func newMarkers(threadIDs: [String], accountKey: String) throws -> Set<String> {
+        var marked: Set<String> = []
+
+        for threadID in threadIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: threadID)
+
+            if try existing(StoredThread.self, uid: uid)?.isNew == true {
+                marked.insert(threadID)
+            }
+        }
+
+        return marked
+    }
+
+    // MARK: - Categories
+
+    /// Whether this server classifies mail at all.
+    ///
+    /// **Asked once, not per row.** A plMail instance whose classifier has
+    /// never run answers every category query with nothing, and five permanently
+    /// empty tabs above a working inbox is worse than no tabs: it reads as mail
+    /// having gone missing. Any single conversation with a category is enough
+    /// evidence, so this stops at the first hit rather than counting.
+    ///
+    /// Deliberately not "does this feed have categories": the control is drawn
+    /// from the whole cache, so it does not appear and disappear as the user
+    /// pages through mail that predates the classifier.
+    public func hasCategorisedThreads() throws -> Bool {
+        var descriptor = FetchDescriptor<StoredThread>(
+            predicate: #Predicate { $0.category != nil })
+        descriptor.fetchLimit = 1
+
+        return try modelContext.fetchCount(descriptor) > 0
+    }
+
+    /// Applies a whole batch of projection decisions in one transaction.
+    ///
+    /// One save for the batch, not one per row: this runs on the sync path
+    /// after every hydrate, and a save per changed conversation would make a
+    /// delta pull of two hundred messages two hundred writes on a device that
+    /// is often on battery.
+    public func applyProjection(_ changes: [FeedProjectionChange]) throws {
+        guard changes.isEmpty == false else { return }
+
+        for change in changes {
+            let uid = "\(change.feedID)#\(change.accountKey)#\(change.threadID)"
+
+            switch change.kind {
+            case .remove:
+                guard let entry = try existing(StoredFeedEntry.self, uid: uid) else { continue }
+
+                modelContext.delete(entry)
+
+            case .insert(let sortDate, let emailID):
+                if let entry = try existing(StoredFeedEntry.self, uid: uid) {
+                    // Updated rather than left alone: new mail in a thread
+                    // moves it up the list, and a row that keeps its old sort
+                    // date sits below messages older than its newest reply.
+                    entry.sortDate = sortDate
+                    entry.emailID = emailID
+                    continue
+                }
+
+                modelContext.insert(
+                    StoredFeedEntry(
+                        uid: uid,
+                        feedID: change.feedID,
+                        sortDate: sortDate,
+                        accountKey: change.accountKey,
+                        threadID: change.threadID,
+                        emailID: emailID
+                    ))
+            }
+        }
+
+        try modelContext.save()
+    }
+
+    // MARK: - Bodies
+
+    /// Messages this device holds no body for, newest first.
+    ///
+    /// Newest first because that is what a person opens on a train, and limited
+    /// because the prefetcher's whole point is a budget: bodies are large and
+    /// the server is often a Raspberry Pi.
+    ///
+    /// Note this is "no body row at all", not "no body text" — see
+    /// ``recordMissingBody(emailIDs:accountKey:)`` for why the difference
+    /// matters.
+    /// Walked in batches rather than filtered in a `#Predicate`: SwiftData
+    /// cannot compile a comparison against a to-one relationship — `body ==
+    /// nil` fails to type-check inside the macro — and fetching an account's
+    /// whole message table to filter it in memory is the thing this query is
+    /// supposed to avoid.
+    public func messagesWithoutBody(accountKey: String, limit: Int) throws -> [String] {
+        guard limit > 0 else { return [] }
+
+        var found: [String] = []
+
+        let descriptor = FetchDescriptor<StoredEmail>(
+            predicate: #Predicate { $0.accountKey == accountKey },
+            sortBy: [SortDescriptor(\.receivedAt, order: .reverse)]
+        )
+
+        // `enumerate` stops the moment the block throws, which is the only way
+        // out of it — the budget has to be honoured or a mailbox with ten
+        // thousand unfetched messages walks all of them on every run.
+        struct Enough: Error {}
+
+        do {
+            try modelContext.enumerate(descriptor, batchSize: 100) { email in
+                guard email.body == nil else { return }
+
+                found.append(email.emailID)
+
+                if found.count >= limit { throw Enough() }
+            }
+        } catch is Enough {
+            // Expected: the budget was reached.
+        }
+
+        return found
+    }
+
+    /// Records that a message genuinely has no body to fetch.
+    ///
+    /// Without it the prefetcher re-considers the same messages on every run
+    /// forever: a message with an empty body is indistinguishable from one that
+    /// has never been fetched, so it consumes the budget every time and the
+    /// mail behind it is never prefetched at all. An empty body row is the
+    /// marker — the same answer Android writes, for the same reason.
+    ///
+    /// `fetchedAt` is set, so an eviction pass ages these out with everything
+    /// else rather than leaving permanent tombstones.
+    public func recordMissingBody(emailIDs: [String], accountKey: String) throws {
+        for emailID in emailIDs {
+            let uid = StoreKey.object(accountKey: accountKey, id: emailID)
+
+            guard let email = try existing(StoredEmail.self, uid: uid), email.body == nil
+            else { continue }
+
+            let body = StoredEmailBody(uid: uid)
+            body.fetchedAt = .now
+            email.body = body
+        }
+
+        try modelContext.save()
+    }
+
     // MARK: - Deletion
 
     public func deleteEverything() throws {
@@ -1130,6 +1465,10 @@ public actor SyncStore {
             name: mailbox.name,
             role: mailbox.role.map(MailboxRole.init(rawValue:)),
             parentID: mailbox.parentID.map(MailboxID.init(rawValue:)),
+            // `LabelColor(wire:)` rather than `LabelColor(rawValue:)` so a
+            // token written by a newer server degrades to "no colour chosen"
+            // instead of the snapshot failing to carry the label at all.
+            color: LabelColor(wire: mailbox.color),
             unreadThreads: mailbox.unreadThreads,
             totalThreads: mailbox.totalThreads,
             isSubscribed: mailbox.isSubscribed,
@@ -1149,5 +1488,55 @@ public struct FeedRow: Hashable, Sendable {
         self.threadID = threadID
         self.emailID = emailID
         self.sortDate = sortDate
+    }
+}
+
+/// A list this account has paged, and how deep.
+///
+/// Carried as a value because `@Model` types are not `Sendable` and must never
+/// leave the actor that owns their context — the rule the whole snapshot layer
+/// exists to keep.
+public struct PagedFeed: Hashable, Sendable {
+    public var feedID: String
+    public var cursor: FeedCursorSnapshot
+
+    public init(feedID: String, cursor: FeedCursorSnapshot) {
+        self.feedID = feedID
+        self.cursor = cursor
+    }
+}
+
+/// What a projection needs to know about one conversation.
+///
+/// Read once per sync batch rather than per list: the union of mailbox ids over
+/// a long thread is the expensive part, and asking for it per feed would
+/// multiply it by however many lists the account has paged.
+public struct ThreadProjection: Hashable, Sendable {
+    public var threadID: String
+    /// The union across every message. A conversation is in a label if any of
+    /// its messages is, matching how the list row already treats starred and
+    /// unread.
+    public var mailboxIDs: Set<String>
+    public var sortDate: Date
+    /// The row renders from the newest message, so a splice that named an
+    /// older one would show the wrong sender under the right subject.
+    public var newestEmailID: String
+    /// Which tab this conversation is on, or nil for one the classifier never
+    /// saw. Carried here so the projection can reconcile the category feeds
+    /// without a second read per list — the whole reason this type exists.
+    public var category: MessageCategory?
+
+    public init(
+        threadID: String,
+        mailboxIDs: Set<String>,
+        sortDate: Date,
+        newestEmailID: String,
+        category: MessageCategory? = nil
+    ) {
+        self.threadID = threadID
+        self.mailboxIDs = mailboxIDs
+        self.sortDate = sortDate
+        self.newestEmailID = newestEmailID
+        self.category = category
     }
 }

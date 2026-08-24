@@ -136,3 +136,38 @@ public enum TimePreset: String, CaseIterable, Identifiable, Sendable {
         }
     }
 }
+
+/// The snooze presets, computed at most once a minute.
+///
+/// **This exists because it was measured.** `TimePreset.available` resolves each
+/// preset through `Calendar.date(bySettingHour:…)`, which searches forward for a
+/// matching component — the single most expensive thing this app does per call.
+/// `SnoozeMenu` evaluates it inside a `ForEach`, and the reader mentions that
+/// menu three times (toolbar, reply bar, ⌘ commands), so every body evaluation
+/// of an open conversation ran five calendar searches several times over. On an
+/// iPad Pro that showed up in Instruments as `_CalendarGregorian.dateComponents`
+/// and `dateAfterMatchingHour` dominating the profile while the interface was
+/// unusable.
+///
+/// A minute of staleness is harmless: every preset lands on an hour boundary.
+@MainActor
+public enum SnoozeChoices {
+    private static var cached: (minute: Date, value: [(preset: TimePreset, date: Date)])?
+
+    /// The presets that still make sense now, from cache where possible.
+    public static func current(
+        among choices: [TimePreset] = TimePreset.snoozeChoices,
+        now: Date = .now
+    ) -> [(preset: TimePreset, date: Date)] {
+        let seconds = (now.timeIntervalSinceReferenceDate / 60).rounded(.down) * 60
+        let minute = Date(timeIntervalSinceReferenceDate: seconds)
+
+        if let cached, cached.minute == minute { return cached.value }
+
+        let fresh = TimePreset.available(among: choices, from: now)
+
+        cached = (minute, fresh)
+
+        return fresh
+    }
+}

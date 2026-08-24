@@ -14,7 +14,19 @@ enum BackgroundRefresh {
     static let identifier = "de.plmail.refresh"
     private static let logger = Logger(subsystem: "de.plmail", category: "background")
 
-    static func register(refresh: @escaping @Sendable () async -> Void) {
+    /// - Parameters:
+    ///   - refresh: The pull itself.
+    ///   - expire: Called when the system gives its few seconds' notice that
+    ///     the task is about to be killed. Cancelling the enclosing `Task` is
+    ///     not enough on its own: the body prefetcher checks a flag of its own
+    ///     because the expiration handler does not run on the task that
+    ///     started the run, and a background task that ignores its expiration
+    ///     has the app's background time revoked — which costs every future
+    ///     refresh, not just this one.
+    static func register(
+        refresh: @escaping @Sendable () async -> Void,
+        expire: @escaping @Sendable () -> Void = {}
+    ) {
         BGTaskScheduler.shared.register(
             forTaskWithIdentifier: identifier,
             using: nil
@@ -33,6 +45,7 @@ enum BackgroundRefresh {
             }
 
             bgTask.expirationHandler = {
+                expire()
                 work.cancel()
                 logger.notice("Background refresh expired before finishing.")
             }

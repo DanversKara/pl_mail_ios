@@ -97,6 +97,41 @@ public actor BlobCache {
         return url
     }
 
+    /// The local file for a blob **only if it is already on disk**.
+    ///
+    /// The whole thumbnail grid rests on this call. Drawing a message's
+    /// attachments asks this and nothing else, so appearing on screen can
+    /// never cost a request — a thumbnail is drawn for exactly those blobs the
+    /// user already pulled down by opening or saving them, and that stays true
+    /// with the phone in aeroplane mode.
+    ///
+    /// **Changes nothing about eviction or caching.** It does not download, it
+    /// does not create the folder, and it deliberately does not ``touch(_:)``
+    /// the file: drawing a tile is not using an attachment, and a peek that
+    /// warmed the LRU would let a scroll through an old thread hold newer
+    /// downloads out of the cache. Reading the file to render it updates the
+    /// access date on its own, which is the honest signal.
+    ///
+    /// - Returns: A file URL that exists, or nil. Nil is an ordinary answer —
+    ///   the blob was never fetched, or eviction reclaimed it.
+    public func cachedFile(
+        blobID: BlobID,
+        accountID: AccountID,
+        name: String?,
+        type: String
+    ) -> URL? {
+        let key = Self.slug("\(accountID.rawValue)-\(blobID.rawValue)")
+        let destination =
+            directory
+            .appending(path: key)
+            .appending(path: Self.fileName(name: name, type: type))
+
+        guard FileManager.default.fileExists(atPath: destination.path(percentEncoded: false))
+        else { return nil }
+
+        return destination
+    }
+
     private func download(
         blobID: BlobID,
         accountID: AccountID,

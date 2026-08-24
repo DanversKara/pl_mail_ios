@@ -64,10 +64,12 @@ public struct RequestBuilder: Sendable {
             """
         )
 
-        // The push capability is advertised in the Session but rejected in
-        // `using` with a hard 400. No method declares it, so this cannot
-        // trigger today; it is here because the failure would be a 400 on
-        // every request, with nothing in the message pointing at the cause.
+        // `push` and `apns` are advertised in the Session and rejected in
+        // `using`: an unknown capability refuses the *whole* request with
+        // `unknownCapability`, so one wrong declaration takes every unrelated
+        // call in the batch with it and the message names none of them. This
+        // caught `PushSubscriptionSet` declaring `apns` — a Core method — and
+        // is left in place as the guard that no future method repeats it.
         precondition(
             Method.capability.isSupportedInUsing,
             "\(Method.name) declares \(Method.capability.rawValue), which cannot appear in `using`."

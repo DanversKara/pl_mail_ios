@@ -45,6 +45,14 @@ public struct ServerAddress: Hashable, Sendable {
         case empty
         case unsupportedScheme(String)
         case missingHost
+        /// `https://me:hunter2@nas.local`.
+        ///
+        /// Refused rather than stripped. Stripping would be quieter, but the
+        /// user typed a password and would be left with an address that
+        /// silently authenticates as nobody — and this app wants an app
+        /// password, not the account password most likely pasted here. Saying
+        /// so is the only answer that leads anywhere.
+        case credentialsInAddress
     }
 
     /// Parses what the user typed.
@@ -74,6 +82,17 @@ public struct ServerAddress: Hashable, Sendable {
 
         guard let host = components.host, host.isEmpty == false else {
             throw ParseError.missingHost
+        }
+
+        // Before anything else is normalised: `user:password@` survives into a
+        // base URL, unlike the query and fragment cleared below, so it would be
+        // baked into every request this app ever makes against this server —
+        // and into the Keychain metadata beside the app password. `URLSession`
+        // would then send an `Authorization` header the user never chose,
+        // against a credential that is almost certainly their account password
+        // rather than the app password this app asks for.
+        guard components.user == nil, components.password == nil else {
+            throw ParseError.credentialsInAddress
         }
 
         components.scheme = scheme

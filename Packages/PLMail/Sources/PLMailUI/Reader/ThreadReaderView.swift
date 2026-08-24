@@ -16,6 +16,12 @@ public struct ThreadReaderView: View {
     @State private var expanded: Set<String> = []
     @State private var showsEarlierMessages = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The chips' tints and the reader's own animation curves, both of which
+    /// the server sets and neither of which reached this view before.
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.standardAnimation) private var standardAnimation
+    @Environment(\.slowAnimation) private var slowAnimation
 
     /// Whether the reply bar drops its words.
     ///
@@ -32,13 +38,33 @@ public struct ThreadReaderView: View {
     @State private var remoteContentRevision = 0
     @State private var blockedRemoteContent: Set<String> = []
     @State private var previewedAttachment: URL?
+    /// The message whose raw source is on screen, if any.
+    ///
+    /// Held as the snapshot rather than an id so the sheet keeps rendering the
+    /// message it was opened for even if a sync reorders the thread underneath
+    /// it — a source view that silently swaps to a different message is worse
+    /// than a stale one.
+    @State private var sourceMessage: MessageSnapshot?
+    /// Which messages the scroll view currently reports as on screen.
+    ///
+    /// Half of the "has this actually been read?" answer; ``expanded`` is the
+    /// other half. Kept here rather than inside ``MessageView`` because a card
+    /// cannot see its own position in the scroll view it is drawn in.
+    @State private var visibleMessages: Set<String> = []
+    /// Decides which messages are owed a mark-read write, and remembers which
+    /// have already had one so scrolling does not re-issue them.
+    @State private var receipts = ReadReceipts()
     @State private var composing: ComposeModel.Kind?
     @State private var isPickingLabels = false
     @State private var isPickingSnoozeDate = false
     @State private var find = ThreadFindModel()
     @State private var isFinding = false
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// P6's scenes. Nil-checked rather than assumed: `supportsMultipleWindows`
+    /// is false on iPhone and on an iPad with multitasking switched off, and an
+    /// "Open in new window" that opens nothing is worse than its absence.
+    @Environment(\.openWindow) private var openWindow
+    @Environment(\.supportsMultipleWindows) private var supportsMultipleWindows
 
     private let subject: String
     private let blobs: BlobCache
@@ -47,8 +73,13 @@ public struct ThreadReaderView: View {
     private let accountID: AccountID
     private let client: JMAPClient
     private let store: SyncStore
-    /// Only for the label picker, which needs this account's labels. The
-    /// reader itself reads nothing from the sync service.
+    /// The label picker, which needs this account's labels, and one flag.
+    ///
+    /// The flag is `isDeviceOffline`, which the attachment grid needs to
+    /// decide whether to offer a control that would spend bytes. Read here and
+    /// handed down as a `Bool` rather than passing the service into a message
+    /// card: a card that could reach the sync engine is a card that will
+    /// eventually write through it.
     private let sync: MailSyncService
     private let actions: MailActions
     private let outbox: OutboxSender
@@ -137,7 +168,11 @@ public struct ThreadReaderView: View {
         // the separation does not exist — which is how the first version of
         // this looked, and it looked like nothing had changed.
         .scrollContentBackground(.hidden)
-        .background(PanelStyle.window)
+        // The theme's window rather than `PanelStyle.window`, so a card and the
+        // ground it sits on move together. Left fixed, a themed pane would put
+        // a slate card on cream and the two would read as a rendering fault
+        // rather than a theme.
+        .background(theme.palette(for: colorScheme).window.color)
         // Empty on purpose: the subject is the headline at the top of the
         // content, at the size a subject deserves. Repeating it in the bar,
         // truncated to a column's width, says the same thing twice and worse.
@@ -173,16 +208,46 @@ public struct ThreadReaderView: View {
         // the count does not know about.
         .onChange(of: loader.messages) { _, messages in
             find.update(messages: messages)
+            markDisplayedAsRead()
+        }
+        // Expanding a message that is already on screen is a read the instant
+        // it happens; without this the write waits for the next scroll, and on
+        // a short thread there may never be one.
+        .onChange(of: expanded) { _, _ in markDisplayedAsRead() }
+        .sheet(item: $sourceMessage) { message in
+            MessageSourceSheet(
+                message: message, blobs: blobs, downloadContext: downloadContext)
         }
         .task {
             await loader.load()
             expandNewest()
-
-            // Only after the thread has actually been shown. Marking mail
-            // read because a row scrolled past in a list is how a client
-            // loses someone's place.
-            await loader.markRead()
         }
+        // Published for the scene rather than for this view's focus: the menu
+        // bar has to be live while the caret is in the find bar or nowhere at
+        // all. See ``MailMessageCommands``.
+        .focusedSceneValue(\.mailMessageCommands, messageCommands)
+        // Handoff, and nothing else — see ``describeActivity(_:)``. Active only
+        // once there is a conversation to hand off; an activity advertised over
+        // an empty reader offers the other device a blank screen.
+        .userActivity(
+            Self.readingActivityType,
+            isActive: loader.messages.isEmpty == false,
+            describeActivity)
+    }
+
+    /// Marks read exactly the messages that are expanded *and* on screen.
+    ///
+    /// Replaces a single whole-thread write on appear. That version cleared the
+    /// unread state of every message in the conversation the moment it opened,
+    /// so reading the newest reply of a forty-message thread marked
+    /// thirty-nine unseen messages read everywhere the account is signed in.
+    private func markDisplayedAsRead() {
+        let claimed = receipts.claim(
+            messages: loader.messages, expanded: expanded, visible: visibleMessages)
+
+        guard claimed.isEmpty == false else { return }
+
+        Task { await loader.markRead(emailIDs: claimed) }
     }
 
     /// One message, as its own card.
@@ -190,6 +255,7 @@ public struct ThreadReaderView: View {
     /// Its own function rather than inline in the `ForEach`: with the find's
     /// two extra arguments the closure stopped type-checking in reasonable
     /// time, and the compiler said so.
+    @ViewBuilder
     private func row(for message: MessageSnapshot, with scroller: ScrollViewProxy) -> some View {
         MessageView(
             message: message,
@@ -198,11 +264,13 @@ public struct ThreadReaderView: View {
             wasRemoteContentBlocked: blockedRemoteContent.contains(message.id),
             blobs: blobs,
             downloadContext: downloadContext,
+            isDeviceOffline: sync.isDeviceOffline,
             onToggle: { toggle(message) },
             onAllowRemoteContent: { allowRemoteContent(from: message) },
             onRemoteContentBlocked: { blockedRemoteContent.insert(message.id) },
             onPreview: { previewedAttachment = $0 },
             onCompose: { composing = $0 },
+            onShowSource: { sourceMessage = message },
             find: isFinding ? find : nil,
             onCurrentMatchPositioned: { fraction in
                 settle(on: message, at: fraction, with: scroller)
@@ -216,6 +284,18 @@ public struct ThreadReaderView: View {
         // whenever a sender is trusted, which is exactly what a scroll target
         // must not do.
         .id(message.id)
+        // A low threshold on purpose: a card taller than the window is never
+        // more than a fraction visible, and demanding half of it would mean a
+        // long message could be read end to end and still count as unseen.
+        .onScrollVisibilityChange(threshold: 0.05) { isVisible in
+            if isVisible {
+                visibleMessages.insert(message.id)
+            } else {
+                visibleMessages.remove(message.id)
+            }
+
+            markDisplayedAsRead()
+        }
     }
 
     /// The subject, at the size a subject deserves.
@@ -238,14 +318,16 @@ public struct ThreadReaderView: View {
                         if let snoozedUntil = loader.snoozedUntil {
                             chip(
                                 SnoozeMenu.badge(for: snoozedUntil), systemImage: "clock",
-                                tint: .accentColor)
+                                tint: theme.accentColor(in: colorScheme))
                         }
 
                         ForEach(loader.labels) { label in
                             chip(
                                 label.name,
                                 systemImage: label.role == nil ? "tag.fill" : "tray.fill",
-                                tint: MailboxSidebarView.tint(for: label.role)
+                                tint: MailboxSidebarView.tint(
+                                    for: label.role,
+                                    accent: theme.accentColor(in: colorScheme))
                                     ?? AvatarPalette.color(
                                         for: label.labelID?.rawValue ?? label.name)
                             )
@@ -318,15 +400,17 @@ public struct ThreadReaderView: View {
             }
             .buttonStyle(.plain)
             .padding(.leading, 16)
-            // Room for the compose button, which floats over this same corner
-            // on a wide layout. Sized to it rather than guessed, so the two
-            // read as one row of controls instead of a collision.
-            .padding(.trailing, isSeparated ? 96 : 16)
+            // Symmetrical again. This used to reserve 96pt on a separated
+            // layout for the floating compose button that hung over this
+            // corner; P5 moved that button into the list column's toolbar on
+            // every layout with more than one pane, and on compact the button
+            // stands down entirely while a message is open. So on iPad the
+            // inset was holding a gap open for a control that is no longer
+            // there, and the reply bar sat 80pt short of the edge for nothing.
+            .padding(.trailing, 16)
             .padding(.bottom, 8)
         }
     }
-
-    private var isSeparated: Bool { sizeClass != .compact }
 
     /// Whether replying to everyone would reach anyone the plain reply misses.
     private func hasOtherRecipients(_ message: MessageSnapshot) -> Bool {
@@ -344,10 +428,7 @@ public struct ThreadReaderView: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button {
-                Task { await actions.archive(target) }
-                dismiss()
-            } label: {
+            Button(action: archiveThread) {
                 Label(.ui("Archive"), systemImage: "archivebox")
             }
             // Gmail's own letters throughout, so anyone arriving from it
@@ -356,10 +437,7 @@ public struct ThreadReaderView: View {
             // typing into a field.
             .keyboardShortcut("e", modifiers: [])
 
-            Button {
-                Task { await actions.trash(target) }
-                dismiss()
-            } label: {
+            Button(action: trashThread) {
                 Label(.ui("Trash"), systemImage: "trash")
             }
             // Not Gmail's "#": it needs shift on most layouts, so the plain
@@ -390,9 +468,7 @@ public struct ThreadReaderView: View {
                     Label(.ui("Report spam"), systemImage: "exclamationmark.shield")
                 }
 
-                Button {
-                    isPickingLabels = true
-                } label: {
+                Button(action: pickLabels) {
                     Label(.ui("Labels"), systemImage: "tag")
                 }
                 .keyboardShortcut("l", modifiers: [])
@@ -420,24 +496,163 @@ public struct ThreadReaderView: View {
                     Label(.ui("Snooze"), systemImage: "clock")
                 }
 
-                Button {
-                    Task { await actions.setSeen(false, target) }
-                    dismiss()
-                } label: {
+                Button(action: markUnread) {
                     Label(.ui("Mark as unread"), systemImage: "envelope.badge")
                 }
                 .keyboardShortcut("u", modifiers: [])
 
-                Button {
-                    Task { await actions.setFlagged(isFlagged == false, target) }
-                } label: {
-                    Label(isFlagged ? "Remove star" : "Star", systemImage: "star")
+                Button(action: toggleStar) {
+                    Label(
+                        isFlagged ? .ui("Remove star") : .ui("Star"),
+                        systemImage: "star")
                 }
                 .keyboardShortcut("s", modifiers: [])
+
+                // The visible route to P6's second window. Absent rather than
+                // disabled where the system cannot open one at all — an
+                // iPhone, or an iPad with multitasking switched off.
+                if supportsMultipleWindows {
+                    Button(action: openInNewWindow) {
+                        Label(.ui("Open in new window"), systemImage: "macwindow.on.rectangle")
+                    }
+                }
             } label: {
                 Label(.ui("More"), systemImage: "ellipsis.circle")
             }
         }
+    }
+
+    // MARK: - The actions, named once
+
+    /// Each of these is called by a toolbar or More-menu button *and* by the
+    /// matching ⌘ menu item, which is the whole point of naming them: a menu
+    /// that re-typed `actions.archive(target)` followed by `dismiss()` would be
+    /// a second implementation, and the day one of them stopped dismissing
+    /// nobody would know which.
+
+    private func archiveThread() {
+        Task { await actions.archive(target) }
+        dismiss()
+    }
+
+    private func trashThread() {
+        Task { await actions.trash(target) }
+        dismiss()
+    }
+
+    private func markUnread() {
+        Task { await actions.setSeen(false, target) }
+        dismiss()
+    }
+
+    private func toggleStar() {
+        Task { await actions.setFlagged(isFlagged == false, target) }
+    }
+
+    private func pickLabels() {
+        isPickingLabels = true
+    }
+
+    /// Opens the exact-date picker rather than a preset.
+    ///
+    /// The presets are a submenu, and a menu bar item cannot be a submenu of a
+    /// submenu without becoming unreachable by keyboard. The picker is the
+    /// route that reaches every time the presets offer and every time they do
+    /// not.
+    private func snooze() {
+        isPickingSnoozeDate = true
+    }
+
+    private func openInNewWindow() {
+        openWindow(
+            value: ThreadWindowValue(
+                accountKey: accountKey, threadID: threadID, subject: subject))
+    }
+
+    /// The reader's half of the ⌘ menu bar, published while it is on screen.
+    ///
+    /// Nil-valued closures where the action genuinely has no target — a thread
+    /// still loading has nothing to reply to — so the item is disabled rather
+    /// than a button that quietly does nothing.
+    private var messageCommands: MailMessageCommands {
+        // Moves only when something the menu depends on moves. See
+        // `MailMessageCommands.identity` — without it this value differs on
+        // every body evaluation and the ⌘ menu is rebuilt each time, which
+        // locks the interface outright.
+        let identity = [
+            threadID, accountKey, loader.messages.last?.id ?? "-",
+            isFinding ? "finding" : "-",
+        ].joined(separator: "#")
+
+        var reply: (() -> Void)?
+        var replyAll: (() -> Void)?
+        var forward: (() -> Void)?
+
+        if let newest = loader.messages.last {
+            reply = { composing = .reply(to: newest, all: false) }
+            forward = { composing = .forward(newest) }
+
+            // The same test the reply bar uses to decide whether to draw Reply
+            // all at all: on a message with one recipient it does what Reply
+            // does, and an item that duplicates its neighbour is noise.
+            if hasOtherRecipients(newest) {
+                replyAll = { composing = .reply(to: newest, all: true) }
+            }
+        }
+
+        var openInWindow: (() -> Void)?
+
+        if supportsMultipleWindows { openInWindow = { openInNewWindow() } }
+
+        return MailMessageCommands(
+            identity: identity,
+            reply: reply,
+            replyAll: replyAll,
+            forward: forward,
+            archive: { archiveThread() },
+            trash: { trashThread() },
+            markUnread: { markUnread() },
+            isFlagged: isFlagged,
+            toggleFlagged: { toggleStar() },
+            pickLabels: { pickLabels() },
+            snooze: { snooze() },
+            find: { openFind() },
+            openInNewWindow: openInWindow)
+    }
+
+    // MARK: - Handoff
+
+    /// The activity type for "reading this conversation".
+    ///
+    /// Declared in `App/Info.plist` under `NSUserActivityTypes` as well;
+    /// without that entry the system drops the activity silently and Handoff
+    /// simply never appears on the other device, with nothing logged.
+    public static let readingActivityType = "de.plmail.reading-thread"
+
+    /// Ids, and only ids.
+    ///
+    /// A Handoff payload crosses to a device whose cache is not this one, so
+    /// carrying anything but identifiers would be carrying a copy of the mail
+    /// through iCloud to a client that can fetch it from the server it already
+    /// has a credential for.
+    public static let activityAccountKey = "accountKey"
+    public static let activityThreadKey = "threadID"
+
+    private func describeActivity(_ activity: NSUserActivity) {
+        activity.title = subject
+        activity.isEligibleForHandoff = true
+        // **Not** eligible for search. Spotlight is indexed deliberately, from
+        // the cache, by `App/MailSpotlightIndex.swift`; letting an activity
+        // index the same conversation too would put a second, thinner copy of
+        // it into system search that nothing ever removes.
+        activity.isEligibleForSearch = false
+        activity.isEligibleForPublicIndexing = false
+        activity.userInfo = [
+            Self.activityAccountKey: accountKey,
+            Self.activityThreadKey: threadID,
+        ]
+        activity.requiredUserInfoKeys = [Self.activityAccountKey, Self.activityThreadKey]
+        activity.targetContentIdentifier = "\(accountKey)#\(threadID)"
     }
 
     private var isFlagged: Bool {
@@ -457,7 +672,7 @@ public struct ThreadReaderView: View {
 
     private func openFind() {
         find.update(messages: loader.messages)
-        withAnimation(.snappy(duration: 0.2)) { isFinding = true }
+        withAnimation(standardAnimation) { isFinding = true }
     }
 
     /// Closing empties the query as well as hiding the bar. A find bar that
@@ -465,7 +680,7 @@ public struct ThreadReaderView: View {
     /// and here it would also leave every message forced open on its quoted
     /// history.
     private func closeFind() {
-        withAnimation(.snappy(duration: 0.2)) {
+        withAnimation(standardAnimation) {
             isFinding = false
             find.query = ""
         }
@@ -487,7 +702,7 @@ public struct ThreadReaderView: View {
         // A match inside a collapsed message is a match nobody can see.
         expanded.insert(match.messageID)
 
-        withAnimation(.snappy(duration: 0.25)) {
+        withAnimation(slowAnimation) {
             scroller.scrollTo(match.messageID, anchor: .top)
         }
     }
@@ -504,7 +719,7 @@ public struct ThreadReaderView: View {
     ) {
         guard find.current?.messageID == message.id else { return }
 
-        withAnimation(.snappy(duration: 0.2)) {
+        withAnimation(standardAnimation) {
             scroller.scrollTo(
                 Self.bodyAnchor(message.id),
                 anchor: UnitPoint(x: 0, y: min(max(fraction, 0), 1)))
@@ -530,7 +745,7 @@ public struct ThreadReaderView: View {
 
     private var earlierMessagesBar: some View {
         Button {
-            withAnimation(.snappy(duration: 0.25)) { showsEarlierMessages = true }
+            withAnimation(slowAnimation) { showsEarlierMessages = true }
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "ellipsis.circle.fill")
@@ -622,13 +837,30 @@ struct DownloadContext {
     }
 
     func file(for attachment: AttachmentSnapshot, blobs: BlobCache) async throws -> URL {
+        try await file(
+            blobID: attachment.blobID,
+            name: attachment.name,
+            type: attachment.type,
+            blobs: blobs)
+    }
+
+    /// Any blob by id, not only an attachment.
+    ///
+    /// The message's own `blobId` is a blob like any other, but it has no
+    /// ``AttachmentSnapshot`` to hang off. Routing both through here rather
+    /// than giving the source sheet its own download keeps one cache, one
+    /// in-flight table and one eviction policy — two would race for the same
+    /// file on disk.
+    func file(
+        blobID: String, name: String?, type: String, blobs: BlobCache
+    ) async throws -> URL {
         let session = try await client.session()
 
         return try await blobs.file(
-            blobID: BlobID(attachment.blobID),
+            blobID: BlobID(blobID),
             accountID: accountID,
-            name: attachment.name,
-            type: attachment.type,
+            name: name,
+            type: type,
             downloadURL: session.downloadURL,
             credential: credential
         )

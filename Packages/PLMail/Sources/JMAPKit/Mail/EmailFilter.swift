@@ -64,6 +64,14 @@ public indirect enum EmailFilter: Hashable, Sendable {
 
     /// Substring over the canonicalised `list-id` header.
     case listID(String)
+
+    /// The conversation's inbox category — a plMail extension, not RFC 8621.
+    ///
+    /// Typed rather than a raw string because the server answers an unknown
+    /// value with `invalidArguments` and the whole vocabulary in the message,
+    /// which is a round trip spent learning something the client can know at
+    /// compile time.
+    case threadCategory(MessageCategory)
 }
 
 extension EmailFilter: Encodable {
@@ -123,6 +131,8 @@ extension EmailFilter: Encodable {
             try encodeCondition("filename", value, to: encoder)
         case .listID(let value):
             try encodeCondition("listId", value, to: encoder)
+        case .threadCategory(let category):
+            try encodeCondition("threadCategory", category.rawValue, to: encoder)
         }
     }
 

@@ -23,6 +23,13 @@ struct SearchFilterChipsView: View {
     /// The current field contents, which the edits are applied to.
     let raw: String
 
+    /// `.tint(_:)` takes a concrete style, so the accent is read here rather
+    /// than resolved at the call site the way ``ThemeAccent`` does elsewhere.
+    @Environment(\.theme) private var theme
+    /// Passed to ``ResolvedTheme/accentColor(in:)`` per draw. One resolved
+    /// theme serves both appearances, so the scheme cannot be baked into it.
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
         ScrollView(.horizontal) {
             HStack(spacing: 6) {
@@ -39,7 +46,7 @@ struct SearchFilterChipsView: View {
                     .buttonBorderShape(.capsule)
                     // Tinted only when on. A row of chips that are all
                     // prominent gives no signal about which are doing anything.
-                    .tint(isOn ? .accentColor : .secondary)
+                    .tint(isOn ? theme.accentColor(in: colorScheme) : .secondary)
                     .accessibilityAddTraits(isOn ? [.isSelected] : [])
                 }
 
@@ -84,7 +91,7 @@ struct SearchFilterChipsView: View {
         }
         .buttonStyle(.bordered)
         .buttonBorderShape(.capsule)
-        .tint(active == nil ? .secondary : .accentColor)
+        .tint(active == nil ? .secondary : theme.accentColor(in: colorScheme))
     }
 }
 

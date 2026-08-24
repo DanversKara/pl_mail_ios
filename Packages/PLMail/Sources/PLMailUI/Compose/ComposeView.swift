@@ -25,6 +25,29 @@ public struct ComposeView: View {
     @State private var isPickingPhotos = false
     @State private var isPickingSendTime = false
     @State private var attachmentError: String?
+    @State private var isConfirmingClose = false
+    /// The recipient fragment the privacy question was raised over, so saying
+    /// yes fills the list rather than needing another keystroke.
+    @State private var askingFragment = ""
+
+    /// A `mailto:` link that arrived while this composer already had something
+    /// in it.
+    ///
+    /// Held rather than applied, which is the whole guard: a link from a web
+    /// page must not be able to overwrite a message somebody is part way
+    /// through writing. Nothing happens until the dialog this drives has been
+    /// answered.
+    @State private var arrivingMailto: MailtoRequest?
+
+    /// The link to open a **second** composer on, once this one has finished
+    /// dismissing.
+    @State private var relaunchMailto: MailtoRequest?
+
+    /// Whether the link carried more than ``Mailto`` was willing to use.
+    ///
+    /// Said out loud. A body silently cut at 16 KB teaches somebody that this
+    /// app loses text.
+    @State private var mailtoWasTrimmed = false
 
     /// Filled in by Shortcuts or Siri, applied once the model exists.
     private let prefill: (recipient: String?, subject: String?)?
@@ -67,7 +90,7 @@ public struct ComposeView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(.ui("Cancel")) { dismiss() }
+                    Button(.ui("Cancel")) { cancel() }
                         // What Escape does everywhere else on the platform.
                         .keyboardShortcut(.cancelAction)
                 }
@@ -148,28 +171,221 @@ public struct ComposeView: View {
             .alert(
                 Text(.ui("Couldn't attach that")),
                 isPresented: .init(
-                    get: { attachmentError != nil },
-                    set: { if $0 == false { attachmentError = nil } })
+                    get: { attachmentError != nil || model.attachmentRefusal != nil },
+                    set: {
+                        if $0 == false {
+                            attachmentError = nil
+                            model.clearAttachmentRefusal()
+                        }
+                    })
             ) {
-                Button(.ui("OK"), role: .cancel) { attachmentError = nil }
+                Button(.ui("OK"), role: .cancel) {
+                    attachmentError = nil
+                    model.clearAttachmentRefusal()
+                }
             } message: {
-                Text(attachmentError ?? "")
+                Text(attachmentError ?? model.attachmentRefusal ?? "")
+            }
+            // Its own alert rather than sharing the attachment one: the title
+            // has to name what was refused, and "Couldn't attach that" over a
+            // From swap reads as a bug in the app.
+            .alert(
+                Text(.ui("Couldn't change the sending address")),
+                isPresented: .init(
+                    get: { model.identityRefusal != nil },
+                    set: { if $0 == false { model.clearIdentityRefusal() } })
+            ) {
+                Button(.ui("OK"), role: .cancel) { model.clearIdentityRefusal() }
+            } message: {
+                Text(model.identityRefusal ?? "")
+            }
+            // The draft was rewritten on another device. Asked rather than
+            // resolved: merging two edits to one letter is a guess, and
+            // discarding the newer of them silently is the bug `ifInState`
+            // exists to prevent. Both answers keep every character on screen —
+            // one replaces the other copy, the other leaves it alone — so
+            // nothing here can cost the user their typing.
+            //
+            // An alert, not a `.confirmationDialog`, for the reason spelled out
+            // below the Cancel question: a dialog presented as a popover drops
+            // its `.cancel` button, and a question with one visible answer is
+            // not a question.
+            .alert(
+                Text(.ui("This draft changed somewhere else")),
+                isPresented: .init(
+                    get: { model.isDraftConflicted },
+                    // Read-only from the view's side: the model clears the flag
+                    // itself when the user picks, and a setter that cleared it
+                    // on dismissal would turn swiping the alert away into a
+                    // silent decision.
+                    set: { _ in })
+            ) {
+                Button(.ui("Keep what I've written")) { model.overwriteDraftElsewhere() }
+
+                Button(.ui("Close without saving"), role: .destructive) {
+                    model.closeKeepingRemoteDraft()
+                }
+            } message: {
+                Text(
+                    .ui(
+                        "Another device saved a newer version. Nothing you have typed has been touched — keep it and it replaces theirs, or close the composer to leave theirs alone."
+                    ))
+            }
+            // Mail's own arrangement, and the reason Cancel stops being a
+            // discard: everything typed is on the server within a few seconds
+            // anyway, so the only question left is whether it should stay.
+            .confirmationDialog(
+                Text(.ui("This message hasn't been sent")),
+                isPresented: $isConfirmingClose,
+                titleVisibility: .visible
+            ) {
+                Button(.ui("Delete Draft"), role: .destructive) {
+                    Task { await model.discardDraft() }
+                }
+
+                Button(.ui("Save Draft")) {
+                    Task { await model.saveAndClose() }
+                }
+
+                Button(.ui("Cancel"), role: .cancel) {}
+            }
+            // The link, when one arrives over a message already being written.
+            // Asked because the alternative — applying it — is the phishing
+            // shape, where a page the user merely visited rewrites what they
+            // were in the middle of.
+            //
+            // **An alert rather than a `.confirmationDialog`**, unlike the
+            // Cancel question above it. A confirmation dialog drops its
+            // `.cancel` button whenever the system presents it as a popover,
+            // which is what happened on the first device this ran on: the
+            // question appeared with one button and the way to decline it was
+            // to tap outside. A question raised by something *outside* the app
+            // has to show both answers.
+            .alert(
+                Text(.ui("Open this link in a new message?")),
+                isPresented: Binding(
+                    get: { arrivingMailto != nil },
+                    set: { if $0 == false { arrivingMailto = nil } }),
+                presenting: arrivingMailto
+            ) { mailto in
+                Button(.ui("Save Draft and Continue")) {
+                    relaunchMailto = mailto
+                    arrivingMailto = nil
+
+                    Task { await model.saveAndClose() }
+                }
+
+                Button(.ui("Keep Writing"), role: .cancel) { arrivingMailto = nil }
+            } message: { mailto in
+                Text(.ui("That link writes to \(Self.naming(mailto.to))."))
+            }
+            .alert(
+                Text(.ui("Some of that link was too long to use")),
+                isPresented: $mailtoWasTrimmed
+            ) {
+                Button(.ui("OK"), role: .cancel) { mailtoWasTrimmed = false }
+            } message: {
+                Text(.ui("The composer has as much of it as it could take."))
             }
             .task {
                 // Before `load`, which fills in identities and a signature —
                 // neither of which should overwrite what was dictated.
-                if let prefill {
+                //
+                // A link is a superset of what Siri hands over, so the two are
+                // exclusive: applying both would set `to` twice, once from the
+                // joined field and once from the tokens it was joined from.
+                if let mailto = IntentRouter.shared.takeMailto() {
+                    apply(mailto)
+                } else if let prefill {
                     if let recipient = prefill.recipient { model.to = recipient }
                     if let subject = prefill.subject { model.subject = subject }
                 }
 
                 await model.load()
             }
+            // A link tapped while this composer is already on screen. The shell
+            // re-uses the sheet rather than replacing it, so `.task` above does
+            // not run again — without this the payload would sit in the router
+            // until some unrelated composer, opened by hand hours later, filled
+            // itself in from it.
+            .onChange(of: IntentRouter.shared.mailto) { _, arrived in
+                guard arrived != nil, let mailto = IntentRouter.shared.takeMailto() else { return }
+
+                // Nothing to lose: an empty composer takes the link outright.
+                guard model.isEmpty == false else {
+                    apply(mailto)
+
+                    return
+                }
+
+                arrivingMailto = mailto
+            }
             .onChange(of: model.status) { _, status in
-                if status == .sent { dismiss() }
+                if status == .sent || status == .closed {
+                    dismiss()
+                    relaunch()
+                }
             }
         }
-        .interactiveDismissDisabled(model.isSending)
+        // A swipe-down on an empty composer just closes; one on a message
+        // somebody has written has to go through the same question Cancel
+        // asks, or the gesture becomes the way drafts are lost.
+        .interactiveDismissDisabled(model.isSending || model.needsCloseConfirmation)
+    }
+
+    /// Names a link's recipients for a dialog.
+    ///
+    /// Bare addresses, not the `Name <address>` the field holds. A
+    /// `LocalizedStringResource` interpolation is parsed as Markdown, in which
+    /// `<m@x.example>` is an autolink — the angle brackets vanish and the
+    /// sentence reads as though the display name and the address were two
+    /// separate recipients.
+    private static func naming(_ tokens: [String]) -> String {
+        tokens.map { RecipientParsing.parse($0)?.email ?? $0 }.joined(separator: ", ")
+    }
+
+    /// Puts a parsed link into this composer.
+    ///
+    /// Cc and Bcc are opened whenever the link filled either. A link that Ccs
+    /// somebody behind a collapsed disclosure sends mail to a person the sender
+    /// never saw named, which is the one failure in this file that reaches
+    /// somebody else's inbox.
+    private func apply(_ mailto: MailtoRequest) {
+        model.apply(mailto)
+
+        if mailto.needsMoreRecipients { showsMoreRecipients = true }
+        if mailto.wasTrimmed { mailtoWasTrimmed = true }
+    }
+
+    /// Re-asks for a composer on a link that arrived while this one was open.
+    ///
+    /// After a beat, and the delay is the point. The shell opens the composer
+    /// by setting its sheet item to `.new`, which it still is until this sheet
+    /// has finished dismissing — asking again immediately changes nothing and
+    /// the second composer never appears. Deliberately a free `Task` rather
+    /// than `.task`, which would be cancelled by the dismissal that has to
+    /// happen first.
+    private func relaunch() {
+        guard let mailto = relaunchMailto else { return }
+
+        relaunchMailto = nil
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(600))
+
+            IntentRouter.shared.request(mailto: mailto)
+        }
+    }
+
+    /// Cancel, which is now a question rather than a discard.
+    private func cancel() {
+        guard model.needsCloseConfirmation else {
+            dismiss()
+
+            return
+        }
+
+        isConfirmingClose = true
     }
 
     /// Reads each picked file inside its security scope, which is the only
@@ -234,27 +450,125 @@ public struct ComposeView: View {
             // Always shown, even with one identity: sending as the wrong
             // alias is invisible until someone replies to the wrong place.
             if model.identities.count > 1 {
-                Picker(.ui("From"), selection: $model.selectedIdentity) {
+                Picker(.ui("From"), selection: identitySelection) {
                     ForEach(model.identities) { identity in
-                        Text(identity.displayName).tag(Optional(identity))
+                        // The account name only where it disambiguates. On the
+                        // common single-account setup it is noise; across
+                        // accounts it is the difference between two identical
+                        // display names fronting two different mailboxes.
+                        if spansAccounts {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(identity.displayName)
+                                Text(identity.accountName)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .tag(Optional(identity))
+                        } else {
+                            Text(identity.displayName).tag(Optional(identity))
+                        }
                     }
                 }
             } else if let identity = model.selectedIdentity {
                 LabeledContent(.ui("From"), value: identity.displayName)
             }
 
-            RecipientField(label: .ui("To"), text: $model.to, model: model)
-                .focused($focus, equals: .to)
+            RecipientField(
+                label: .ui("To"), text: $model.to, model: model,
+                askingFragment: $askingFragment
+            )
+            .focused($focus, equals: .to)
 
             if showsMoreRecipients {
-                RecipientField(label: .ui("Cc"), text: $model.cc, model: model)
-                    .focused($focus, equals: .cc)
-                RecipientField(label: .ui("Bcc"), text: $model.bcc, model: model)
-                    .focused($focus, equals: .bcc)
+                RecipientField(
+                    label: .ui("Cc"), text: $model.cc, model: model,
+                    askingFragment: $askingFragment
+                )
+                .focused($focus, equals: .cc)
+                RecipientField(
+                    label: .ui("Bcc"), text: $model.bcc, model: model,
+                    askingFragment: $askingFragment
+                )
+                .focused($focus, equals: .bcc)
             } else {
                 Button(.ui("Cc / Bcc")) { showsMoreRecipients = true }
                     .font(.footnote)
             }
+        } footer: {
+            serverSuggestionChoice
+
+            // Named rather than dropped. A typed address without an `@` used
+            // to be filtered out at send with nothing said, so the composer
+            // listed five people and the message went to four.
+            if model.invalidRecipients.isEmpty == false {
+                Label {
+                    Text(.ui("Not an address: \(model.invalidRecipients.joined(separator: ", "))"))
+                } icon: {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                }
+                .foregroundStyle(.orange)
+                .accessibilityElement(children: .combine)
+            }
+        }
+    }
+
+    /// A binding that routes through ``ComposeModel/selectIdentity(_:)``.
+    ///
+    /// Not a plain `$model.selectedIdentity`: choosing an address on another
+    /// account has to abandon the draft written under the old one and re-upload
+    /// the files, and a settable property would let a picker do half of that.
+    private var identitySelection: Binding<ComposeModel.SendingIdentity?> {
+        Binding(get: { model.selectedIdentity }, set: { model.selectIdentity($0) })
+    }
+
+    /// Whether the From list crosses more than one connected account.
+    private var spansAccounts: Bool {
+        Set(model.identities.map(\.accountKey)).count > 1
+    }
+
+    /// The one question this app asks about sending anything anywhere.
+    ///
+    /// Asked here, under the field somebody is typing in, rather than buried in
+    /// a settings screen: it is a question about *this* keystroke, and the only
+    /// moment it can be answered with the context to answer it is while the
+    /// suggestion list would be being filled.
+    ///
+    /// Stated rather than glossed. Today recipient suggestions never leave the
+    /// device — that is what the app's own contacts permission string promises —
+    /// and saying yes sends a prefix of what is being typed to the user's
+    /// server. It is their server, which is the premise of the whole product,
+    /// and it is still a different promise from the one already made.
+    @ViewBuilder
+    private var serverSuggestionChoice: some View {
+        if model.isAskingAboutServerSuggestions {
+            VStack(alignment: .leading, spacing: 8) {
+                Label {
+                    Text(
+                        .ui(
+                            "Your server can rank suggestions by who you actually write to. That means sending what you type here to your server as you type it — it already holds these addresses, harvested from your own mail, but not what you type or when."
+                        ))
+                } icon: {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                }
+                .font(.caption)
+
+                HStack(spacing: 12) {
+                    Button(.ui("Ask my server")) {
+                        model.answerServerSuggestions(allowed: true, for: askingFragment)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button(.ui("Keep it on this device")) {
+                        model.answerServerSuggestions(allowed: false)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .font(.caption)
+            }
+            .padding(.vertical, 4)
+            .accessibilityElement(children: .contain)
         }
     }
 
@@ -347,35 +661,38 @@ public struct ComposeView: View {
             } header: {
                 Text(.ui("Attachments"))
             } footer: {
-                // Stated because it is the number that gets a send refused,
-                // and the ceiling is the server's rather than the app's.
-                Text(.ui("\(model.attachmentsSize.formatted(.byteCount(style: .file))) total"))
+                // Both numbers, because the ceiling is the server's rather
+                // than the app's and the total on its own says nothing about
+                // how much room is left.
+                Text(
+                    .ui(
+                        "\(model.attachmentsSize.formatted(.byteCount(style: .file))) of \(model.limits.maxTotalBytes.formatted(.byteCount(style: .file)))"
+                    ))
             }
         }
     }
 
-    /// The recall window.
+    /// What the composer is doing at the bottom of the sheet.
     ///
-    /// The server deliberately does not apply the web UI's grace period to
-    /// JMAP submissions — a JMAP client asked to send *now* — so this
-    /// window is the app's own, and the message genuinely has not left yet.
+    /// **No countdown, and no Undo here.** The recall window is a hold the
+    /// server applies to the submission, so the undo lives in the Outbox where
+    /// it still works after this sheet has gone — which is the whole point:
+    /// once the old five-second bar dismissed, there was no undo at all.
     @ViewBuilder
     private var sendingBar: some View {
         switch model.status {
-        case .sending(let remaining):
-            HStack {
+        case .queuing:
+            HStack(spacing: 8) {
                 ProgressView()
-                Text(.ui("Sending in \(remaining)…"))
+                Text(.ui("Sending…"))
                     .font(.subheadline)
 
-                Spacer()
-
-                Button(.ui("Undo"), action: model.undoSend)
-                    .fontWeight(.semibold)
+                Spacer(minLength: 0)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .background(.bar)
+            .accessibilityElement(children: .combine)
 
         case .failed(let message):
             HStack(spacing: 8) {
@@ -388,9 +705,51 @@ public struct ComposeView: View {
             .padding(.vertical, 12)
             .background(.bar)
 
-        case .editing, .sent:
+        case .editing:
+            saveIndicator
+
+        case .sent, .closed:
             EmptyView()
         }
+    }
+
+    /// Where the text currently is.
+    ///
+    /// Quiet on purpose — this is not an action, it is the answer to "have I
+    /// lost this?". Nothing is shown until there is something worth saving,
+    /// because a composer that says "Saved" before anything is typed teaches
+    /// people to stop reading it.
+    @ViewBuilder
+    private var saveIndicator: some View {
+        switch model.saveState {
+        case .idle:
+            EmptyView()
+
+        case .saving:
+            saveRow(Text(.ui("Saving…")), systemImage: "arrow.up.circle", tint: .secondary)
+
+        case .saved:
+            saveRow(Text(.ui("Saved to Drafts")), systemImage: "checkmark.circle", tint: .secondary)
+
+        case .failed(let message):
+            saveRow(Text(message), systemImage: "exclamationmark.circle", tint: .orange)
+        }
+    }
+
+    private func saveRow(
+        _ label: Text, systemImage: String, tint: Color
+    ) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: systemImage)
+            label
+            Spacer(minLength: 0)
+        }
+        .font(.footnote)
+        .foregroundStyle(tint)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(.bar)
+        .accessibilityElement(children: .combine)
     }
 }
 
@@ -399,6 +758,7 @@ private struct RecipientField: View {
     let label: LocalizedStringResource
     @Binding var text: String
     let model: ComposeModel
+    @Binding var askingFragment: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -416,6 +776,7 @@ private struct RecipientField: View {
             // The address book is consulted for what is being typed now, not
             // loaded up front — see `lookUpContacts`.
             .onChange(of: current) { _, fragment in
+                askingFragment = fragment
                 model.lookUpContacts(for: fragment)
             }
 

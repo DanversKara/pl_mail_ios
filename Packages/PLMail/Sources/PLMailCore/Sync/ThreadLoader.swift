@@ -125,21 +125,27 @@ public final class ThreadLoader {
 
     // MARK: - Read state
 
-    /// Marks the thread read.
+    /// Marks the messages the reader says have been displayed read.
     ///
-    /// Called once the thread has actually been shown, never on prefetch —
-    /// marking mail read because it scrolled past in a list is how a client
-    /// loses someone's place.
+    /// Per message, not per thread. The previous version collected every
+    /// unread message in the conversation and marked the lot the moment the
+    /// thread appeared, so opening a forty-message thread to read the newest
+    /// reply cleared the unread state of thirty-nine messages nobody saw —
+    /// on this device and on every other one, irreversibly from the user's
+    /// side. ``ReadReceipts`` decides which ids arrive here; this method only
+    /// writes them.
     ///
-    /// This is the one write v1 makes. Applied locally first so the row
-    /// updates immediately, then sent; the server routes it through the same
-    /// propagator the web UI uses, so it reaches Gmail/IMAP/Graph identically.
-    public func markRead() async {
-        let unread = messages.filter { $0.isSeen == false }.map(\.emailID)
+    /// Applied locally first so the card updates immediately, then sent; the
+    /// server routes it through the same propagator the web UI uses, so it
+    /// reaches Gmail/IMAP/Graph identically.
+    ///
+    /// - Parameter emailIDs: Already filtered to unread, already de-duplicated.
+    ///   A caller passing an empty list costs nothing, which is what lets the
+    ///   reader call this on every scroll without thinking about it.
+    public func markRead(emailIDs: [String]) async {
+        guard emailIDs.isEmpty == false else { return }
 
-        guard unread.isEmpty == false else { return }
-
-        try? await store.setSeen(true, emailIDs: unread, accountKey: accountKey)
+        try? await store.setSeen(true, emailIDs: emailIDs, accountKey: accountKey)
         await readCache()
 
         do {
@@ -147,7 +153,7 @@ public final class ThreadLoader {
             builder.add(
                 EmailSetKeywords(
                     accountID: accountID,
-                    ids: unread.map { EmailID(rawValue: $0) },
+                    ids: emailIDs.map { EmailID(rawValue: $0) },
                     isSeen: true
                 )
             )

@@ -5,10 +5,10 @@ import SwiftUI
 
 /// How the app read the query, shown back to the user.
 ///
-/// Worth surfacing because the parser drops things silently — `is:bogus`
-/// and `after:whenever` narrow nothing and search for nothing. Without this
-/// the only signal is results that look wrong for no visible reason; with
-/// it, the token simply isn't there.
+/// Worth surfacing because an operator the parser could not honour — `is:bogus`,
+/// `after:whenever`, `in:nowhere` — is searched for as plain words instead.
+/// Without this the only signal is a result set that looks wrong for no visible
+/// reason; with it, the token simply isn't there and the words are.
 struct SearchTokensView: View {
     let query: ParsedSearchQuery
 
@@ -38,9 +38,11 @@ struct SearchTokensView: View {
 
         if let from = query.from, from.isEmpty == false { tokens.append("from: \(from)") }
         if let to = query.to, to.isEmpty == false { tokens.append("to: \(to)") }
+        if let cc = query.cc, cc.isEmpty == false { tokens.append("cc: \(cc)") }
         if let subject = query.subject, subject.isEmpty == false {
             tokens.append("subject: \(subject)")
         }
+        if let label = query.label, label.isEmpty == false { tokens.append("label: \(label)") }
         if query.hasAttachment == true { tokens.append("has attachment") }
         if query.isUnread == true { tokens.append("unread") }
         if query.isRead == true { tokens.append("read") }

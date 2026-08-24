@@ -26,6 +26,23 @@ import UIKit
 /// release stops producing such a view the loop simply matches nothing and the
 /// rule comes back. Nothing about correctness depends on it.
 struct SplitSeparatorHider: UIViewRepresentable {
+    /// Remembers what has already been applied.
+    ///
+    /// **Without this the view is an infinite loop.** `updateUIView` sets
+    /// `backgroundColor` on the split view, which invalidates traits, which
+    /// makes SwiftUI run another update pass, which sets it again — one full
+    /// hierarchy walk and one trait cascade per run-loop turn, for as long as
+    /// the app is open. Instruments showed `-[UIView _wrappedProcessTraitChanges:]`
+    /// as the single hottest frame in the process, above the run loop itself,
+    /// with the interface unusable. Applying only on an actual change ends it.
+    @MainActor
+    final class Coordinator {
+        var applied: UIColor?
+        var isScheduled = false
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
     func makeUIView(context: Context) -> UIView {
         let view = UIView()
         view.isUserInteractionEnabled = false
@@ -35,18 +52,42 @@ struct SplitSeparatorHider: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UIView, context: Context) {
+        // Resolved on this pass rather than inside the async block: `Context`
+        // is not `Sendable`, and reading the environment a runloop later would
+        // read whatever it holds then rather than what this update was for.
+        let gutter = UIColor(
+            context.environment.theme
+                .palette(for: context.environment.colorScheme)
+                .window.color)
+
+        // Nothing to do unless the colour actually moved. This is the guard
+        // that stops the loop described on `Coordinator`.
+        let coordinator = context.coordinator
+
+        guard coordinator.applied != gutter, coordinator.isScheduled == false else { return }
+
+        coordinator.isScheduled = true
+
         // Next runloop: on the first pass this view is not in the hierarchy
         // yet, and the split view has not laid its columns out.
         DispatchQueue.main.async {
-            guard let split = Self.splitViewController() else { return }
+            MainActor.assumeIsolated {
+                coordinator.isScheduled = false
 
-            // The separator sits exactly on the boundary between two columns,
-            // so neither column's background covers the half point it occupied
-            // — hiding it alone just swaps a grey line for a white one. The
-            // container behind has to be the gutter colour too.
-            split.view.backgroundColor = UIColor(PanelStyle.window)
+                // Not recorded as applied when the split view is not there yet,
+                // so the next update retries rather than giving up for good.
+                guard let split = Self.splitViewController() else { return }
 
-            hideHairlines(in: split.view, containerHeight: split.view.bounds.height)
+                coordinator.applied = gutter
+
+                // The separator sits exactly on the boundary between two columns,
+                // so neither column's background covers the half point it occupied
+                // — hiding it alone just swaps a grey line for a white one. The
+                // container behind has to be the gutter colour too.
+                split.view.backgroundColor = gutter
+
+                hideHairlines(in: split.view, containerHeight: split.view.bounds.height)
+            }
         }
     }
 

@@ -82,7 +82,8 @@ struct ThreadFindTests {
 
     @Test("entities decode to their character")
     func entities() {
-        #expect(ThreadFind.plainText(fromHTML: "Bell &amp; Sons &lt;quote&gt;") == "Bell & Sons <quote>")
+        let decoded = ThreadFind.plainText(fromHTML: "Bell &amp; Sons &lt;quote&gt;")
+        #expect(decoded == "Bell & Sons <quote>")
     }
 
     /// A sender who typed `&lt;` literally gets it back, rather than having it

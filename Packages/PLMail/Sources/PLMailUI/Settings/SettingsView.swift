@@ -26,6 +26,31 @@ public struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var isConfirmingSignOut = false
     @State private var appearance = AppearancePreference.shared
+    /// The app's own, handed down from the composition root.
+    ///
+    /// Nil outside one — a preview, or a test host — which is why there is a
+    /// fallback rather than a force unwrap.
+    @Environment(\.appearanceSettings) private var injectedAppearanceSettings
+
+    /// The fallback, for a tree with no composition root above it.
+    ///
+    /// **Built on ``MailSyncService/jmapClient``, never on
+    /// `connection.makeClient()`.** This screen used to mint its own client
+    /// because `MailSyncService.client` is private; a second client shares
+    /// nothing but the credential, so it single-flights its own session fetch
+    /// and carries its own `RequestGate` — a concurrency limit that has no idea
+    /// how many requests the other client already has in flight. Against a
+    /// server whose PHP worker pool is small that is the difference between a
+    /// gate and a suggestion, and it is exactly what one shared client exists
+    /// to prevent.
+    @State private var ownAppearanceSettings: AppearanceSettings
+
+    /// The injected one where there is one, so the picker writes to the same
+    /// object the root paints from and the two cannot disagree about what the
+    /// server holds.
+    private var appearanceSettings: AppearanceSettings {
+        injectedAppearanceSettings ?? ownAppearanceSettings
+    }
 
     public init(
         connection: ServerConnection,
@@ -37,6 +62,8 @@ public struct SettingsView: View {
         self.sync = sync
         self.store = store
         self.onSignOut = onSignOut
+        _ownAppearanceSettings = State(
+            wrappedValue: AppearanceSettings(client: sync.jmapClient))
     }
 
     public var body: some View {
@@ -69,13 +96,19 @@ public struct SettingsView: View {
 
                 Section {
                     NavigationLink {
-                        AppearanceView(preference: appearance)
+                        AppearanceView(preference: appearance, settings: appearanceSettings)
                     } label: {
                         LabeledContent {
                             Text(appearance.choice.title)
                         } label: {
                             Label(.ui("Appearance"), systemImage: "circle.lefthalf.filled")
                         }
+                    }
+
+                    NavigationLink {
+                        NotificationsView(sync: sync)
+                    } label: {
+                        Label(.ui("Notifications"), systemImage: "bell")
                     }
 
                     NavigationLink {

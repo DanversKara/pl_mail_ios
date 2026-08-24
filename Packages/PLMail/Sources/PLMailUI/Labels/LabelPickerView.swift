@@ -155,16 +155,32 @@ struct LabelPickerView: View {
     }
 
     private func row(for label: MailboxSnapshot) -> some View {
-        Button {
+        let hierarchy = LabelHierarchy(sync.mailboxes)
+
+        return Button {
             Task { await toggle(label) }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "tag.fill")
                     .foregroundStyle(
-                        AvatarPalette.color(for: label.labelID?.rawValue ?? label.name))
+                        LabelTint.color(
+                            for: label.color, seed: label.labelID?.rawValue ?? label.name))
 
-                Text(label.name)
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label.name)
+                        .foregroundStyle(.primary)
+
+                    // Without this, two labels called `Q1` under different
+                    // parents are two identical checkboxes and the user has no
+                    // way to tell which one they are about to apply.
+                    if let parents = hierarchy.parentPath(for: label) {
+                        Text(parents)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
 
                 Spacer(minLength: 8)
 
@@ -173,13 +189,19 @@ struct LabelPickerView: View {
                 // reads as the app having lost the label.
                 if isLoaded {
                     Image(systemName: isApplied(label) ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isApplied(label) ? Color.accentColor : .secondary)
+                        .foregroundStyle(
+                            isApplied(label)
+                                ? AnyShapeStyle(ThemeAccent())
+                                : AnyShapeStyle(HierarchicalShapeStyle.secondary)
+                        )
                         .contentTransition(.symbolEffect(.replace))
                 }
             }
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(hierarchy.spokenPath(for: label)))
         .accessibilityAddTraits(isApplied(label) ? [.isButton, .isSelected] : .isButton)
     }
 

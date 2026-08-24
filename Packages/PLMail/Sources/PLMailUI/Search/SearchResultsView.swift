@@ -53,6 +53,17 @@ struct SearchResultsView: View {
                             query: typed, onChange: { queryText = $0 }, raw: queryText)
 
                         SearchTokensView(query: typed)
+
+                        // Last, under the tokens it is explaining: a
+                        // contradiction is only legible once you can see both
+                        // tokens that make it one.
+                        SearchNoticesView(
+                            query: typed,
+                            accounts: sync.accounts,
+                            mailboxes: sync.mailboxes,
+                            raw: queryText,
+                            onChange: { queryText = $0 }
+                        )
                     }
                     .background(.bar)
                 }
@@ -75,9 +86,9 @@ struct SearchResultsView: View {
     /// web UI takes, and nobody discovers them by guessing — though by the time
     /// anyone reads this they have already been offered while typing.
     private static let help: String.LocalizationValue = """
-        Use from:, to:, subject:, has:attachment, is:unread, is:starred, \
-        in:inbox and before:/after: with a date. Anything else is searched \
-        as text, and quoted words are searched as a phrase.
+        Use from:, to:, cc:, subject:, label:, has:attachment, is:unread, \
+        is:starred, in:inbox and before:/after: with a date. Anything else is \
+        searched as text, and quoted words are searched as a phrase.
         """
 }
 

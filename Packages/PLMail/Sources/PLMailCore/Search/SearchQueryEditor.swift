@@ -111,11 +111,7 @@ public enum SearchQueryEditor {
         // results at all — so the chip would look broken. Dropping the
         // conflicting operator is an edit to visible text, not a hidden
         // override: it disappears from the field where the person can see it.
-        if chip == .unread {
-            edited = removingTokens(in: edited) { name, value in
-                name == "is" && value.lowercased() == "read"
-            }
-        }
+        if chip == .unread { edited = removingRead(in: edited) }
 
         return appending(chip.token, to: edited)
     }
@@ -134,6 +130,18 @@ public enum SearchQueryEditor {
                 // clear a `has:attachments` it had itself lit up for.
                 name == "has" && ["attachment", "attachments"].contains(value.lowercased())
             }
+        }
+    }
+
+    /// The query with every `is:read` taken out.
+    ///
+    /// The escape from `is:read is:unread`, which both clients answer with
+    /// nothing at all. Written as an edit to the visible text — the same way
+    /// the unread chip resolves the same conflict — so the field, the tokens
+    /// and the results still agree afterwards.
+    public static func removingRead(in raw: String) -> String {
+        removingTokens(in: raw) { name, value in
+            name == "is" && value.lowercased() == "read"
         }
     }
 

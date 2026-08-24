@@ -11,6 +11,13 @@ struct MessageView: View {
     let wasRemoteContentBlocked: Bool
     let blobs: BlobCache
     let downloadContext: DownloadContext
+    /// Whether the phone has a network at all.
+    ///
+    /// Only the attachment grid reads it, and only to withhold the one control
+    /// that would spend bytes. Passed down rather than read from
+    /// `MailSyncService` here because the reader deliberately reads nothing
+    /// from the sync service, and a card is the wrong place to start.
+    let isDeviceOffline: Bool
 
     let onToggle: () -> Void
     let onAllowRemoteContent: () -> Void
@@ -24,6 +31,13 @@ struct MessageView: View {
     /// their reply quotes the wrong thing and, on a thread with several
     /// participants, may go to the wrong person.
     let onCompose: (ComposeModel.Kind) -> Void
+    /// Opens the raw RFC 822 source of this message.
+    ///
+    /// The sheet is presented by the thread rather than the card so it
+    /// survives the card being rebuilt — this view's identity changes whenever
+    /// a sender is trusted, which would otherwise dismiss the source view
+    /// mid-read.
+    let onShowSource: () -> Void
 
     /// The open find, or nil when the bar is closed.
     var find: ThreadFindModel?
@@ -34,6 +48,10 @@ struct MessageView: View {
     /// Follows the system, so mail matches the rest of the phone rather than
     /// being the one screen that stays white at night.
     @Environment(\.colorScheme) private var colorScheme
+    /// The disclosure curves, already reconciled with Reduce Motion by the
+    /// root. Written as `.snappy(duration: 0.2)` twice before, which no
+    /// preference could reach.
+    @Environment(\.standardAnimation) private var standardAnimation
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var prefersOriginalColors = false
     @State private var showsQuotedHistory = false
@@ -161,6 +179,20 @@ struct MessageView: View {
             Button(.ui("Forward"), systemImage: "arrowshape.turn.up.right") {
                 onCompose(.forward(message))
             }
+
+            // Hidden rather than disabled when the server has no blob for this
+            // message: an item that is always there and never works reads as a
+            // broken feature, and a message with no `blobId` is one the server
+            // genuinely cannot hand back.
+            if message.blobID != nil {
+                Section {
+                    Button(
+                        .ui("View source"),
+                        systemImage: "chevron.left.forwardslash.chevron.right",
+                        action: onShowSource
+                    )
+                }
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.footnote.weight(.semibold))
@@ -193,7 +225,7 @@ struct MessageView: View {
             }
 
             Button {
-                withAnimation(.snappy(duration: 0.2)) { showsDetails.toggle() }
+                withAnimation(standardAnimation) { showsDetails.toggle() }
             } label: {
                 Image(systemName: showsDetails ? "chevron.up" : "chevron.down")
                     .font(.caption2.weight(.semibold))
@@ -328,7 +360,7 @@ struct MessageView: View {
     /// action anyone came here to take.
     private var quotedHistoryToggle: some View {
         Button {
-            withAnimation(.snappy(duration: 0.2)) { showsQuotedHistory.toggle() }
+            withAnimation(standardAnimation) { showsQuotedHistory.toggle() }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.caption.weight(.bold))
@@ -392,16 +424,13 @@ struct MessageView: View {
     // MARK: - Attachments
 
     private var attachments: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(message.attachments) { attachment in
-                AttachmentRow(
-                    attachment: attachment,
-                    blobs: blobs,
-                    downloadContext: downloadContext,
-                    onPreview: onPreview
-                )
-            }
-        }
+        AttachmentsSection(
+            attachments: message.attachments,
+            blobs: blobs,
+            downloadContext: downloadContext,
+            isDeviceOffline: isDeviceOffline,
+            onPreview: onPreview
+        )
         .padding(.horizontal, 16)
         .padding(.top, 12)
     }

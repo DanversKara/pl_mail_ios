@@ -104,6 +104,11 @@ public enum MethodErrorType: Hashable, Sendable, RawRepresentable, Decodable {
     /// The `sinceState` is too old to answer. Not a failure — drop the cursor
     /// for that account and re-page.
     case cannotCalculateChanges
+    /// The requested calendar window lies outside what the server has
+    /// materialised. **The whole query is refused, not answered short**, so a
+    /// client must clamp its window before asking rather than trimming the
+    /// result afterwards.
+    case cannotCalculateOccurrences
     case stateMismatch
     case tooLarge
     case rateLimit
@@ -130,6 +135,7 @@ public enum MethodErrorType: Hashable, Sendable, RawRepresentable, Decodable {
         case "unsupportedFilter": self = .unsupportedFilter
         case "unsupportedSort": self = .unsupportedSort
         case "cannotCalculateChanges": self = .cannotCalculateChanges
+        case "cannotCalculateOccurrences": self = .cannotCalculateOccurrences
         case "stateMismatch": self = .stateMismatch
         case "tooLarge": self = .tooLarge
         case "rateLimit": self = .rateLimit
@@ -158,6 +164,7 @@ public enum MethodErrorType: Hashable, Sendable, RawRepresentable, Decodable {
         case .unsupportedFilter: "unsupportedFilter"
         case .unsupportedSort: "unsupportedSort"
         case .cannotCalculateChanges: "cannotCalculateChanges"
+        case .cannotCalculateOccurrences: "cannotCalculateOccurrences"
         case .stateMismatch: "stateMismatch"
         case .tooLarge: "tooLarge"
         case .rateLimit: "rateLimit"

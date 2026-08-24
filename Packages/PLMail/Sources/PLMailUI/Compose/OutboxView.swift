@@ -13,7 +13,15 @@ import SwiftUI
 public struct OutboxView: View {
     private let outbox: OutboxSender
     @State private var messages: [Outbox.PendingMessage] = []
+    /// The result of the last cancel, when it is something the person who
+    /// tapped it has to be told rather than merely see.
+    @State private var outcome: String?
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.theme) private var theme
+    /// Read here rather than captured by the theme: one ``ResolvedTheme``
+    /// serves both appearances, and a value that stored one would be stale the
+    /// moment the shade is pulled down and the phone switches to dark.
+    @Environment(\.colorScheme) private var colorScheme
 
     public init(outbox: OutboxSender) {
         self.outbox = outbox
@@ -27,10 +35,12 @@ public struct OutboxView: View {
                         row(for: message)
                     }
                 } footer: {
-                    // Only when it applies. Mail waiting for a server needs no
-                    // explanation of the clock.
-                    if messages.contains(where: { $0.sendAfter != nil }) {
-                        Text(.ui(SendLaterSheet.caveat))
+                    // Only for rows this phone is actually holding. Saying it
+                    // over a server-held schedule would apologise for a
+                    // limitation that no longer applies to it, and the whole
+                    // value of the sentence is that it is true.
+                    if messages.contains(where: \.isDeviceHeld) {
+                        Text(.ui(SendLaterSheet.deviceHeldCaveat))
                     }
                 }
             }
@@ -58,6 +68,15 @@ public struct OutboxView: View {
                     Button(.ui("Try now")) { outbox.drain() }
                         .disabled(messages.isEmpty || outbox.isSending)
                 }
+            }
+            .alert(
+                Text(.ui("Couldn't call that back")),
+                isPresented: .init(
+                    get: { outcome != nil }, set: { if $0 == false { outcome = nil } })
+            ) {
+                Button(.ui("OK"), role: .cancel) { outcome = nil }
+            } message: {
+                Text(outcome ?? "")
             }
             .task { await reload() }
             // The sender is what empties the queue, and it does so from a
@@ -90,10 +109,26 @@ public struct OutboxView: View {
             // Stated rather than shown as a clock glyph and a time: a row that
             // is waiting on purpose and a row that is stuck look identical
             // otherwise, and the second is the one people worry about.
-            if let sendAfter = message.sendAfter {
+            //
+            // And **who** is holding it, because the two make different
+            // promises: a server-held message leaves on time with the phone
+            // off, a device-held one needs this phone awake. Showing one time
+            // for both would make the weaker promise invisible.
+            if let handover = message.handover {
                 Label(
-                    String(localized: .ui("Waiting until \(SnoozeMenu.shortTime(sendAfter))")),
-                    systemImage: "clock"
+                    String(
+                        localized: .ui(
+                            "Your server sends this at \(SnoozeMenu.shortTime(handover.sendAt))")),
+                    systemImage: "externaldrive.badge.checkmark"
+                )
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            } else if let sendAfter = message.sendAfter {
+                Label(
+                    String(
+                        localized: .ui(
+                            "This phone sends this at \(SnoozeMenu.shortTime(sendAfter))")),
+                    systemImage: "iphone.gen3"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -118,8 +153,8 @@ public struct OutboxView: View {
         }
         .padding(.vertical, 2)
         .swipeActions(edge: .trailing) {
-            Button(.ui("Discard"), systemImage: "trash", role: .destructive) {
-                Task { await outbox.discard(message.id) }
+            Button(cancelLabel(for: message), systemImage: "trash", role: .destructive) {
+                Task { await cancel(message.id) }
             }
         }
         .swipeActions(edge: .leading) {
@@ -130,7 +165,11 @@ public struct OutboxView: View {
                 Button(.ui("Send now"), systemImage: "paperplane") {
                     Task { await sendNow(message.id) }
                 }
-                .tint(.accentColor)
+                // `.tint(_:)` wants a concrete `Color`, which is what
+                // ``ResolvedTheme/accentColor(in:)`` exists for. `.accentColor`
+                // here read the asset catalogue and ignored a server-set accent
+                // entirely.
+                .tint(theme.accentColor(in: colorScheme))
             }
         }
         // Both actions again, because a swipe is invisible until it is tried
@@ -143,10 +182,52 @@ public struct OutboxView: View {
                 }
             }
 
-            Button(.ui("Discard"), systemImage: "trash", role: .destructive) {
-                Task { await outbox.discard(message.id) }
+            Button(cancelLabel(for: message), systemImage: "trash", role: .destructive) {
+                Task { await cancel(message.id) }
             }
         }
+        // A custom action rather than only a swipe. A swipe that is the sole
+        // route to calling a message back is a gesture somebody has to already
+        // know about, on the one screen people open because they are unsure.
+        .accessibilityAction(named: Text(cancelLabel(for: message))) {
+            Task { await cancel(message.id) }
+        }
+    }
+
+    /// What the destructive action is actually called.
+    ///
+    /// "Discard" is right for mail this device still holds and wrong for a
+    /// submission the server has accepted: that one is a cancel, it can be
+    /// refused, and calling it Discard promises a local delete that would leave
+    /// the mail on its way.
+    private func cancelLabel(for message: Outbox.PendingMessage) -> LocalizedStringResource {
+        message.handover == nil ? .ui("Discard") : .ui("Cancel send")
+    }
+
+    /// Calls a message back and says what actually happened.
+    ///
+    /// **"Already sent" is reported, never swallowed.** Telling somebody a
+    /// message was called back when their recipient is reading it is the one
+    /// sentence this whole path exists to avoid, and it is exactly the case a
+    /// cancel raced against the release time produces.
+    private func cancel(_ id: UUID) async {
+        switch await outbox.cancel(id) {
+        case .cancelled:
+            break
+
+        case .alreadySent:
+            outcome = String(
+                localized: .ui("That had already gone out. It couldn't be called back."))
+
+        case .notFound:
+            outcome = String(
+                localized: .ui("Your server has no record of that send. It's back on this phone."))
+
+        case .failed(let reason):
+            outcome = reason
+        }
+
+        await reload()
     }
 
     /// Reloads afterwards rather than waiting for the count to change: a send

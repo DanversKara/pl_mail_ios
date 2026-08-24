@@ -37,6 +37,42 @@ struct ServerAddressTests {
         #expect(try ServerAddress.parse("http://nas.local").isCleartext)
     }
 
+    /// `user:password@` survives into a base URL, unlike the query and
+    /// fragment this parser already cleared — so an accepted one would be
+    /// baked into every request the app ever makes against this server and
+    /// into the Keychain metadata beside the app password.
+    ///
+    /// Refused rather than stripped. Stripping is quieter but leaves the user
+    /// believing they supplied a credential when they did not, and what gets
+    /// pasted here is almost always the account password rather than the app
+    /// password this app asks for.
+    @Test(
+        "an address carrying credentials is refused, not quietly cleaned",
+        arguments: [
+            "https://me:hunter2@nas.local",
+            "http://me:hunter2@nas.local",
+            // No scheme typed, so `https://` is prefixed first — the check has
+            // to run after that or this one slips through.
+            "me:hunter2@nas.local",
+            // A username with no password is the same disclosure.
+            "https://me@nas.local",
+        ]
+    )
+    func credentialsAreRefused(input: String) {
+        #expect(throws: ServerAddress.ParseError.credentialsInAddress) {
+            try ServerAddress.parse(input)
+        }
+    }
+
+    /// The neighbouring case, so the refusal above cannot be implemented by
+    /// rejecting every `@`: a mail-shaped host is not a credential.
+    @Test("an ordinary address with no userinfo still parses")
+    func withoutCredentials() throws {
+        #expect(
+            try ServerAddress.parse("https://nas.local/plmail").baseURL.absoluteString
+                == "https://nas.local/plmail")
+    }
+
     @Test("discovery resolves relative to the base, subpath included")
     func discoveryURL() throws {
         #expect(

@@ -39,7 +39,73 @@ public struct ThreadListView: View {
     @Query private var entries: [StoredFeedEntry]
     @Query private var threads: [StoredThread]
 
-    @Environment(\.horizontalSizeClass) private var sizeClass
+    /// A visible marker so a build on a device can be told from the one before
+    /// it. **Temporary, for the performance investigation** — remove it once the
+    /// reader is fast, because a version string does not belong in a mailbox
+    /// title.
+    static let buildStamp = "b0310"
+
+    /// How many threads the join will hold at once. See the descriptor in
+    /// `init` for why this is bounded rather than open.
+    private static let joinableThreadLimit = 2_000
+
+    /// How many feed entries are built into rows right now. Grows as the reader
+    /// reaches the end; see ``rows`` for why it is bounded at all.
+    @State private var visibleCount = Self.windowSize
+
+    /// One screenful many times over, so reaching the end is rare and the step
+    /// is never visible.
+    private static let windowSize = 150
+
+    /// Grows the built window when the reader gets close to its end.
+    ///
+    /// Returns nothing useful — it exists to be called from the row builder,
+    /// where `onAppear` would fire after the row is already missing.
+    @discardableResult
+    private func widenWindowIfNeeded(reaching entry: StoredFeedEntry) -> Bool {
+        guard let windowTriggerUID, entry.uid == windowTriggerUID else { return false }
+
+        Task { @MainActor in
+            visibleCount = min(visibleCount + Self.windowSize, entries.count)
+        }
+
+        return true
+    }
+
+    /// The one row whose appearance widens the window.
+    ///
+    /// A single identity compared per row, rather than a search through the
+    /// built window — the first version of this scanned the prefix for every
+    /// row it drew, which is the quadratic this whole change exists to remove.
+    private var windowTriggerUID: String? {
+        let built = min(visibleCount, entries.count)
+
+        guard built < entries.count, built > 0 else { return nil }
+
+        return entries[max(built - 20, 0)].uid
+    }
+
+    /// See ``rows``. Rebuilt from `threads` when they change, never per frame.
+    @State private var cachedThreadsByKey: [ThreadKey: StoredThread] = [:]
+
+    /// Shared because the prefetcher is built in the composition root, several
+    /// columns away from the line that reports it.
+    private let prefetch = PrefetchActivity.shared
+
+    /// Resolved by `MailView` from the window's measured width. Read here for
+    /// the one thing this list does differently when it is the only pane:
+    /// paint its own surface, because there is no pane behind it to supply one.
+    @Environment(\.mailLayout) private var layout
+
+    /// The server's theme, for the one surface this view paints itself.
+    ///
+    /// Read from the environment rather than stored, because the colour
+    /// depends on **two** environment values at once — the theme and the
+    /// appearance — and a call site that captured only one would resolve to
+    /// something that looks right under the default palette and silently
+    /// ignores whatever the server set.
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
 
     @State private var isLoadingMore = false
     /// Conversations picked out for a bulk action. Non-empty *is* selection
@@ -54,13 +120,74 @@ public struct ThreadListView: View {
     @State private var bulkNotice: Int?
     @State private var isPickingBulkLabel = false
     @State private var isPickingSwipeActions = false
+    /// Where the keyboard is, which is not the same as what is open.
+    ///
+    /// On a wide layout moving the cursor *is* reading — the reader is the
+    /// next column — so the two travel together. Collapsed there is no reader
+    /// beside the list, and moving the cursor cannot mean pushing a message:
+    /// `j` would leave the list and the second `j` would go to the reader.
+    /// So the cursor moves alone and Return opens.
+    ///
+    /// Cleared whenever the rows change out from under it, because a cursor
+    /// pointing at a conversation that has been archived is a highlight on
+    /// nothing.
+    @State private var cursor: ThreadRef?
 
     /// Shared rather than owned, so the two lists a split view has on screen at
     /// once cannot disagree about what a swipe does.
     private var swipes: SwipeActionPreference { .shared }
     /// The conversation whose exact snooze time is being picked.
     @State private var snoozing: ActionTarget?
+    /// Whether the whole ticked selection is picking an exact snooze time.
+    /// Separate from ``snoozing`` because that one is a single target and the
+    /// two sheets must not be able to be up at once.
+    @State private var isPickingBulkSnooze = false
+
+    /// The measured width of the list column.
+    ///
+    /// Measured rather than derived from the size class: on iPad the list pane
+    /// runs 396–540pt and a size-class test answers the same at both ends, so
+    /// it would decide nothing about how many label chips fit. Zero until the
+    /// first layout pass, which buys the conservative one-chip budget for a
+    /// frame rather than briefly overflowing a column nobody has sized.
+    @State private var paneWidth: CGFloat = 0
+
+    /// Label chips per conversation, keyed `accountKey#threadID`.
+    ///
+    /// Built once per list rather than per row: resolving a row's labels means
+    /// reading its messages' mailbox ids out of the store, and doing that
+    /// inside a scrolling `ForEach` is a store read per row per redraw.
+    @State private var chips: [String: [LabelChipModel]] = [:]
+    /// Bumped when something in this view changes a conversation's labels.
+    ///
+    /// Neither the feed table nor the mailbox list changes when a label is
+    /// applied to a thread, so without this the chips would go on showing the
+    /// labels the row had before the picker was opened.
+    @State private var chipRevision = 0
     @State private var editingDraft: DraftRef?
+
+    /// Which inbox category is on screen, or nil for the whole inbox.
+    ///
+    /// Owned by the shell rather than by this list, because changing it changes
+    /// the ``FeedID`` and therefore rebuilds this view — a binding held here
+    /// would be reset by the very change it made. Nil (not a nil *binding*)
+    /// means the whole inbox; a nil **binding** means this list has no category
+    /// surface at all, which is every list that is not the unified inbox and
+    /// every list on a server that classifies nothing.
+    private var categorySelection: Binding<MessageCategory?>?
+
+    /// Conversations badged **New** for as long as this feed is on screen.
+    ///
+    /// Held here rather than read from `StoredThread.isNew`, and that is the
+    /// whole reason it exists. Drawing the row reports the display, the server
+    /// accepts it, the column is cleared and `@Query` republishes — so a badge
+    /// bound to the column would appear and vanish inside a second while
+    /// somebody was looking at it.
+    ///
+    /// **Never persisted.** After a relaunch the server has already been told,
+    /// so there is nothing new left; restoring this would be the phone badging
+    /// mail on its own memory rather than on the marker.
+    @State private var badgedNew: Set<String> = []
 
     /// Which draft the composer is continuing.
     struct DraftRef: Identifiable, Hashable {
@@ -80,13 +207,15 @@ public struct ThreadListView: View {
         labelActions: LabelActions? = nil,
         outbox: OutboxSender,
         selection: Binding<ThreadRef?>,
-        isSelectionActive: Binding<Bool> = .constant(false)
+        isSelectionActive: Binding<Bool> = .constant(false),
+        categorySelection: Binding<MessageCategory?>? = nil
     ) {
         self.feed = feed
         self.sync = sync
         self.actions = actions
         self.labelActions = labelActions
         self.outbox = outbox
+        self.categorySelection = categorySelection
         _selection = selection
         _isSelectionActive = isSelectionActive
 
@@ -97,12 +226,45 @@ public struct ThreadListView: View {
             sort: \.sortDate,
             order: .reverse
         )
-        _threads = Query()
+        // **Bounded on purpose.** An unfiltered `Query()` here materialises
+        // every thread in the store, on the main thread, and SwiftData stores
+        // `StoredThread.emailIDs` as an archived binary plist — so each row
+        // costs an `NSKeyedUnarchiver` pass. Every `SyncStore` write
+        // republishes the query, so during a first sync the list re-materialised
+        // the whole table several times a second and the main thread hung in
+        // 500ms blocks, back to back. Measured on an iPad Pro with Instruments,
+        // not guessed.
+        //
+        // The join only ever needs the threads the feed's entries name, and
+        // entries are paged newest-first, so the most recent slice is the part
+        // that can appear. The limit is generous against what any feed can
+        // show; a thread older than the whole window simply is not on screen.
+        var recent = FetchDescriptor<StoredThread>(
+            sortBy: [SortDescriptor(\.latestReceivedAt, order: .reverse)]
+        )
+
+        recent.fetchLimit = Self.joinableThreadLimit
+        _threads = Query(recent)
     }
 
     public var body: some View {
+        // A proxy rather than `.scrollPosition`: the cursor is moved by a key
+        // press, and the row it lands on is almost always off screen after two
+        // presses. A selection that moves invisibly is a selection that is not
+        // there.
+        ScrollViewReader { scroll in
+            list
+                .shortcuts { keyboardShortcuts(scroll) }
+        }
+    }
+
+    private var list: some View {
         List {
             ForEach(rows, id: \.entry.uid) { row in
+                // Widen the window as the end comes into view. Cheap: it fires
+                // once per row, and only the last few rows do anything.
+                let _ = widenWindowIfNeeded(reaching: row.entry)
+
                 // A Button rather than List's own selection binding. The
                 // system's selected appearance is a hard blue fill that also
                 // recolours the row's text, and none of it is restylable — on
@@ -113,13 +275,20 @@ public struct ThreadListView: View {
                     let ref = ThreadRef(thread: row.thread)
 
                     if isSelecting {
+                        // Ticking a row for a bulk action is not opening it.
+                        // Spending the badge here would clear "New" off forty
+                        // conversations somebody was about to archive
+                        // unread — the badge is what tells them which those
+                        // were.
                         toggle(ref)
                     } else if row.thread.isDraft, let emailID = row.thread.newestEmailID {
+                        spendBadge(for: row.thread)
                         // A draft is unfinished writing, not something to read.
                         // The web UI opens the composer here too.
                         editingDraft = DraftRef(
                             emailID: emailID, accountKey: row.thread.accountKey)
                     } else {
+                        spendBadge(for: row.thread)
                         selection = ref
                     }
                 } label: {
@@ -139,6 +308,11 @@ public struct ThreadListView: View {
                 // an opaque band sitting over the card.
                 .listRowBackground(Color.clear)
                 .task { await loadMoreIfNeeded(at: row.entry) }
+                // A row appearing is a display; a page arriving from the pager,
+                // a delta pull, a notification and the body prefetcher are not.
+                // This is the only place in the app that reports one, which is
+                // why it is on the row and not on the sync path.
+                .onAppear { noteDisplayed(row.thread) }
                 // Both edges chosen by the user, both undoable, and everything
                 // a swipe does is also reachable from the row's context menu —
                 // a gesture must never be the only way to reach an action.
@@ -149,6 +323,19 @@ public struct ThreadListView: View {
                     swipeButton(swipes.trailing, for: row.thread)
                 }
                 .contextMenu { rowMenu(for: row.thread) }
+                // Ids, never the `StoredThread`: a drag outlives the row that
+                // started it, `@Model` objects are not `Sendable`, and by the
+                // time the finger lifts the thread may have been archived by
+                // a sync running underneath.
+                //
+                // Whatever is ticked travels together, so dragging one row out
+                // of a bulk selection carries the selection rather than
+                // silently acting on one of it.
+                .draggable(dragPayload(for: row.thread))
+                // The pointer morphs over a row, as it does over every other
+                // list on the platform. `.buttonStyle(.plain)` opts out of the
+                // system's own hover treatment, so it has to be asked for.
+                .hoverEffect(.highlight)
             }
 
             if degraded.isEmpty == false {
@@ -157,16 +344,77 @@ public struct ThreadListView: View {
             }
         }
         .listStyle(.plain)
+        // iOS 26 paints a "hard" edge effect behind a bar over scrolling
+        // content. Over a pane card that lands as an opaque square band across
+        // the top of the column, which is what broke the card's top edge while
+        // the reader — whose bar carries no title — looked whole.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         // The pane behind supplies the surface; a List painting its own would
         // square off the pane's rounded corners.
         .scrollContentBackground(.hidden)
         // Collapsed there is no pane behind, so the list has to lay the paper
         // down itself — otherwise the system's cool white shows through and
         // the one appearance most people use is the one that misses the point.
-        .background(sizeClass == .compact ? PanelStyle.surface : Color.clear)
+        //
+        // From the palette rather than from `PanelStyle`, and this was the last
+        // hole in the theming work: `.mailPane` is a deliberate no-op on
+        // compact, so a themed phone drew a themed reader above an unthemed
+        // list — which reads as a rendering fault rather than as a theme. The
+        // default palette is pinned equal to `PanelStyle.surface`, so the
+        // default appearance is unchanged.
+        .background(
+            layout.isSeparated
+                ? Color.clear
+                : theme.palette(for: colorScheme).surface.color
+        )
         .safeAreaInset(edge: .bottom) { bulkBar }
+        .safeAreaInset(edge: .bottom) { prefetchBar }
+        // Rebuilt only when the rows' right-hand side actually changes.
+        // `rows` runs on every body evaluation, and `threads` is an
+        // unfiltered query over the whole table — building this inside it
+        // walked every thread in the store many times a second.
+        .onChange(of: threads, initial: true) { _, latest in
+            cachedThreadsByKey = Dictionary(
+                latest.map { (ThreadKey($0), $0) },
+                uniquingKeysWith: { first, _ in first }
+            )
+        }
         .onChange(of: isSelecting) { _, active in isSelectionActive = active }
-        .sheet(isPresented: $isPickingBulkLabel) {
+        // Tapping a row moves the cursor to it, so `j` afterwards continues
+        // from where the finger left off rather than from wherever the
+        // keyboard last was.
+        .onChange(of: selection) { _, ref in
+            if let ref { cursor = ref }
+        }
+        // A cursor pointing at a conversation that is no longer in this list —
+        // the mailbox changed, or the thread was archived from another device —
+        // is a highlight on nothing and a `j` that jumps to the top.
+        .onChange(of: feed) { _, _ in
+            cursor = nil
+            // A badge means "new since I last looked at *this* list", so it
+            // does not travel to the next one. Emptied rather than merged: a
+            // conversation carried across would be badged on a list whose rows
+            // this device has already been through.
+            badgedNew = []
+        }
+        // The reports for the page just drawn, sent rather than dropped on the
+        // floor because the scene was torn down 300ms into a 750ms window. This
+        // is the case that matters: leaving a list is exactly when somebody has
+        // finished looking at it.
+        .onDisappear { Task { await sync.flushDisplayReports() } }
+        // The list column's real width, which is what decides how many chips a
+        // row can afford. Read here rather than passed down from the shell:
+        // this view is the column.
+        .onGeometryChange(for: CGFloat.self) {
+            $0.size.width
+        } action: {
+            paneWidth = $0
+        }
+        .task(id: chipKey) { await loadChips() }
+        // Applying a label changes neither the feed table nor the mailbox list,
+        // so nothing else would tell the chips to re-resolve and the row would
+        // go on showing the labels it had before the sheet opened.
+        .sheet(isPresented: $isPickingBulkLabel, onDismiss: { chipRevision += 1 }) {
             BulkLabelPickerView(
                 targets: checkedTargets,
                 sync: sync,
@@ -207,26 +455,37 @@ public struct ThreadListView: View {
                 )
             }
         }
+        // Its own sheet rather than reusing `snoozing`, which carries a single
+        // target: one binding for both would let a stale single-row target
+        // decide what a bulk pick applies to.
+        .sheet(isPresented: $isPickingBulkSnooze) {
+            SnoozeDatePicker { until in snoozeSelection(until: until) }
+        }
         .sheet(item: $snoozing) { target in
             SnoozeDatePicker { until in
                 act { await actions.snooze(target, until: until) }
             }
         }
-        .sheet(item: $labelling) { target in
+        .sheet(item: $labelling, onDismiss: { chipRevision += 1 }) { target in
             LabelPickerView(
                 target: target, sync: sync, actions: actions, store: sync.store,
                 labelActions: labelActions)
         }
         .undoOverlay(actions)
+        .safeAreaInset(edge: .top, spacing: 0) { listHeader }
+        .safeAreaInset(edge: .top, spacing: 0) { categoryStrip }
         .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         .refreshable { await sync.refresh(feed: feed) }
         .overlay { emptyState }
         // The title carries the count while selecting, so the number is where
         // the eye already is rather than in a second bar.
-        .navigationTitle(
-            isSelecting
-                ? "\(checked.count) selected" : feed.title(mailboxes: sync.mailboxes)
-        )
+        // **Empty on purpose.** A navigation bar with text in it paints an
+        // opaque background, and over a pane card that lands as a square band
+        // across the card's top edge — the card appears to start below the bar
+        // instead of behind it. The reader has looked right all along precisely
+        // because its title is empty and the bar collapses. The name of the
+        // list belongs inside the card anyway; see `listHeader`.
+        .navigationTitle(.ui(""))
         .toolbar {
             if isSelecting == false {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -238,6 +497,16 @@ public struct ThreadListView: View {
 
                         Button(.ui("Swipe actions"), systemImage: "hand.draw") {
                             isPickingSwipeActions = true
+                        }
+
+                        // Only on one pane. Where there is a column to spare
+                        // the strip above the rows is already the control, and
+                        // a second one in the menu would be two places that
+                        // say what is showing.
+                        if let categorySelection, layout.isSeparated == false {
+                            Divider()
+
+                            InboxCategoryPicker.menu(selection: categorySelection)
                         }
                     } label: {
                         Label(.ui("More"), systemImage: "ellipsis.circle")
@@ -265,6 +534,273 @@ public struct ThreadListView: View {
         // it, which is exactly the cold-launch path — and an untitled list
         // reads as a bug. Inline also matches the list-then-reader flow.
         .navigationBarTitleDisplayMode(.inline)
+        // Applied here as well as in `mailPane`. The reader's bar carries an
+        // empty title so it collapses and its card looks whole; this one has
+        // text, and a bar with something in it paints an opaque background —
+        // which lands as a square white band across the top of a rounded card.
+        .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
+    }
+
+    /// The capsules, on a layout with a column to spare for them.
+    ///
+    /// Absent on one pane, where the same choices live in the overflow menu:
+    /// a permanent strip costs a row of a five-row phone screen for a control
+    /// most people set once, and mail is what the screen is for. Absent
+    /// entirely on a server that classifies nothing — the shell withholds the
+    /// binding — because five permanently empty tabs above a working inbox
+    /// reads as mail having gone missing.
+    ///
+    /// Above the offline banner in the inset order, so the banner sits directly
+    /// over the rows it is describing rather than with a strip wedged between.
+    /// The list's name, drawn inside the card rather than in the bar.
+    ///
+    /// See the empty `navigationTitle` for why. Carries the selection count
+    /// while selecting, so the number stays where the eye already is.
+    private var listHeader: some View {
+        Text(
+            verbatim: isSelecting
+                ? "\(checked.count) selected"
+                : "\(feed.title(mailboxes: sync.mailboxes)) · \(Self.buildStamp)"
+        )
+        .font(.headline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 8)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    @ViewBuilder
+    private var categoryStrip: some View {
+        if let categorySelection, layout.isSeparated {
+            InboxCategoryPicker(selection: categorySelection, isStrip: true)
+        }
+    }
+
+    /// Says that the background prefetch is working, and how far it has got.
+    ///
+    /// Present only while it runs. Prefetch is invisible to everything else by
+    /// design — nothing on screen waits for it — and the one thing that costs
+    /// is a server quietly occupied with no way to tell. This is that way.
+    @ViewBuilder
+    private var prefetchBar: some View {
+        if prefetch.isRunning {
+            HStack(spacing: 8) {
+                // Determinate where there is a figure to show, indeterminate
+                // only before the first chunk lands — a bar sitting at zero
+                // reads as stalled rather than as starting.
+                if let completion = prefetch.completion {
+                    ProgressView(value: completion)
+                        .progressViewStyle(.linear)
+                        .frame(width: 90)
+                } else {
+                    ProgressView()
+                        .controlSize(.mini)
+                }
+
+                Text(.ui("Downloading \(prefetch.fetched) messages for offline"))
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(.bar)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                Text(.ui("Downloading \(prefetch.fetched) messages for offline")))
+        }
+    }
+
+    // MARK: - Keyboard
+
+    /// Everything the list can be driven with from a hardware keyboard.
+    ///
+    /// Bound to hidden buttons rather than `.onKeyPress`, which only fires
+    /// while the view it is attached to holds focus — and on iPad the list, the
+    /// sidebar and the reader are all on screen at once, so "which one has
+    /// focus" becomes a question the user has to answer before they can press
+    /// a key. A shortcut works wherever the eye already is, and SwiftUI
+    /// suppresses all of them while a text field is being typed into.
+    ///
+    /// Bare letters only where the reader has not already claimed them: it is
+    /// visible beside this list on a wide layout, and two controls answering
+    /// one bare key is a coin toss. Message verbs — `e`, `r`, `a`, `f`, `l`,
+    /// `u`, `s` — are the reader's, and the cursor below is what feeds it.
+    ///
+    /// Every one of these is also a visible control: the rows themselves, the
+    /// avatar's Select tap target, and the Cancel and Select all buttons the
+    /// selection toolbar puts up.
+    @ViewBuilder
+    private func keyboardShortcuts(_ scroll: ScrollViewProxy) -> some View {
+        // Gmail's j/k, and ⌘↓/⌘↑ for the rest of the platform. Plain arrows
+        // are deliberately not taken: they scroll the list, and a mail client
+        // that cannot be scrolled with the arrow keys is a worse trade than one
+        // whose next-message key needs a modifier.
+        HiddenShortcut(title: .ui("Next conversation"), key: "j", modifiers: []) {
+            moveCursor(by: 1, using: scroll)
+        }
+
+        HiddenShortcut(title: .ui("Next conversation"), key: .downArrow) {
+            moveCursor(by: 1, using: scroll)
+        }
+
+        HiddenShortcut(title: .ui("Previous conversation"), key: "k", modifiers: []) {
+            moveCursor(by: -1, using: scroll)
+        }
+
+        HiddenShortcut(title: .ui("Previous conversation"), key: .upArrow) {
+            moveCursor(by: -1, using: scroll)
+        }
+
+        HiddenShortcut(title: .ui("Open conversation"), key: .return, modifiers: []) {
+            open(cursor)
+        }
+
+        // What Escape means everywhere else: back out of the narrowest thing
+        // first. A selection is narrower than a cursor, so it goes first —
+        // otherwise one press would drop both and there would be no way to
+        // keep a selection while moving the cursor off it.
+        HiddenShortcut(title: .ui("Clear selection"), key: .escape, modifiers: []) {
+            if isSelecting {
+                checked = []
+            } else {
+                cursor = nil
+            }
+        }
+
+        // Gmail's "x". The same thing tapping an avatar does.
+        HiddenShortcut(title: .ui("Select conversation"), key: "x", modifiers: []) {
+            if let cursor { toggle(cursor) }
+        }
+
+        HiddenShortcut(title: .ui("Select all loaded"), key: "a") {
+            checked = Set(rows.map { ThreadRef(thread: $0.thread) })
+        }
+    }
+
+    /// Moves the cursor one row and brings it into view.
+    ///
+    /// From nothing, a forward move lands on the first row and a backward move
+    /// on the last, so the first key press does something whichever direction
+    /// it is. Clamped rather than wrapped: a list that jumps from the bottom
+    /// back to the top loses the reader's place, and this one is paged — the
+    /// "end" is only the end of what has loaded.
+    private func moveCursor(by offset: Int, using scroll: ScrollViewProxy) {
+        // Bound once: `rows` joins two `@Query` results on every read, and
+        // this method reads it three times.
+        let loaded = rows
+
+        guard loaded.isEmpty == false else { return }
+
+        let current = loaded.firstIndex { ThreadRef(thread: $0.thread) == cursor }
+        let next =
+            if let current {
+                min(max(current + offset, 0), loaded.count - 1)
+            } else {
+                offset > 0 ? 0 : loaded.count - 1
+            }
+
+        let row = loaded[next]
+        let ref = ThreadRef(thread: row.thread)
+
+        cursor = ref
+
+        // Moving the cursor *is* reading where the reader is the next column
+        // over. Collapsed it is not, and following the cursor would push a
+        // message on the first press and leave nothing to move through.
+        if layout.isSeparated, isSelecting == false, row.thread.isDraft == false {
+            spendBadge(for: row.thread)
+            selection = ref
+        }
+
+        scroll.scrollTo(row.entry.uid, anchor: .center)
+    }
+
+    /// Return, which means whatever tapping the row means.
+    private func open(_ ref: ThreadRef?) {
+        guard let ref, let row = rows.first(where: { ThreadRef(thread: $0.thread) == ref })
+        else { return }
+
+        if isSelecting {
+            toggle(ref)
+        } else if row.thread.isDraft, let emailID = row.thread.newestEmailID {
+            spendBadge(for: row.thread)
+            editingDraft = DraftRef(emailID: emailID, accountKey: row.thread.accountKey)
+        } else {
+            spendBadge(for: row.thread)
+            selection = ref
+        }
+    }
+
+    // MARK: - The New marker
+
+    /// How a conversation is named in ``badgedNew``.
+    ///
+    /// Account-qualified, because two servers can and do hand out the same
+    /// thread id — an unqualified key would badge an unrelated conversation in
+    /// the other account.
+    private static func key(of thread: StoredThread) -> String {
+        "\(thread.accountKey)#\(thread.threadID)"
+    }
+
+    /// One row has been drawn.
+    ///
+    /// Two things happen, in this order and for different reasons. The badge is
+    /// raised locally and held for the life of this feed, because reporting the
+    /// display is what *spends* the marker. And the display is reported to the
+    /// server, because only a client that draws a row can retire that row's
+    /// marker — an app that badged without reporting would leave the web UI and
+    /// Android badging this conversation until the window lapsed.
+    ///
+    /// Both are guarded on the stored column, so a row scrolled back onto
+    /// screen after its marker was retired does not raise the badge again.
+    /// ``ShownThreads`` batches and de-duplicates the reporting half, so a fling
+    /// through fifty rows is one request rather than fifty.
+    private func noteDisplayed(_ thread: StoredThread) {
+        guard thread.isNew else { return }
+
+        let key = Self.key(of: thread)
+
+        guard badgedNew.contains(key) == false else { return }
+
+        badgedNew.insert(key)
+        sync.reportDisplayed(threadID: thread.threadID, accountKey: thread.accountKey)
+    }
+
+    /// Spends one conversation's badge the moment it is opened.
+    ///
+    /// Coming back from a message you have just read to a row still shouting
+    /// "New" reads as the app not having noticed what you did.
+    private func spendBadge(for thread: StoredThread) {
+        badgedNew.remove(Self.key(of: thread))
+    }
+
+    // MARK: - Drag
+
+    /// What dragging this row carries.
+    ///
+    /// The whole ticked set when the row is part of one, so dragging a
+    /// selection to a label does not quietly apply it to one conversation and
+    /// leave the other thirty behind. Otherwise just this row — including when
+    /// a selection exists but this row is not in it, which is a drag *out* of
+    /// the selection and means what it says.
+    private func dragPayload(for thread: StoredThread) -> ThreadTransfer {
+        let ref = ThreadRef(thread: thread)
+        let dragged =
+            checked.contains(ref)
+            ? rows.filter { checked.contains(ThreadRef(thread: $0.thread)) }.map(\.thread)
+            : [thread]
+
+        return ThreadTransfer(
+            items: dragged.map {
+                ThreadTransfer.Item(
+                    accountKey: $0.accountKey,
+                    threadID: $0.threadID,
+                    subject: ThreadRef(thread: $0).subject,
+                    emailIDs: $0.emailIDs)
+            })
     }
 
     // MARK: - Selection
@@ -294,14 +830,25 @@ public struct ThreadListView: View {
         -> some View
     {
         let ref = ThreadRef(thread: row.thread)
-        let snippet = sync.snippets["\(row.entry.accountKey)#\(row.entry.emailID)"]
+        // `highlights`, not the compatibility `snippets` view: the row draws a
+        // subject match on the subject line and a body match in the preview
+        // slot, and the body-only dictionary cannot tell it which it has.
+        let highlight = sync.highlights["\(row.entry.accountKey)#\(row.entry.emailID)"]
 
         return ThreadRowView(
             thread: row.thread,
             account: accountTag(for: row.entry),
             isSelected: checked.contains(ref),
             isOpen: selection == ref,
-            snippet: snippet,
+            isFocused: cursor == ref,
+            highlight: highlight,
+            labels: chips["\(row.entry.accountKey)#\(row.entry.threadID)"] ?? [],
+            paneWidth: paneWidth,
+            // From the in-memory set, never from `thread.isNew`: the column is
+            // cleared the moment the server accepts the report this same draw
+            // sent, and a badge bound to it would flicker away while somebody
+            // was reading it.
+            isNew: badgedNew.contains(Self.key(of: row.thread)),
             onToggleStar: {
                 act {
                     await actions.setFlagged(
@@ -498,9 +1045,14 @@ public struct ThreadListView: View {
 
     /// The bulk action bar.
     ///
-    /// Only the four actions that make sense on a heap of conversations, plus
-    /// labels. Reply is deliberately absent — replying to forty threads at once
-    /// is not an operation.
+    /// Only the actions that make sense on a heap of conversations. Reply is
+    /// deliberately absent — replying to forty threads at once is not an
+    /// operation.
+    ///
+    /// Snooze is here because `BulkAction.snooze` batches per account and undoes
+    /// to each conversation's **own** previous time: without it the only way to
+    /// clear forty conversations until Monday was forty separate row menus, and
+    /// forty separate undo bars.
     @ViewBuilder
     private var bulkBar: some View {
         if isSelecting {
@@ -510,6 +1062,7 @@ public struct ThreadListView: View {
                 HStack(spacing: 0) {
                     bulkButton(.ui("Archive"), "archivebox") { .archive }
                     bulkButton(.ui("Labels"), "tag", action: nil) { isPickingBulkLabel = true }
+                    bulkSnooze
                     bulkButton(
                         anyUnread ? .ui("Read") : .ui("Unread"),
                         anyUnread ? "envelope.open" : "envelope.badge"
@@ -529,6 +1082,59 @@ public struct ThreadListView: View {
             }
             .background(.bar)
             .transition(.move(edge: .bottom))
+        }
+    }
+
+    /// Snooze, for the whole ticked selection.
+    ///
+    /// A `Menu` rather than a `Button` because snooze is the one bulk action
+    /// that needs a *when*, and the presets are the same ones a single row
+    /// offers — one `SnoozeMenu` for both, so the two cannot drift into
+    /// offering different times.
+    ///
+    /// `.snooze` batches per account and undoes to each conversation's **own**
+    /// previous time, so undoing a bulk snooze does not flatten forty different
+    /// wake times into one.
+    private var bulkSnooze: some View {
+        Menu {
+            SnoozeMenu(
+                isSnoozed: anySnoozed,
+                onPick: { until in snoozeSelection(until: until) },
+                onPickExact: { isPickingBulkSnooze = true }
+            )
+        } label: {
+            VStack(spacing: 3) {
+                Image(systemName: "clock")
+                    .font(.body)
+                Text(.ui("Snooze"))
+                    .font(.caption2)
+                    .bulkButtonTitle()
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(.rect)
+        }
+        .foregroundStyle(.themeAccent)
+    }
+
+    /// Applies a bulk snooze and drops the selection.
+    ///
+    /// Targets resolved *before* the tick marks are cleared, for the same
+    /// reason ``bulkButton`` does it: `checkedTargets` reads `checked`, and
+    /// reading it afterwards snoozes nothing at all.
+    private func snoozeSelection(until: Date?) {
+        let targets = checkedTargets
+
+        checked = []
+        Task { await actions.perform(.snooze(until), on: targets) }
+    }
+
+    /// Whether anything ticked is already snoozed, which is what puts "Wake
+    /// now" in the menu. A mixed selection still offers it: waking something
+    /// that is awake is a no-op, where hiding the item strands the snoozed part
+    /// of the selection.
+    private var anySnoozed: Bool {
+        rows.contains {
+            checked.contains(ThreadRef(thread: $0.thread)) && $0.thread.snoozedUntil != nil
         }
     }
 
@@ -562,12 +1168,15 @@ public struct ThreadListView: View {
                     .font(.body)
                 Text(title)
                     .font(.caption2)
+                    .bulkButtonTitle()
             }
             .frame(maxWidth: .infinity)
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(role == .destructive ? Color.red : Color.accentColor)
+        .foregroundStyle(
+            role == .destructive
+                ? AnyShapeStyle(Color.red) : AnyShapeStyle(ThemeAccent()))
     }
 
     /// Mixed selections get the action that changes the most rows: ticking a
@@ -597,18 +1206,123 @@ public struct ThreadListView: View {
     /// thread changing — read, starred, a new reply — updates every list it
     /// appears in without touching the ordering.
     private var rows: [(entry: StoredFeedEntry, thread: StoredThread)] {
-        let byKey = Dictionary(
-            threads.map { ("\($0.accountKey)#\($0.threadID)", $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-
-        return entries.compactMap { entry in
-            guard let thread = byKey["\(entry.accountKey)#\(entry.threadID)"] else {
-                return nil
-            }
+        // **Sliced, not whole.** `List` is lazy about drawing rows; it is not
+        // lazy about the array it is handed. A 60,000-message mailbox built
+        // 60,000 tuples and asked `ForEach` to diff 60,000 identities on every
+        // body evaluation — every scroll frame, every selection change. The
+        // window grows as the reader reaches the end, so nothing is
+        // unreachable; it simply is not all built at once.
+        entries.prefix(visibleCount).compactMap { entry in
+            guard let thread = cachedThreadsByKey[ThreadKey(entry)] else { return nil }
 
             return (entry, thread)
         }
+    }
+
+    /// The join's right-hand side, built when the threads change rather than on
+    /// every read.
+    ///
+    /// **This is a hot path.** `rows` is read by `ForEach`, so it runs on every
+    /// body evaluation — every scroll, cursor move, hover and selection change —
+    /// and `threads` is an unfiltered `@Query` over the whole table. Building
+    /// the dictionary inside `rows` therefore walked every thread in the store,
+    /// allocating an interpolated `String` per thread, many times a second. On a
+    /// real mailbox on a real device that is the difference between a list that
+    /// scrolls and one that does not.
+    /// A pair of ids, so the join key costs no allocation.
+    ///
+    /// The interpolated `"\(account)#\(thread)"` it replaces allocated twice per
+    /// row per frame and hashed a whole string to compare two short ids.
+    private struct ThreadKey: Hashable {
+        let accountKey: String
+        let threadID: String
+
+        init(_ entry: StoredFeedEntry) {
+            accountKey = entry.accountKey
+            threadID = entry.threadID
+        }
+
+        init(_ thread: StoredThread) {
+            accountKey = thread.accountKey
+            threadID = thread.threadID
+        }
+    }
+
+    // MARK: - Label chips
+
+    /// What the resolved chips were built for.
+    ///
+    /// Three inputs because three different things invalidate them: the rows on
+    /// screen, the labels that exist (a rename or a recolour changes what a chip
+    /// says, not just which rows have one), and a label applied from this
+    /// screen, which moves neither of the other two.
+    private struct ChipKey: Hashable {
+        let threads: [String]
+        let labels: [String]
+        let revision: Int
+    }
+
+    private var chipKey: ChipKey {
+        ChipKey(
+            threads: entries.map { "\($0.accountKey)#\($0.threadID)" },
+            labels: sync.mailboxes.map {
+                "\($0.id)|\($0.name)|\($0.color?.rawValue ?? "")|\($0.parentID?.rawValue ?? "")"
+            },
+            revision: chipRevision
+        )
+    }
+
+    /// Resolves every visible row's chips in one pass.
+    ///
+    /// One store call per account rather than per row. A binding id belongs to
+    /// one account, so the projections have to be asked for per account anyway;
+    /// what this avoids is asking per conversation, inside a `ForEach`, while
+    /// the list is being flung.
+    private func loadChips() async {
+        let mailboxes = sync.mailboxes
+
+        // An account with no custom labels can only ever produce empty chips,
+        // and asking the store for projections to prove it is a walk over every
+        // message of every visible conversation for nothing.
+        guard mailboxes.contains(where: { $0.role == nil }) else {
+            chips = [:]
+
+            return
+        }
+
+        let hierarchy = LabelHierarchy(mailboxes)
+        var threadsByAccount: [String: Set<String>] = [:]
+
+        for entry in entries {
+            threadsByAccount[entry.accountKey, default: []].insert(entry.threadID)
+        }
+
+        var resolved: [String: [LabelChipModel]] = [:]
+
+        for (accountKey, threadIDs) in threadsByAccount {
+            guard
+                let projections = try? await sync.store.threadProjections(
+                    threadIDs: Array(threadIDs), accountKey: accountKey)
+            else { continue }
+
+            for projection in projections {
+                let models = LabelChipModel.chips(
+                    forMailboxIDs: projection.mailboxIDs,
+                    accountKey: accountKey,
+                    mailboxes: mailboxes,
+                    hierarchy: hierarchy
+                )
+
+                // Only rows that have any. A key per conversation in a mailbox
+                // where nobody uses labels is a dictionary the size of the feed
+                // holding nothing.
+                if models.isEmpty == false {
+                    resolved["\(accountKey)#\(projection.threadID)"] = models
+                }
+            }
+        }
+
+        chips = resolved
     }
 
     /// What an action applies to.
@@ -659,13 +1373,59 @@ public struct ThreadListView: View {
     /// reboots, the VPN drops, someone is upstairs. Showing cached mail
     /// with a quiet line saying so is honest; showing it silently would
     /// let someone believe they had seen everything.
+    ///
+    /// **"You're offline" is a different sentence from "nothing on nas.local
+    /// answered".** One is about this device and nothing can be retried; the
+    /// other is about the server and a retry is exactly the right thing to
+    /// offer. Drawing them as one banner sends half the users to check a router
+    /// that is working. `OfflineState` writes all three sentences, so the view
+    /// picks rather than phrases.
     @ViewBuilder
     private var offlineBanner: some View {
-        if let message = sync.bannerMessage, entries.isEmpty == false {
+        let offline = sync.offlineState
+        let message = bannerText(offline)
+
+        // Queued changes put the banner up on their own. A conversation that
+        // has been archived has already left the list whether the server has
+        // heard about it or not, so with nothing said, mail that is only
+        // half-sent looks exactly like mail that is sent.
+        if entries.isEmpty == false, message != nil || queuedCount(offline) > 0 {
             HStack(spacing: 8) {
-                Image(systemName: "wifi.slash")
-                Text(message)
+                // A rejected credential is not a network problem, and the
+                // wifi icon sent people to check their router. It is also the
+                // one banner state with something to do about it — the mail
+                // below stays readable either way, which is the whole point of
+                // not signing out. Nothing being *wrong* — only slow — gets
+                // neither icon.
+                Image(systemName: bannerSymbol(offline, hasMessage: message != nil))
+
+                VStack(alignment: .leading, spacing: 1) {
+                    if let message {
+                        Text(message)
+                    }
+
+                    // Said, not implied. An archive that has not reached the
+                    // server is a change this device is holding, and a row that
+                    // has already moved out of the list looks identical whether
+                    // it was sent or is still waiting.
+                    if queuedCount(offline) > 0 {
+                        Text(.ui("\(queuedCount(offline)) changes waiting to send"))
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+
                 Spacer(minLength: 0)
+
+                if sync.status == .unauthenticated {
+                    Button(.ui("Sign in again")) { sync.requestReauthentication() }
+                        .font(.footnote.weight(.semibold))
+                } else if isRetryable(offline) {
+                    // Absent while the device is offline, because pressing it
+                    // could only fail — a button that cannot work is worse than
+                    // no button.
+                    Button(.ui("Retry")) { retry(offline) }
+                        .font(.footnote.weight(.semibold))
+                }
             }
             .font(.footnote)
             .foregroundStyle(.secondary)
@@ -674,7 +1434,95 @@ public struct ThreadListView: View {
             .frame(maxWidth: .infinity)
             .background(.thinMaterial)
             .overlay(alignment: .bottom) { Divider() }
-            .accessibilityElement(children: .combine)
+            // `.contain` rather than `.combine`: combining folds the Sign in
+            // again button into the sentence and leaves VoiceOver with no way
+            // to press it, which would make the banner the only surface that
+            // states the problem without offering the fix.
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    /// Which sentence the banner shows.
+    ///
+    /// A rejected credential wins outright: it is the one state a retry cannot
+    /// fix, and describing it as a network problem is what sends people to
+    /// check their router. Otherwise the offline state's own wording is
+    /// preferred over the status line, because it distinguishes this device
+    /// from the server where the status alone cannot.
+    private func bannerText(_ offline: MailSyncService.OfflineState) -> String? {
+        if sync.status == .unauthenticated { return sync.bannerMessage }
+
+        return offline.message ?? sync.bannerMessage
+    }
+
+    /// How many changes are waiting to reach the server.
+    ///
+    /// The larger of the two counts. `MailSyncService.queuedActionCount` is only
+    /// re-read when the queue is drained or a screen comes forward, so an action
+    /// queued a second ago is not in it yet; `MailActions.queuedCount` is bumped
+    /// as each one is enqueued but knows nothing about what an earlier launch
+    /// left behind. Taking the maximum is the only reading that is never *lower*
+    /// than the truth, and a banner that undercounts is one that quietly claims
+    /// work it has not done.
+    private func queuedCount(_ offline: MailSyncService.OfflineState) -> Int {
+        max(offline.queued, actions.queuedCount)
+    }
+
+    /// Which glyph stands beside the sentence.
+    ///
+    /// A queue draining against a working server is not a fault, and a
+    /// `wifi.slash` beside it would say the connection is down when it is not —
+    /// which is the same conflation this banner was rewritten to stop making.
+    private func bannerSymbol(
+        _ offline: MailSyncService.OfflineState, hasMessage: Bool
+    ) -> String {
+        if sync.status == .unauthenticated { return "key.slash" }
+
+        return hasMessage ? "wifi.slash" : "arrow.up.circle"
+    }
+
+    /// Whether a retry could plausibly work.
+    ///
+    /// `OfflineState` answers this for the states it can see, and deliberately
+    /// says no while the device is offline. It reports `.current` when the
+    /// *session* fetch failed before any per-account work ran, though —
+    /// `degradedAccounts` is only ever filled by an account that got as far as
+    /// syncing — so a whole-server failure has to be read off the status as
+    /// well, or the one screen that names the problem offers nothing to do
+    /// about it.
+    private func isRetryable(_ offline: MailSyncService.OfflineState) -> Bool {
+        if case .deviceOffline = offline { return false }
+
+        if offline.isRetryable { return true }
+
+        if case .failed = sync.status { return true }
+
+        return false
+    }
+
+    /// Retries exactly the accounts that failed.
+    ///
+    /// One at a time, and never the healthy ones: this audience runs the server
+    /// on a Raspberry Pi with a single PHP worker pool, and a retry that fans
+    /// out across every account is how a server having a bad day is finished
+    /// off by the client.
+    ///
+    /// A whole refresh only when there is no failing account to name — the case
+    /// where the session itself never answered and there is nothing narrower to
+    /// try.
+    private func retry(_ offline: MailSyncService.OfflineState) {
+        let keys = sync.degradedAccounts.keys.sorted()
+
+        guard keys.isEmpty == false else {
+            Task { await sync.refresh(feed: feed) }
+
+            return
+        }
+
+        Task {
+            for key in keys {
+                await sync.retry(accountKey: key)
+            }
         }
     }
 
@@ -720,7 +1568,11 @@ public struct ThreadListView: View {
                         """
                     )
                 } actions: {
-                    Button(.ui("Sign out"), role: .destructive) { sync.requestReauthentication() }
+                    // Not `role: .destructive`, and not a sign-out. Replacing
+                    // the app password keeps every cached message and every
+                    // queued draft: the store is keyed by server and account,
+                    // so it is still valid for the same server.
+                    Button(.ui("Sign in again")) { sync.requestReauthentication() }
                 }
 
             case .failed(let message):
@@ -784,12 +1636,32 @@ public struct ThreadListView: View {
         }
     }
 
+    /// Empty while the device itself is offline.
+    ///
+    /// Every account fails for that one reason, and listing five "couldn't
+    /// reach nas.local" rows implies five separate faults to go and look at.
+    /// The banner has already said the true one.
     private var degraded: [(key: String, value: String)] {
-        sync.degradedAccounts.sorted { $0.key < $1.key }
+        guard sync.isDeviceOffline == false else { return [] }
+
+        return sync.degradedAccounts.sorted { $0.key < $1.key }
     }
 
     private func accountName(_ accountKey: String) -> String {
         sync.accounts.first { $0.accountKey == accountKey }?.displayName ?? accountKey
+    }
+}
+
+/// Keeps a bulk-bar caption on one line.
+///
+/// Six captions share a phone's width, and German is roughly a third longer
+/// than English — untreated, "Zurückstellen" wraps and hyphenates itself into
+/// "Zurückstel-len" while its neighbours stay on one line, which reads as a
+/// broken row rather than a long word. Shrinking a little is the smaller cost,
+/// and the floor is high enough to stay legible.
+extension View {
+    fileprivate func bulkButtonTitle() -> some View {
+        lineLimit(1).minimumScaleFactor(0.7)
     }
 }
 

@@ -30,10 +30,40 @@ struct ServerDiagnosticsView: View {
     @State private var sessionFailure: String?
     @State private var accounts: [AccountSnapshot] = []
     @State private var didCopy = false
+    /// The result of the last **deliberate** check, or nil because nobody has
+    /// asked for one.
+    ///
+    /// Nil on open, always. Android's standing rule is worth adopting verbatim:
+    /// never make requests just because the screen was opened. The first thing
+    /// someone does when their server is struggling must not be to add traffic
+    /// to it.
+    @State private var echo: EchoResult?
+    @State private var isChecking = false
+
+    /// What one `Core/echo` round trip found out.
+    ///
+    /// `Core/echo` is the cheapest probe there is — it takes no `accountId`,
+    /// reads nothing and writes nothing — which is exactly what an "is the
+    /// server answering" check should cost on a machine with one PHP worker
+    /// pool. A failed sync tells you something is wrong; this tells you whether
+    /// it is the server, the credential or the mail.
+    private struct EchoResult: Equatable {
+        var checkedAt: Date
+        /// Round-trip time. The number people actually want: a NAS answering in
+        /// 4 seconds is a different problem from one not answering.
+        var duration: Duration?
+        /// Verbatim, and never rewritten into something friendlier. Whoever
+        /// reads this screen operates the server, and the exact error is the
+        /// thing they can act on.
+        var failure: String?
+
+        var succeeded: Bool { failure == nil }
+    }
 
     var body: some View {
         List {
             connectionSection
+            checkSection
             accountsSection
             limitsSection
             pushSection
@@ -54,15 +84,32 @@ struct ServerDiagnosticsView: View {
             LabeledContent(.ui("Status")) { statusText }
 
             if let lastCheckedAt = sync.lastCheckedAt {
+                // Absolute, with the date. Relative time is right on a message
+                // list, where recency is what matters; it is wrong here, where
+                // the job is correlating against a server log or the moment
+                // somebody restarted a container. "Yesterday" cannot be lined
+                // up against a log line and "01/08/2026, 03:14" can.
                 LabeledContent(.ui("Last checked")) {
-                    Text(lastCheckedAt, format: .relative(presentation: .named))
+                    Text(verbatim: absolute(lastCheckedAt))
                 }
             }
 
-            if connection.pinnedFingerprint != nil {
-                Label(.ui("Certificate pinned"), systemImage: "lock.fill")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+            if let fingerprint = connection.pinnedFingerprint {
+                // Shown, not merely asserted. Neither client could display a
+                // pin once it was accepted, so the one moment a user could
+                // compare it against `openssl` was during onboarding — the one
+                // moment they have nothing to compare it with.
+                //
+                // **Not clearable, deliberately.** `ServerTrust`'s fourth
+                // branch refuses a changed key permanently rather than
+                // degrading back into a prompt, and a Clear button here would
+                // be a way around that.
+                LabeledContent(.ui("Certificate pinned")) {
+                    Text(verbatim: fingerprint.description)
+                        .font(.caption.monospaced())
+                        .multilineTextAlignment(.trailing)
+                        .textSelection(.enabled)
+                }
             }
 
             if connection.address.isCleartext {
@@ -72,6 +119,58 @@ struct ServerDiagnosticsView: View {
             }
         } header: {
             Text(.ui("Connection"))
+        }
+    }
+
+    /// The one thing on this screen that costs the server anything, behind a
+    /// button the user has to press.
+    private var checkSection: some View {
+        Section {
+            Button {
+                Task { await check() }
+            } label: {
+                LabeledContent {
+                    if isChecking { ProgressView() }
+                } label: {
+                    Label(.ui("Check now"), systemImage: "bolt.horizontal")
+                }
+            }
+            .disabled(isChecking)
+
+            if let echo {
+                LabeledContent(.ui("Result")) {
+                    if echo.succeeded {
+                        Text(.ui("Answered"))
+                    } else {
+                        Text(.ui("No answer"))
+                            .foregroundStyle(ActionTint.spam)
+                    }
+                }
+
+                if let duration = echo.duration {
+                    LabeledContent(.ui("Round trip")) {
+                        Text(verbatim: duration.formatted(.units(allowed: [.milliseconds])))
+                    }
+                }
+
+                LabeledContent(.ui("Checked at")) {
+                    Text(verbatim: absolute(echo.checkedAt))
+                }
+
+                if let failure = echo.failure {
+                    Text(verbatim: failure)
+                        .font(.footnote)
+                        .foregroundStyle(ActionTint.spam)
+                        .textSelection(.enabled)
+                }
+            }
+        } header: {
+            Text(.ui("Check"))
+        } footer: {
+            Text(
+                .ui(
+                    "Sends the smallest request there is and times the reply. It reads no mail and changes nothing, and nothing on this screen contacts your server until you press it."
+                ))
         }
     }
 
@@ -93,7 +192,7 @@ struct ServerDiagnosticsView: View {
 
                 LabeledContent(.ui("Last sync")) {
                     if let lastSyncedAt = account.lastSyncedAt {
-                        Text(lastSyncedAt, format: .relative(presentation: .named))
+                        Text(verbatim: absolute(lastSyncedAt))
                     } else {
                         Text(.ui("Never"))
                     }
@@ -128,6 +227,18 @@ struct ServerDiagnosticsView: View {
                 LabeledContent(.ui("Calls per request"), value: core.maxCallsInRequest.formatted())
                 LabeledContent(
                     .ui("Requests at once"), value: core.maxConcurrentRequests.formatted())
+
+                // Per account in JMAP, but identical across accounts on this
+                // server, so the first one that publishes it answers for the
+                // screen. It is here rather than only in the composer because
+                // "why was my scheduled message refused" is asked here.
+                if let seconds = schedulingCeiling {
+                    LabeledContent(.ui("Furthest ahead a send can be scheduled")) {
+                        Text(
+                            verbatim: Duration.seconds(seconds)
+                                .formatted(.units(allowed: [.days, .hours])))
+                    }
+                }
             } else if let sessionFailure {
                 Label {
                     Text(verbatim: sessionFailure)
@@ -170,6 +281,16 @@ struct ServerDiagnosticsView: View {
                     Label(.ui("No push from this server"), systemImage: "bell.slash")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
+                }
+
+                // The evidence, one tap away. Two hundred `stream` lines beside
+                // "no push from this server" is the diagnosis for "mail only
+                // arrives while the app is open", and nothing else in the app
+                // can tell those two apart.
+                NavigationLink {
+                    PushLogView(sync: sync)
+                } label: {
+                    Label(.ui("Push log"), systemImage: "list.bullet.rectangle")
                 }
             } header: {
                 Text(.ui("Notifications"))
@@ -220,6 +341,21 @@ struct ServerDiagnosticsView: View {
         accounts.isEmpty ? sync.accounts : accounts
     }
 
+    /// The scheduling ceiling in seconds, from the first account that publishes
+    /// one.
+    ///
+    /// Nil on a server that publishes none, which is not the same as zero: zero
+    /// is "this server does not do delayed send" and is worth drawing, while
+    /// nil is an older server whose behaviour is only discoverable by trying.
+    private var schedulingCeiling: Int? {
+        guard let session else { return nil }
+
+        return
+            displayedAccounts
+            .compactMap { session.submissionCapabilities(for: $0.accountID)?.maxDelayedSend }
+            .first
+    }
+
     private var statusText: Text {
         switch sync.status {
         case .idle: Text(.ui("Connected"))
@@ -229,7 +365,48 @@ struct ServerDiagnosticsView: View {
         }
     }
 
+    /// On-screen timestamps carry the date and the time, always.
+    ///
+    /// One function so that every row on the screen agrees: two rows formatted
+    /// differently look like two different kinds of fact, and the whole use of
+    /// this screen is comparing them against each other and against a log.
+    private func absolute(_ date: Date) -> String {
+        date.formatted(date: .numeric, time: .shortened)
+    }
+
     // MARK: - Loading
+
+    /// One `Core/echo`, timed.
+    ///
+    /// It goes through `sync.jmapClient` rather than a client of its own so
+    /// that it queues behind the same `RequestGate` as everything else. A probe
+    /// that jumped the queue would report a round trip nobody else's request
+    /// could get, which is the opposite of what a diagnostic is for.
+    private func check() async {
+        isChecking = true
+
+        let started = ContinuousClock.now
+
+        do {
+            var builder = RequestBuilder(session: try await sync.jmapClient.session())
+            let call = builder.add(CoreEcho(.object(["plmail": .string("ping")])))
+            let results = try await sync.jmapClient.send(builder)
+
+            if let error = results.failure(of: call) { throw error }
+
+            _ = try results.result(of: call)
+
+            echo = EchoResult(checkedAt: .now, duration: ContinuousClock.now - started)
+        } catch {
+            // The error verbatim. Whoever reads this screen runs the server,
+            // and "something went wrong" is the one answer they cannot use.
+            echo = EchoResult(
+                checkedAt: .now, duration: ContinuousClock.now - started,
+                failure: String(describing: error))
+        }
+
+        isChecking = false
+    }
 
     private func reload() async {
         accounts = (try? await store.accounts()) ?? []
@@ -253,10 +430,18 @@ struct ServerDiagnosticsView: View {
 
         lines.append("server: \(connection.host)")
         lines.append("user: \(connection.username ?? "unknown")")
-        lines.append("pinned: \(connection.pinnedFingerprint == nil ? "no" : "yes")")
+        lines.append("pinned: \(connection.pinnedFingerprint?.hex ?? "no")")
         lines.append("cleartext: \(connection.address.isCleartext ? "yes" : "no")")
         lines.append("status: \(sync.status)")
         lines.append("lastChecked: \(sync.lastCheckedAt.map(isoFormatted) ?? "never")")
+
+        if let echo {
+            lines.append(
+                "echo: \(echo.succeeded ? "ok" : "failed") at \(isoFormatted(echo.checkedAt))")
+
+            if let duration = echo.duration { lines.append("echoDuration: \(duration)") }
+            if let failure = echo.failure { lines.append("echoError: \(failure)") }
+        }
 
         for account in displayedAccounts {
             lines.append("")
@@ -269,6 +454,11 @@ struct ServerDiagnosticsView: View {
             lines.append("  emailState: \(account.emailState?.rawValue ?? "—")")
             lines.append("  threadState: \(account.threadState?.rawValue ?? "—")")
             lines.append("  mailboxState: \(account.mailboxState?.rawValue ?? "—")")
+
+            if let submission = session?.submissionCapabilities(for: account.accountID) {
+                lines.append(
+                    "  maxDelayedSend: \(submission.maxDelayedSend.map(String.init) ?? "—")")
+            }
         }
 
         if let core = session?.capabilities.core {

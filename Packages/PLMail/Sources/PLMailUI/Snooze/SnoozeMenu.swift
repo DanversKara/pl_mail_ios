@@ -16,7 +16,7 @@ struct SnoozeMenu: View {
     let onPickExact: () -> Void
 
     var body: some View {
-        ForEach(TimePreset.available(among: TimePreset.snoozeChoices), id: \.preset.id) { entry in
+        ForEach(SnoozeMenuItems.current(), id: \.id) { entry in
             Button {
                 onPick(entry.date)
             } label: {
@@ -24,9 +24,9 @@ struct SnoozeMenu: View {
                     // The time as well as the name: "Tomorrow" is only useful
                     // if you know when tomorrow starts, and that is a choice
                     // this app made rather than one the user set.
-                    Text(.ui("\(entry.preset.title) · \(Self.shortTime(entry.date))"))
+                    Text(.ui("\(entry.title) · \(entry.label)"))
                 } icon: {
-                    Image(systemName: entry.preset.symbolName)
+                    Image(systemName: entry.symbolName)
                 }
             }
         }
@@ -73,6 +73,48 @@ struct SnoozeMenu: View {
         }
 
         return date.formatted(.dateTime.day().month(.abbreviated))
+    }
+}
+
+/// The snooze menu's finished rows — label included — rebuilt at most once a
+/// minute.
+///
+/// Caching the *dates* was not enough. ``SnoozeMenu/shortTime(_:)`` asks
+/// `Calendar.current.isDateInToday` and `isDateInTomorrow`, each of which
+/// resolves a day interval, and it runs once per menu row. The reader mentions
+/// this menu three times — toolbar, reply bar and ⌘ commands — so a single body
+/// evaluation of an open conversation paid for fifteen day-interval
+/// calculations plus fifteen format-style resolutions. Instruments showed
+/// `_CalendarGregorian.dateInterval(of:for:)` still hot after the dates
+/// themselves were cached.
+@MainActor
+enum SnoozeMenuItems {
+    struct Item: Identifiable {
+        let id: String
+        let date: Date
+        let title: String
+        let symbolName: String
+        /// The formatted time, resolved once here rather than per body.
+        let label: String
+    }
+
+    private static var cached: (minute: Date, value: [Item])?
+
+    static func current(now: Date = .now) -> [Item] {
+        let seconds = (now.timeIntervalSinceReferenceDate / 60).rounded(.down) * 60
+        let minute = Date(timeIntervalSinceReferenceDate: seconds)
+
+        if let cached, cached.minute == minute { return cached.value }
+
+        let fresh = SnoozeChoices.current(now: now).map {
+            Item(
+                id: $0.preset.id, date: $0.date, title: $0.preset.title,
+                symbolName: $0.preset.symbolName, label: SnoozeMenu.shortTime($0.date))
+        }
+
+        cached = (minute, fresh)
+
+        return fresh
     }
 }
 

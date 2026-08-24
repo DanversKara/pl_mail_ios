@@ -15,7 +15,7 @@ for nothing, and keeps refreshing the way it already does.
 - On connecting to a server it calls `registerForRemoteNotifications()` and
   gets a device token. This needs no permission and shows nothing.
 - It asks the session whether the server advertises
-  `urn:de:plmail:params:jmap:apns`. Today nothing does, so the token is
+  `urn:plmail:params:jmap:apns`. Today nothing does, so the token is
   discarded and a line goes in the log.
 - It **only** shows the notification permission prompt when that capability is
   present. Spending a one-shot prompt on a server that cannot send is worse
@@ -51,10 +51,10 @@ you until the app has fetched.
    screen, and a last-seen date so dead tokens get pruned.
 
 3. **A `PushSubscription/set` method** behind the capability
-   `urn:de:plmail:params:jmap:apns`, advertised in the session object as:
+   `urn:plmail:params:jmap:apns`, advertised in the session object as:
 
    ```json
-   "urn:de:plmail:params:jmap:apns": { "environment": "production", "topic": "de.plmail" }
+   "urn:plmail:params:jmap:apns": { "environment": "production", "topic": "de.plmail" }
    ```
 
    The method the app already sends:

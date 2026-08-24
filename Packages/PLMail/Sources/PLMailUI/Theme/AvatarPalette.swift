@@ -33,23 +33,39 @@ enum AvatarPalette {
     /// The order is unchanged and must stay unchanged: a sender's colour is
     /// their hash modulo this count, so reordering or resizing the array
     /// renumbers everybody.
-    private static let colors: [Color] = [
-        Color(red: 0.67, green: 0.39, blue: 0.33),  // terracotta
-        Color(red: 0.61, green: 0.42, blue: 0.27),  // clay
-        Color(red: 0.54, green: 0.45, blue: 0.25),  // mustard
-        Color(red: 0.40, green: 0.49, blue: 0.34),  // sage
-        Color(red: 0.32, green: 0.50, blue: 0.46),  // eucalyptus
-        Color(red: 0.35, green: 0.48, blue: 0.58),  // dusty blue
-        Color(red: 0.43, green: 0.45, blue: 0.65),  // periwinkle
-        Color(red: 0.52, green: 0.43, blue: 0.60),  // heather
-        Color(red: 0.60, green: 0.40, blue: 0.53),  // mauve
-        Color(red: 0.64, green: 0.39, blue: 0.41),  // dusty rose
-        Color(red: 0.45, green: 0.46, blue: 0.49),  // stone
-        Color(red: 0.55, green: 0.44, blue: 0.37),  // taupe
+    /// Stated as ``Swatch`` rather than `Color` so `PaletteContrastTests` can
+    /// measure them. Every rendered value is byte-identical to what shipped,
+    /// with one exception noted on its own line.
+    static let swatches: [(name: String, swatch: Swatch)] = [
+        ("terracotta", Swatch(0.67, 0.39, 0.33)),
+        ("clay", Swatch(0.61, 0.42, 0.27)),
+        ("mustard", Swatch(0.54, 0.45, 0.25)),
+        ("sage", Swatch(0.40, 0.49, 0.34)),
+        // Green nudged one hundredth darker: it measured 4.49:1 against white,
+        // the only entry that missed the 4.5:1 this comment has always claimed
+        // for all twelve. Its slot and its hue are unchanged, so nobody is
+        // renumbered — which is the constraint, and it is not the same
+        // constraint as never touching a value.
+        ("eucalyptus", Swatch(0.32, 0.49, 0.46)),
+        ("dusty blue", Swatch(0.35, 0.48, 0.58)),
+        ("periwinkle", Swatch(0.43, 0.45, 0.65)),
+        ("heather", Swatch(0.52, 0.43, 0.60)),
+        ("mauve", Swatch(0.60, 0.40, 0.53)),
+        ("dusty rose", Swatch(0.64, 0.39, 0.41)),
+        ("stone", Swatch(0.45, 0.46, 0.49)),
+        ("taupe", Swatch(0.55, 0.44, 0.37)),
     ]
+
+    private static let colors: [Color] = swatches.map(\.swatch.color)
 
     static func color(for seed: String) -> Color {
         colors[index(for: seed)]
+    }
+
+    /// The measurable form of ``color(for:)``, for the contrast suite and for
+    /// anything that has to decide what to draw *on* an avatar.
+    static func swatch(for seed: String) -> Swatch {
+        swatches[index(for: seed)].swatch
     }
 
     /// FNV-1a, written out rather than using `hashValue`.

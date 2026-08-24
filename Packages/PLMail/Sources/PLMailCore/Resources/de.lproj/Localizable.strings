@@ -105,3 +105,98 @@
 
 "No matches" = "Keine Treffer";
 "%lld of %lld" = "%lld von %lld";
+"Mail copied to a person" = "Mail in Kopie an eine Person";
+"One label, by its exact name" = "Ein Label, mit genauem Namen";
+
+/* Onboarding: the typed address carried user:password@, which would be baked
+   into every request and into the Keychain metadata. */
+"Leave the username and password out of the address — the app password goes in the field below." = "Lass Benutzernamen und Passwort aus der Adresse heraus — das App-Passwort gehört in das Feld darunter.";
+
+/* Labels: lokal abgelehnt statt vom Server, weil die Antwort ein blankes
+   invalidProperties wäre, das die Regel nicht benennt. */
+"A label can't be nested inside itself." = "Ein Label kann sich nicht selbst untergeordnet werden.";
+
+/* Benachrichtigungen. Werden vorgelesen und auf dem Sperrbildschirm angezeigt —
+   die eine Stelle in der App, an der die Sprache nicht durch Nachsehen an
+   anderer Stelle korrigiert werden kann. */
+"Unknown sender" = "Unbekannter Absender";
+"(no subject)" = "(kein Betreff)";
+"Mark as read" = "Als gelesen markieren";
+"Reply" = "Antworten";
+"Send" = "Senden";
+"Reply to this message" = "Auf diese Nachricht antworten";
+"Your reply hasn't been sent" = "Deine Antwort wurde noch nicht gesendet";
+"It's queued and will go out when the server answers." = "Sie ist in der Warteschlange und geht raus, sobald der Server antwortet.";
+"Try again" = "Erneut versuchen";
+"%lld new messages" = "%lld neue Nachrichten";
+
+/* Entwürfe. Ein Editor, der still sichert, und einer, der es still nicht tut,
+   sehen gleich aus — deshalb sagt jede dieser Zeilen, wo der Text gerade ist. */
+"Couldn't reach the server. Showing the draft last synced." = "Server nicht erreichbar. Angezeigt wird der zuletzt synchronisierte Entwurf.";
+"The server wouldn't save this draft." = "Der Server hat diesen Entwurf nicht gesichert.";
+"This draft changed somewhere else. Reopen it to see the newest copy." = "Dieser Entwurf wurde anderswo geändert. Öffne ihn neu, um die neueste Fassung zu sehen.";
+"Sign in again to save this." = "Melde dich erneut an, um das zu sichern.";
+"Couldn't reach the server. This is still on your phone." = "Server nicht erreichbar. Das hier liegt weiterhin auf deinem Gerät.";
+
+/* Anhänge, abgelehnt beim Auswählen und beim Namen genannt. Eine Nachricht mit
+   den ersten 25 MB eines Videos sieht für den Absender aus, als hätte es
+   geklappt. */
+"%@ is %@. This server accepts attachments up to %@." = "%1$@ ist %2$@ groß. Dieser Server nimmt Anhänge bis %3$@.";
+"%@ is stored on %@ and can't move to another account. Remove it, or send from %@." = "%@ liegt auf %@ und kann nicht in ein anderes Konto wechseln. Entferne die Datei, oder sende von %@.";
+"Adding %@ would take this message to %@. The limit is %@." = "Mit %1$@ käme diese Nachricht auf %2$@. Die Grenze liegt bei %3$@.";
+
+/* Das Zitat und der Weiterleitungskopf. Hartkodiertes Englisch über einem
+   deutschen Verlauf ist der Fehler, den das hier ersetzt. */
+"On %@, %@ wrote:" = "Am %1$@ schrieb %2$@:";
+"---------- Forwarded message ----------" = "---------- Weitergeleitete Nachricht ----------";
+"From:" = "Von:";
+"Date:" = "Datum:";
+"Subject:" = "Betreff:";
+"To:" = "An:";
+"Cc:" = "Kopie:";
+
+/* Die Warteschlange für Aktionen ohne Server. Drei bewusst verschiedene Sätze:
+   der Server weiß es, der Server weiß es noch nicht, oder der Server hat
+   abgelehnt. Fasst man die Mitte mit dem Rest zusammen, behauptet die App im
+   Zug, die Mail sei verschoben — was sie nicht ist. */
+"waiting for the server" = "warte auf den Server";
+"Put back" = "Zurückgelegt";
+"That server's certificate no longer matches." = "Das Zertifikat dieses Servers passt nicht mehr.";
+"You're offline." = "Du bist offline.";
+"Nothing on %@ answered." = "Auf %@ hat nichts geantwortet.";
+"Your server won't hold mail this far ahead. This phone will send it." = "Dein Server hält Post nicht so weit im Voraus zurück. Dieses Telefon sendet sie.";
+
+/* Postfach-Kategorien. Wortgleich mit der Tableiste der Weboberfläche
+   (translations/messages.de.yaml, `tabs:`) — „Allgemein" statt „Primär", weil
+   die Registerkarte ein Ausschnitt des Posteingangs ist und kein Konto. */
+
+"Primary" = "Allgemein";
+"Social" = "Soziale Netzwerke";
+"Promotions" = "Werbung";
+"Updates" = "Benachrichtigungen";
+"Forums" = "Foren";
+
+/* Die Widgets für Home- und Sperrbildschirm. In diesem Katalog und nicht in
+   dem von PLMailUI, weil die Widget-Erweiterung nur PLMailCore einbindet —
+   PLMailUI greift auf UIApplication.shared zu, was einer App-Erweiterung
+   verwehrt ist — und eine unerreichbare Zeichenkette bleibt englisch. */
+
+"Needs a paid developer account" = "Erfordert einen kostenpflichtigen Entwickleraccount";
+"Open plMail to sign in" = "plMail öffnen und anmelden";
+"unread message" = "ungelesene Nachricht";
+"unread messages" = "ungelesene Nachrichten";
+"No unread mail" = "Keine ungelesene Post";
+"%lld unread" = "%lld ungelesen";
+"Unread mail" = "Ungelesene Post";
+"How much unread mail is waiting." = "Wie viel ungelesene Post wartet.";
+"Today's events" = "Heutige Termine";
+"What is left on your calendar today." = "Was heute noch im Kalender steht.";
+"Nothing left today" = "Heute nichts mehr";
+"No calendar loaded" = "Kein Kalender geladen";
+"This server has no calendar" = "Dieser Server hat keinen Kalender";
+
+/* Entwurfskonflikte. `ifInState` wird gegen den E-Mail-Status des Kontos
+   geprüft, deshalb erscheint das erst, wenn das Änderungsprotokoll bestätigt
+   hat, dass dieser Entwurf selbst bewegt wurde — und nicht bloß Post kam. */
+
+"This draft changed on another device. Nothing here has been lost." = "Dieser Entwurf wurde auf einem anderen Gerät geändert. Hier ging nichts verloren.";

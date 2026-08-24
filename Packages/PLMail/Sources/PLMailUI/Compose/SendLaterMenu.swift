@@ -97,16 +97,34 @@ struct SendLaterSheet: View {
         .presentationDetents([.medium, .large])
     }
 
-    /// Said plainly, in both places a time is chosen or shown.
+    /// Said plainly, and no longer said unconditionally.
     ///
-    /// The app has no way to guarantee the minute: the message goes out on a
-    /// drain, and a drain happens when the app is opened, when the network
-    /// returns, or when the system grants a background refresh — none of which
-    /// is scheduled by us. Claiming 08:00 and delivering 09:20 would be a
-    /// worse feature than one that says what it does, in the same way "last
-    /// checked 20 minutes ago" is better than a live-looking inbox that isn't.
-    static let caveat = String.LocalizationValue(
+    /// **This used to be the only sentence available, and it was an apology for
+    /// a limitation that has been removed.** A scheduled message is now offered
+    /// to the server first, with RFC 4865 FUTURERELEASE — `HOLDUNTIL` on the
+    /// submission envelope — and a server that takes it releases the mail at
+    /// the chosen minute with the phone flat, in a drawer, or reinstalled.
+    ///
+    /// The old sentence is still true of the fallback, which is why it is still
+    /// here: a message composed offline, or scheduled past whatever ceiling the
+    /// server advertises as `maxDelayedSend`, is held on this device and really
+    /// does go out "at the first check after this time". Both sentences are
+    /// true of exactly one path, so the Outbox says the right one per row —
+    /// removing this text entirely would be the same mistake in the other
+    /// direction.
+    static let deviceHeldCaveat = String.LocalizationValue(
         "Sent at the first check after this time. Your phone has to be awake for that, so it may be a little later."
+    )
+
+    /// What a scheduled message can be promised **before** it is known which
+    /// mechanism will hold it.
+    ///
+    /// Which one is not decided in the composer: the message is filed with a
+    /// time, and the outbox offers that time to the server on the next drain.
+    /// Promising the server path here and falling back would be a promise
+    /// broken after the sheet had closed.
+    static let caveat = String.LocalizationValue(
+        "Your server holds this and sends it on time. If it won't — too far ahead, or you're offline — this phone sends it at the first check after."
     )
 }
 

@@ -36,13 +36,38 @@ public final class MailSyncService {
     /// down" and "the app is broken".
     public private(set) var degradedAccounts: [String: String] = [:]
 
+    /// Whether this server classifies mail into inbox categories at all.
+    ///
+    /// **False until proven otherwise, and that is the safe direction.** A
+    /// plMail instance whose classifier has never run answers every category
+    /// query with nothing, and five permanently empty tabs above a working
+    /// inbox reads as mail having gone missing. Starting false means the
+    /// control cannot flicker in on launch and out again the way an optional
+    /// would.
+    ///
+    /// Re-read on every cache load rather than on a timer, so it is refreshed
+    /// by exactly the things that could change it — a sync, a foreground, a
+    /// delta pull — and never by anything else.
+    public private(set) var hasCategories = false
+
     /// Highlighted match text, keyed by `accountKey#emailId`.
     ///
     /// In memory rather than in the store: it belongs to one query rather than
     /// to the message, it is meaningless the moment the search text changes,
     /// and the store's rule is that everything in it is reconstructible cache
     /// — this is reconstructible, but only alongside a query nobody kept.
-    public private(set) var snippets: [String: String] = [:]
+    public private(set) var highlights: [String: SearchHighlight] = [:]
+
+    /// The body half alone, for the row's preview slot.
+    ///
+    /// Two fields rather than `preview ?? subject` collapsed into one: a
+    /// subject match drawn in the body-snippet slot shows the same words twice
+    /// on one row, once as the subject and once as what is supposed to be the
+    /// sentence they were found in. A row that has no body match now draws its
+    /// own stored preview instead, which is at least honest.
+    public var snippets: [String: String] {
+        highlights.compactMapValues(\.body)
+    }
 
     /// One merge per feed, so each keeps its own buffers and cursors.
     private var merges: [FeedID: UnifiedFeed] = [:]
@@ -72,14 +97,68 @@ public final class MailSyncService {
     /// list the app has ever built.
     private var visibleFeed: FeedID?
 
+    /// Actions taken while the server could not be reached.
+    ///
+    /// Claimed here rather than built by whoever needs it: ``MailActions`` is
+    /// constructed by a view that is handed a client and a store and no server
+    /// id, and two queues over one directory would drain the same file twice.
+    private let queue: ActionQueue
+    private let drain: ActionDrain
+
+    /// The write half of the New marker.
+    ///
+    /// Owned here rather than by the list, because a list is rebuilt every time
+    /// the mailbox changes and the batch it was holding would go with it — the
+    /// reports for the last page drawn would be dropped exactly at the moment
+    /// somebody navigated away, which is when they matter most.
+    private let shown: ShownThreads
+
     public init(connection: ServerConnection, store: SyncStore) {
         self.connection = connection
         let client = connection.makeClient()
         self.client = client
         self.store = store
-        delta = DeltaSync(client: client, store: store)
+        let queue = ActionQueue.shared(serverID: connection.host)
+        self.queue = queue
+        drain = ActionDrain(queue: queue)
+        // The queue is handed to delta sync as well: a feed projection that did
+        // not consult it would put back on screen the conversation the user
+        // archived a minute ago, and the gesture would look ignored.
+        delta = DeltaSync(client: client, store: store, queue: queue)
         breaker = CircuitBreaker()
         events = EventSourceClient(client: client, credential: connection.credential)
+        shown = ShownThreads(client: client, store: store)
+    }
+
+    // MARK: - The New marker
+
+    /// Reports that a conversation's row has been drawn.
+    ///
+    /// **Only from a genuine display.** A page arriving from the pager, a delta
+    /// pull, a notification and the body prefetcher all put conversations on
+    /// this device without anybody seeing them; reporting those would retire
+    /// markers for mail the user has never looked at, in every client they own.
+    ///
+    /// Returns immediately — the batching and the round trip happen behind
+    /// ``ShownThreads``, and a scroll must never wait on a home server.
+    public func reportDisplayed(threadID: String, accountKey: String) {
+        guard let accountID = accounts.first(where: { $0.accountKey == accountKey })?.accountID
+        else { return }
+
+        Task { [shown] in
+            await shown.report(
+                threadID: threadID, accountKey: accountKey, accountID: accountID)
+        }
+    }
+
+    /// Sends whatever displays are still batched, without waiting out the
+    /// debounce.
+    ///
+    /// For the moment a list goes away — a mailbox change, or the scene leaving
+    /// the foreground — where the alternative is a page's worth of reports
+    /// dropped because the window had 300ms left on it.
+    public func flushDisplayReports() async {
+        await shown.flushNow()
     }
 
     public var serverID: String { connection.host }
@@ -90,8 +169,13 @@ public final class MailSyncService {
     public var jmapClient: JMAPClient { client }
     public var serverConnection: ServerConnection { connection }
 
-    /// Called when the stored credential is no longer accepted, so the app can
-    /// return to onboarding. Set by whoever owns the sign-out path.
+    /// Called when the user asks to replace a credential the server rejected.
+    ///
+    /// **Not a sign-out.** It was wired to one, and the cost was every cached
+    /// message and every queued draft each time an app password was revoked,
+    /// rotated or expired. Whoever sets this must present a way to supply a new
+    /// credential for the *same* server and must not touch ``store`` — the
+    /// cache is keyed by server and account and stays valid across the swap.
     public var onReauthenticationNeeded: (() -> Void)?
 
     public func requestReauthentication() {
@@ -132,8 +216,31 @@ public final class MailSyncService {
     }
 
     /// A push says only that a state token moved; this finds out what.
+    ///
+    /// **Only the accounts that actually moved.** One bulk label edit in the
+    /// browser produces dozens of `StateChange` events naming the same token,
+    /// and pulling for each of them costs an `Email/changes` round trip apiece
+    /// against a server with one PHP worker pool. The token the event carries
+    /// is compared against the one this device already holds, and a match means
+    /// there is nothing to ask for.
     private func handle(_ change: StateChange) async {
-        let outcome = await delta.pull(accounts: accounts)
+        // First statement on purpose, ahead of the "did anything move" filter:
+        // a change that moved nothing is still evidence the stream is alive,
+        // and a push log that only recorded consequential changes would look
+        // dead exactly when somebody is trying to find out whether it is.
+        await PushActivityLog.shared.record(change, route: .stream)
+
+        let moved = Self.accountsThatMoved(change, accounts: accounts)
+
+        guard moved.isEmpty == false else {
+            // Still evidence the server is up and answering, which is worth
+            // recording — but not worth a request.
+            lastCheckedAt = .now
+
+            return
+        }
+
+        let outcome = await delta.pull(accounts: moved)
 
         lastCheckedAt = .now
 
@@ -147,6 +254,25 @@ public final class MailSyncService {
 
         for accountKey in outcome.resyncedAccounts {
             logger.notice("\(accountKey, privacy: .public) was re-paged after a stale cursor.")
+        }
+    }
+
+    /// Which accounts a state change actually concerns.
+    ///
+    /// An account the event does not name at all is included: plMail sends the
+    /// full map today, but a server that omitted an account would otherwise
+    /// have its mail silently never pulled, and missing mail is a far worse
+    /// failure than one extra request. An account the event names with the
+    /// token this device already holds is skipped — that is the whole saving.
+    nonisolated static func accountsThatMoved(
+        _ change: StateChange, accounts: [AccountSnapshot]
+    ) -> [AccountSnapshot] {
+        accounts.filter { account in
+            guard let announced = change.changed[account.accountID.rawValue]?["Email"] else {
+                return true
+            }
+
+            return announced != account.emailState?.rawValue
         }
     }
 
@@ -164,6 +290,10 @@ public final class MailSyncService {
             }
 
             await loadCached()
+            // Before the pull, not after: a sync that wrote the server's answer
+            // over a change still waiting to be sent would take the row off
+            // screen again and look like the gesture had been undone.
+            await drainQueuedActions()
             _ = await delta.pull(accounts: accounts)
             lastCheckedAt = .now
         } catch {
@@ -173,8 +303,286 @@ public final class MailSyncService {
 
     /// Called when the network path changes — the one signal worth reopening a
     /// tripped circuit for, since time passing is not evidence of anything.
-    public func networkPathChanged() async {
+    ///
+    /// - Parameter isOnline: Whether the device has a *validated* path. Android
+    ///   reads `NET_CAPABILITY_VALIDATED` for the same reason: a captive portal
+    ///   answers every connection and none of them reach the mail server, and
+    ///   telling the user their NAS is down when the hotel wifi wants a login is
+    ///   sending them to fix the wrong thing. Defaults to true so a caller that
+    ///   only knows "something changed" behaves as it always has.
+    public func networkPathChanged(isOnline: Bool = true) async {
+        isDeviceOffline = isOnline == false
+
         await breaker.allowRetry()
+
+        guard isOnline else { return }
+
+        await drain.allowRetry()
+        await drainQueuedActions()
+    }
+
+    // MARK: - Offline durability
+
+    /// Whether this device has no usable network.
+    ///
+    /// Kept apart from ``degradedAccounts`` because the remedy is different and
+    /// the sentence has to be: when the phone is offline every account fails for
+    /// the same reason, and listing five "couldn't reach nas.local" banners
+    /// implies five separate faults.
+    public private(set) var isDeviceOffline = false
+
+    /// How many changes are waiting to reach the server.
+    public private(set) var queuedActionCount = 0
+
+    /// What the list should say over the top of the mail it already has.
+    ///
+    /// Three cases, deliberately distinct — the same three Android chose,
+    /// because each one sends the user somewhere different.
+    public enum OfflineState: Equatable, Sendable {
+        /// Everything is current.
+        case current
+        /// This device has no network. Per-account banners are suppressed:
+        /// they are all failing for this one reason.
+        case deviceOffline(queued: Int)
+        /// The device has a network and *nothing* on the server answered.
+        /// Naming one account would imply the others are fine.
+        case wholeServer(host: String, queued: Int)
+        /// One account failed and the rest are still refreshing.
+        case account(accountKey: String, message: String, queued: Int)
+
+        /// The sentence to show. Written here rather than in the view so the
+        /// three cases cannot be worded into meaning the same thing.
+        public var message: String? {
+            switch self {
+            case .current:
+                nil
+            case .deviceOffline:
+                String(localized: "You're offline.", bundle: .module)
+            case .wholeServer(let host, _):
+                String(localized: "Nothing on \(host) answered.", bundle: .module)
+            case .account(_, let message, _):
+                message
+            }
+        }
+
+        /// How many changes are waiting behind this state.
+        public var queued: Int {
+            switch self {
+            case .current: 0
+            case .deviceOffline(let queued): queued
+            case .wholeServer(_, let queued): queued
+            case .account(_, _, let queued): queued
+            }
+        }
+
+        /// Whether a Retry button makes sense.
+        ///
+        /// Not while the device is offline: pressing it can only fail, and a
+        /// button that cannot work is worse than none.
+        public var isRetryable: Bool {
+            switch self {
+            case .current, .deviceOffline: false
+            case .wholeServer, .account: true
+            }
+        }
+    }
+
+    public var offlineState: OfflineState {
+        if isDeviceOffline { return .deviceOffline(queued: queuedActionCount) }
+
+        guard let first = degradedAccounts.sorted(by: { $0.key < $1.key }).first else {
+            return .current
+        }
+
+        if accounts.isEmpty == false, degradedAccounts.count >= accounts.count {
+            return .wholeServer(host: serverID, queued: queuedActionCount)
+        }
+
+        return .account(
+            accountKey: first.key, message: first.value, queued: queuedActionCount)
+    }
+
+    /// Sends whatever is waiting, oldest first.
+    ///
+    /// **Never on a timer and never eagerly.** It runs when something suggests
+    /// the server is worth talking to again — the network path changed, a sync
+    /// succeeded, the user pulled to refresh — and ``ActionDrain`` backs off
+    /// between failures. This audience runs the server on a Raspberry Pi with a
+    /// single worker pool, and a queue retried in a loop takes the web UI down
+    /// with it.
+    public func drainQueuedActions() async {
+        let summary = await drain.drain { [weak self] mutation in
+            guard let self else { return .unreachable }
+
+            return await send(mutation)
+        }
+
+        queuedActionCount = summary.remaining
+
+        if summary.refused > 0 {
+            logger.error("The server refused \(summary.refused, privacy: .public) queued actions.")
+        }
+    }
+
+    /// Re-reads the count without sending anything, for a screen coming
+    /// forward.
+    public func refreshQueuedCount() async {
+        queuedActionCount = await queue.count()
+    }
+
+    /// Replays one queued mutation.
+    ///
+    /// A label is re-resolved to this account's binding here rather than being
+    /// carried: a binding id belongs to one account and can be recreated with a
+    /// different number when a label is deleted and remade, so a queue holding
+    /// one would eventually apply the wrong label. A label that no longer
+    /// resolves is counted as sent — a queue that cannot empty blocks every
+    /// action behind it forever.
+    private func send(_ mutation: PendingMutation) async -> ActionDrain.Attempt {
+        guard accounts.contains(where: { $0.accountKey == mutation.accountKey }) else {
+            // The account was disconnected while this waited. It can never
+            // accept its backlog, and retrying would stall everything behind
+            // it — the drain stops at the first failure by design.
+            return .sent
+        }
+
+        if case .snooze(let until) = mutation.kind {
+            return await send(
+                ThreadSet.snooze(
+                    ThreadID(mutation.threadID), until: until.map(UTCDate.init),
+                    accountID: mutation.accountID))
+        }
+
+        guard let request = await request(for: mutation) else { return .sent }
+
+        return await send(request)
+    }
+
+    /// The wire call for a queued mutation, or nil when it no longer means
+    /// anything in this account.
+    private func request(for mutation: PendingMutation) async -> EmailSet? {
+        let accountKey = mutation.accountKey
+        let ids = mutation.emailIDs
+        let accountID = mutation.accountID
+
+        switch mutation.kind {
+        case .archive:
+            guard let inbox = try? await store.mailbox(role: .inbox, accountKey: accountKey)
+            else { return nil }
+
+            return EmailSet.archive(
+                ids: ids, inbox: inbox,
+                archive: try? await store.mailbox(role: .archive, accountKey: accountKey),
+                accountID: accountID)
+
+        case .moveToInbox:
+            guard let inbox = try? await store.mailbox(role: .inbox, accountKey: accountKey)
+            else { return nil }
+
+            return EmailSet.moveToInbox(
+                ids: ids, inbox: inbox,
+                leaving: try? await store.mailbox(role: .archive, accountKey: accountKey),
+                accountID: accountID)
+
+        case .trash:
+            return EmailSet.trash(ids: ids, accountID: accountID)
+
+        case .spam:
+            guard let inbox = try? await store.mailbox(role: .inbox, accountKey: accountKey),
+                let junk = try? await store.mailbox(role: .junk, accountKey: accountKey)
+            else { return nil }
+
+            return EmailSet.setSpam(
+                true, ids: ids, inbox: inbox, junk: junk, accountID: accountID)
+
+        case .setSeen(let isSeen):
+            return EmailSet.setSeen(isSeen, ids: ids, accountID: accountID)
+
+        case .setFlagged(let isFlagged):
+            return EmailSet.setFlagged(isFlagged, ids: ids, accountID: accountID)
+
+        case .setLabel(let isApplied, let labelID):
+            guard let mailbox = try? await store.mailbox(labelID: labelID, accountKey: accountKey)
+            else { return nil }
+
+            return EmailSet.setLabel(
+                isApplied, mailbox: mailbox, ids: ids, accountID: accountID)
+
+        case .snooze:
+            // Handled before this is reached: a snooze is a `Thread/set`.
+            return nil
+        }
+    }
+
+    private func send(_ request: EmailSet) async -> ActionDrain.Attempt {
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let call = builder.add(request)
+            let results = try await client.send(builder)
+
+            if let error = results.failure(of: call) { throw error }
+
+            let result = try results.result(of: call)
+
+            // A 200 is not success: `Email/set` reports per-object refusals in
+            // `notUpdated`, and a refusal replayed is a loop that never ends.
+            if let refused = result.notUpdated, refused.isEmpty == false {
+                return .refused(String(describing: refused))
+            }
+
+            if let refused = result.notDestroyed, refused.isEmpty == false {
+                return .refused(String(describing: refused))
+            }
+
+            return .sent
+        } catch {
+            return Self.attempt(after: error)
+        }
+    }
+
+    private func send(_ request: ThreadSet) async -> ActionDrain.Attempt {
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let call = builder.add(request)
+            let results = try await client.send(builder)
+
+            if let error = results.failure(of: call) { throw error }
+
+            if let refused = try results.result(of: call).notUpdated, refused.isEmpty == false {
+                return .refused(String(describing: refused))
+            }
+
+            return .sent
+        } catch {
+            return Self.attempt(after: error)
+        }
+    }
+
+    /// One place where an error becomes an outcome, so the two send paths
+    /// cannot come to disagree about what counts as a refusal.
+    nonisolated static func attempt(after error: any Error) -> ActionDrain.Attempt {
+        ActionFailure.classify(error).isQueueWorthy
+            ? .unreachable : .refused(String(describing: error))
+    }
+
+    /// Tries one account again, leaving the others alone.
+    ///
+    /// A per-account retry rather than a whole refresh: the other accounts are
+    /// up to date, and re-syncing them to fix one is a request per mailbox
+    /// against a server that is already having a bad day.
+    public func retry(accountKey: String) async {
+        guard let account = accounts.first(where: { $0.accountKey == accountKey }) else { return }
+
+        degradedAccounts[accountKey] = nil
+
+        await breaker.allowRetry()
+        await syncMailboxes(for: account)
+
+        mailboxes = (try? await allMailboxes()) ?? mailboxes
+
+        _ = await delta.pull(accounts: [account])
+
+        lastCheckedAt = .now
     }
 
     /// Loads whatever is cached, then refreshes from the server.
@@ -187,10 +595,22 @@ public final class MailSyncService {
         await refresh(feed: feed)
     }
 
+    /// Re-reads whether any conversation carries a category.
+    ///
+    /// Cheap — one `fetchCount` with a limit of one — and worth doing whenever
+    /// the inbox comes back on screen. The flag was previously set only on a
+    /// cold load and after a page fetch, so anything that cleared it mid-session
+    /// left the category tabs missing until the app was force-quit, which is
+    /// exactly what was reported.
+    public func refreshCategoryAvailability() async {
+        hasCategories = (try? await store.hasCategorisedThreads()) ?? hasCategories
+    }
+
     public func loadCached() async {
         do {
             accounts = try await store.accounts()
             mailboxes = try await allMailboxes()
+            hasCategories = try await store.hasCategorisedThreads()
             publishSharedState()
         } catch {
             logger.error("Could not read the cache: \(error, privacy: .public)")
@@ -242,6 +662,13 @@ public final class MailSyncService {
 
         lastCheckedAt = .now
         await breaker.recordSuccess()
+        isDeviceOffline = false
+
+        // The server just answered, which is the evidence the drain waits for.
+        // Sent before the delta pull for the same reason as in the background
+        // path: the server's answer must not overwrite a change it has not
+        // been told about yet.
+        await drainQueuedActions()
 
         degradedAccounts = [:]
         // Rebuilt on next use: the mailbox ids a role maps to may have moved,
@@ -263,6 +690,12 @@ public final class MailSyncService {
         _ = await delta.pull(accounts: accounts)
 
         await loadFirstPage(of: feed)
+
+        // After the first page, not before: a fresh install has no threads at
+        // all when this method starts, so asking any earlier would decide that
+        // the server classifies nothing and hide the control until the next
+        // launch.
+        hasCategories = (try? await store.hasCategorisedThreads()) ?? hasCategories
     }
 
     // MARK: - Whole-list actions
@@ -521,34 +954,39 @@ public final class MailSyncService {
 
             let accountMailboxes = mailboxes.filter { $0.accountKey == account.accountKey }
 
-            // The same filter the query ran with, built the same way. A
-            // different one here would highlight terms the results were never
+            // The same filter the query ran with, built the same way — through
+            // the scope, so a `label:` narrowing is honoured here too. A
+            // different filter would highlight terms the results were never
             // matched on.
-            let filter = SearchQueryCompiler.filter(
-                for: parsed,
-                mailboxID: SearchQueryCompiler.mailboxID(
-                    for: parsed, mailboxes: accountMailboxes)
-            )
+            let scope = SearchQueryCompiler.scope(for: parsed, mailboxes: accountMailboxes)
+            let filter = SearchQueryCompiler.filter(for: parsed, scope: scope)
 
-            do {
-                var builder = RequestBuilder(session: try await client.session())
-                let call = builder.add(
-                    SearchSnippetGet(
-                        accountID: account.accountID,
-                        filter: filter,
-                        emailIDs: ids.map { EmailID($0) }
+            // `SearchSnippet/get` refuses more than 500 ids outright, and this
+            // treats any failure as "no highlighting". Without the batching, a
+            // search that paged past 500 results lost highlighting on **every**
+            // row in **every** account at once, silently.
+            for batch in SearchSnippetBatch.batches(ids) {
+                do {
+                    var builder = RequestBuilder(session: try await client.session())
+                    let call = builder.add(
+                        SearchSnippetGet(
+                            accountID: account.accountID,
+                            filter: filter,
+                            emailIDs: batch.map { EmailID($0) }
+                        )
                     )
-                )
 
-                let results = try await client.send(builder)
+                    let results = try await client.send(builder)
 
-                for snippet in try results.result(of: call).list {
-                    guard let html = snippet.preview ?? snippet.subject else { continue }
+                    for snippet in try results.result(of: call).list {
+                        guard snippet.preview != nil || snippet.subject != nil else { continue }
 
-                    snippets["\(account.accountKey)#\(snippet.emailID.rawValue)"] = html
+                        highlights["\(account.accountKey)#\(snippet.emailID.rawValue)"] =
+                            SearchHighlight(subject: snippet.subject, body: snippet.preview)
+                    }
+                } catch {
+                    logger.debug("No snippets for \(account.accountKey, privacy: .public)")
                 }
-            } catch {
-                logger.debug("No snippets for \(account.accountKey, privacy: .public)")
             }
         }
     }
@@ -560,7 +998,7 @@ public final class MailSyncService {
     public func discardSearch(feed: FeedID) async {
         guard case .searchResults = feed else { return }
 
-        snippets.removeAll()
+        highlights.removeAll()
 
         for account in accounts {
             try? await store.resetFeed(feedID: feed.rawValue, accountKey: account.accountKey)
@@ -634,6 +1072,22 @@ public final class MailSyncService {
 
             filter = .inMailbox(matching.mailboxID)
 
+        case .category(let category):
+            guard
+                let inbox = try? await store.mailbox(
+                    role: .inbox, accountKey: account.accountKey)
+            else { return nil }
+
+            // The inbox binding is part of the filter, not context around it.
+            // A conversation keeps its category after it is moved to Trash, so
+            // `threadCategory` alone would put the bin's promotions on a list
+            // that claims to be a slice of the inbox.
+            //
+            // Server-side, never by sieving a fetched page: `Email/query`
+            // windows by limit, so filtering locally would draw four rows under
+            // a list that had already reached its end.
+            filter = .and([.inMailbox(inbox), .threadCategory(category)])
+
         case .mailbox(let accountKey, let mailboxID):
             guard accountKey == account.accountKey else { return nil }
 
@@ -643,18 +1097,19 @@ public final class MailSyncService {
             let parsed = SearchQuery.parse(raw)
             let accountMailboxes = mailboxes.filter { $0.accountKey == account.accountKey }
 
-            // An account with no mailbox for the requested role cannot answer
-            // this query, and including it unfiltered would return its whole
-            // mailbox as "results".
-            guard SearchQueryCompiler.canSearch(parsed, mailboxes: accountMailboxes) else {
-                return nil
-            }
+            // Through the scope, not the single-mailbox entry point: `in:` and
+            // `label:` both compile to `inMailbox` and can appear together, and
+            // the legacy path refuses a query carrying `label:` outright rather
+            // than compiling one that quietly drops it. Until this asked for a
+            // scope, `label:` returned nothing at all.
+            let scope = SearchQueryCompiler.scope(for: parsed, mailboxes: accountMailboxes)
 
-            filter = SearchQueryCompiler.filter(
-                for: parsed,
-                mailboxID: SearchQueryCompiler.mailboxID(
-                    for: parsed, mailboxes: accountMailboxes)
-            )
+            // An account with no mailbox for the requested role or label cannot
+            // answer this query, and including it unfiltered would return its
+            // whole mailbox as "results".
+            guard scope.canSearch else { return nil }
+
+            filter = SearchQueryCompiler.filter(for: parsed, scope: scope)
 
             // A query that narrows nothing would page the entire account.
             guard filter != nil else { return nil }
@@ -709,5 +1164,24 @@ public final class MailSyncService {
             return String(
                 localized: "Something went wrong talking to \(connection.host).", bundle: .module)
         }
+    }
+}
+
+/// Where in a message a search actually matched.
+///
+/// Two fields rather than one string, because the two are drawn in different
+/// places: `SearchSnippet/get` returns a highlighted subject *and* a
+/// highlighted body extract, and collapsing them with `preview ?? subject`
+/// puts a subject match in the row's body-snippet slot — the same words twice
+/// on one row, with the sentence they were found in nowhere to be seen.
+public struct SearchHighlight: Hashable, Sendable {
+    /// The subject with matches marked, when the subject is what matched.
+    public var subject: String?
+    /// An extract from the body with matches marked.
+    public var body: String?
+
+    public init(subject: String? = nil, body: String? = nil) {
+        self.subject = subject
+        self.body = body
     }
 }

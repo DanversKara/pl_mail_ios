@@ -96,10 +96,24 @@ struct BulkLabelPickerView: View {
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: "tag.fill")
-                    .foregroundStyle(AvatarPalette.color(for: label.id.rawValue))
+                    // Seeded on the user-scoped label id, as before, so a label
+                    // with no colour keeps one tint across every account it is
+                    // bound to. The chosen colour comes from the same place for
+                    // the same reason: it lives on the label, not the binding.
+                    .foregroundStyle(LabelTint.color(for: label.color, seed: label.id.rawValue))
 
-                Text(label.name)
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label.name)
+                        .foregroundStyle(.primary)
+
+                    if let parents = label.parentPath {
+                        Text(parents)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+                }
 
                 Spacer(minLength: 8)
 
@@ -113,7 +127,11 @@ struct BulkLabelPickerView: View {
                     }
 
                     Image(systemName: state.symbolName)
-                        .foregroundStyle(state == .none ? Color.secondary : Color.accentColor)
+                        .foregroundStyle(
+                            state == .none
+                                ? AnyShapeStyle(Color.secondary)
+                                : AnyShapeStyle(ThemeAccent())
+                        )
                         .contentTransition(.symbolEffect(.replace))
                 }
             }
@@ -269,6 +287,7 @@ struct BulkLabelPickerView: View {
     private var labels: [LabelRow] {
         let accounts = Set(targets.map(\.accountKey))
         let trimmed = query.trimmingCharacters(in: .whitespaces)
+        let hierarchy = LabelHierarchy(sync.mailboxes)
         var byLabel: [LabelID: LabelRow] = [:]
 
         for mailbox in sync.mailboxes {
@@ -278,7 +297,19 @@ struct BulkLabelPickerView: View {
                 let labelID = mailbox.labelID
             else { continue }
 
-            byLabel[labelID] = LabelRow(id: labelID, name: mailbox.name)
+            let row = LabelRow(
+                id: labelID,
+                name: mailbox.name,
+                parentPath: hierarchy.parentPath(for: mailbox),
+                color: mailbox.color)
+
+            // The binding that knows the most about where the label sits wins.
+            // An account missing the parent's binding reports the child as
+            // top-level, and letting that overwrite a fuller path would drop
+            // the ancestry for every account.
+            if byLabel[labelID]?.parentPath == nil {
+                byLabel[labelID] = row
+            }
         }
 
         return byLabel.values
@@ -289,6 +320,17 @@ struct BulkLabelPickerView: View {
     struct LabelRow: Identifiable {
         let id: LabelID
         let name: String
+        /// The ancestry of whichever binding this row was built from.
+        ///
+        /// One path, not one per account: a label's parent is a property of the
+        /// user-scoped label, so every account that has a binding for it agrees
+        /// — and where one account has no binding for the *parent*, that
+        /// account's path is shorter rather than different. Showing the longest
+        /// one available is the one that disambiguates.
+        var parentPath: String?
+        /// The colour chosen for the label itself, which is why this is safe to
+        /// collapse across accounts: colour is on `Label`, not on the binding.
+        var color: LabelColor?
     }
 }
 

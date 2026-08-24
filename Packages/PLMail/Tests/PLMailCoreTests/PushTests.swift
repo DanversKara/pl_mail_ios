@@ -44,14 +44,31 @@ struct PushTests {
         #expect(text.contains("\"deviceToken\":null"))
     }
 
-    /// The capability is declarable in `using`, unlike the Web Push one.
-    /// Sending `urn:plmail:params:jmap:push` in `using` is a hard 400; this
-    /// one has a method behind it and must not be lumped in with it.
-    @Test("APNs is usable in a request, Web Push is not")
+    /// Neither push URN may appear in `using`, and the registration method
+    /// declares Core.
+    ///
+    /// This test previously asserted the opposite, which is how the bug
+    /// survived: `PushSubscription/set` is RFC 8620 §7.2, the server's
+    /// `Capability::SUPPORTED` has never contained an APNs URN, and an unknown
+    /// capability refuses the **whole** request with `unknownCapability` — so
+    /// the first registration would have taken every unrelated call batched
+    /// with it off the air. Entitlements were the only thing keeping it latent.
+    @Test("Neither push capability may be declared, and registration is a Core method")
     func capabilities() {
-        #expect(Capability.apns.isSupportedInUsing)
+        #expect(Capability.apns.isSupportedInUsing == false)
         #expect(Capability.push.isSupportedInUsing == false)
-        #expect(PushSubscriptionSet.capability == .apns)
+        #expect(PushSubscriptionSet.capability == .core)
+    }
+
+    /// The vendor URN matches every other plMail extension.
+    ///
+    /// It was spelled `urn:de:plmail:params:jmap:apns`, which matches nothing
+    /// the server advertises — so `isSupported()` would have answered false
+    /// even against an instance that had grown an APNs sender, and the failure
+    /// would have looked like a server without push rather than a typo.
+    @Test("The APNs URN is spelled the way the server spells its extensions")
+    func urn() {
+        #expect(Capability.apns.rawValue == "urn:plmail:params:jmap:apns")
     }
 
     /// A server that has never heard of APNs must decode cleanly and simply

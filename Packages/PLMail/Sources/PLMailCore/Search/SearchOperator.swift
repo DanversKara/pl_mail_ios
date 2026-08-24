@@ -8,9 +8,11 @@ import Foundation
 /// the one moment a person is *not* trying to narrow anything. Offering them
 /// while typing puts the explanation where the intent is.
 ///
-/// The list is deliberately the parser's own vocabulary and nothing more.
-/// Suggesting an operator the parser would drop silently — the failure mode
-/// ``SearchQuery`` documents — would be teaching people something untrue.
+/// The list is deliberately the parser's own vocabulary and nothing more, and
+/// the parser's vocabulary is the *server's*. Offering an operator the web UI
+/// does not have — `bcc:`, which the JMAP filter compiler would happily answer,
+/// or `category:`, which it would also answer — teaches a query that works on
+/// the phone and finds nothing in the browser.
 public struct SearchOperator: Hashable, Sendable, Identifiable {
     /// What gets inserted. Ones taking a value end in a colon and leave the
     /// caret ready to type it; ones that are complete in themselves do not.
@@ -50,8 +52,15 @@ public struct SearchOperator: Hashable, Sendable, Identifiable {
                 token: "to:",
                 explanation: String(localized: "Mail sent to a person", bundle: .module)),
             SearchOperator(
+                token: "cc:",
+                explanation: String(localized: "Mail copied to a person", bundle: .module)),
+            SearchOperator(
                 token: "subject:",
                 explanation: String(localized: "Words in the subject line", bundle: .module)),
+            SearchOperator(
+                token: "label:",
+                explanation: String(
+                    localized: "One label, by its exact name", bundle: .module)),
             SearchOperator(
                 token: "has:attachment",
                 explanation: String(localized: "Only mail with a file attached", bundle: .module)),
