@@ -382,6 +382,27 @@ extension View {
     /// card, the docked calendar and the calendar screen are the *same* object
     /// in the design, and three copies is three chances for one of them to
     /// grow a different radius.
+    /// The theme, on a `Form` or a `List` inside a sheet.
+    ///
+    /// A `Form` paints itself out of the system's own materials, so a sheet
+    /// presented over a Paper mailbox came up grey-and-white — which is exactly
+    /// what "it feels like opening a different app" was about. Injecting the
+    /// theme into the sheet is not enough on its own; the scroll background has
+    /// to go and the tokens have to take its place.
+    ///
+    /// **The row background belongs on the sections, not here.** A
+    /// `listRowBackground` set on the container does not reach the rows, and
+    /// half-themed reads worse than not themed at all — so each screen applies
+    /// it to its own content and this modifier only does the parts that work
+    /// from outside.
+    func themedFormSurface(_ palette: ThemePalette) -> some View {
+        self
+            .scrollContentBackground(.hidden)
+            .background(palette.window.color)
+            .toolbarBackground(palette.surface.color, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+    }
+
     func paneSurface(_ palette: ThemePalette) -> some View {
         self
             .background(palette.surface.color)

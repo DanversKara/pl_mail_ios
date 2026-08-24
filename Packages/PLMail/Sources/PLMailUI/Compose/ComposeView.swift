@@ -94,16 +94,7 @@ public struct ComposeView: View {
                 // reads worse than not themed at all.
                 .listRowBackground(palette.surface.color)
             }
-            // **The theme, on every surface the composer has.** A `Form`
-            // paints itself out of the system's own materials, so the composer
-            // came up as a grey-and-white iOS sheet in front of a Paper
-            // mailbox — which is exactly the "feels like opening a different
-            // app" the redesign set out to fix. The scroll background goes and
-            // the tokens take its place: window behind, surface on the rows.
-            .scrollContentBackground(.hidden)
-            .background(palette.window.color)
-            .toolbarBackground(palette.surface.color, for: .navigationBar)
-            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+            .themedFormSurface(palette)
             .navigationTitle(
                 model.subject.isEmpty ? String(localized: .ui("New message")) : model.subject
             )

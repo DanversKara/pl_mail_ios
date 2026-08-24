@@ -31,6 +31,10 @@ public struct SettingsView: View {
     /// Nil outside one — a preview, or a test host — which is why there is a
     /// fallback rather than a force unwrap.
     @Environment(\.appearanceSettings) private var injectedAppearanceSettings
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
 
     /// The fallback, for a tree with no composition root above it.
     ///
@@ -69,90 +73,96 @@ public struct SettingsView: View {
     public var body: some View {
         NavigationStack {
             List {
-                Section {
-                    NavigationLink {
-                        AccountsView(connection: connection, sync: sync, store: store)
-                    } label: {
-                        // The server is the heading, and the mailbox count is
-                        // the thing people come here to check. Both on the row
-                        // rather than a bare "Accounts", so the common case —
-                        // "is my work mail still connected?" — is answered
-                        // without a tap.
-                        LabeledContent {
-                            Text(accountCount)
+                Group {
+                    Section {
+                        NavigationLink {
+                            AccountsView(connection: connection, sync: sync, store: store)
                         } label: {
-                            Label(.ui("Accounts"), systemImage: "person.crop.circle")
-                        }
-                    }
-
-                    NavigationLink {
-                        IdentitiesView(sync: sync, store: store)
-                    } label: {
-                        Label(.ui("Sending addresses"), systemImage: "at")
-                    }
-                } header: {
-                    Text(.ui("Mail"))
-                }
-
-                Section {
-                    NavigationLink {
-                        AppearanceView(preference: appearance, settings: appearanceSettings)
-                    } label: {
-                        LabeledContent {
-                            Text(appearance.choice.title)
-                        } label: {
-                            Label(.ui("Appearance"), systemImage: "circle.lefthalf.filled")
-                        }
-                    }
-
-                    NavigationLink {
-                        NotificationsView(sync: sync)
-                    } label: {
-                        Label(.ui("Notifications"), systemImage: "bell")
-                    }
-
-                    NavigationLink {
-                        RemoteImagesView()
-                    } label: {
-                        Label(.ui("Remote images"), systemImage: "photo")
-                    }
-                } header: {
-                    Text(.ui("This device"))
-                }
-
-                Section {
-                    NavigationLink {
-                        ServerDiagnosticsView(
-                            connection: connection, sync: sync, store: store)
-                    } label: {
-                        LabeledContent {
-                            // The one place a summary earns its space: a
-                            // failing account is exactly what this screen is
-                            // for, and burying it one tap down means it is
-                            // found by people who already suspected.
-                            if sync.degradedAccounts.isEmpty == false {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundStyle(ActionTint.spam)
+                            // The server is the heading, and the mailbox count is
+                            // the thing people come here to check. Both on the row
+                            // rather than a bare "Accounts", so the common case —
+                            // "is my work mail still connected?" — is answered
+                            // without a tap.
+                            LabeledContent {
+                                Text(accountCount)
+                            } label: {
+                                Label(.ui("Accounts"), systemImage: "person.crop.circle")
                             }
-                        } label: {
-                            Label(.ui("Diagnostics"), systemImage: "stethoscope")
                         }
-                    }
-                } footer: {
-                    Text(
-                        .ui(
-                            "Last sync, sync cursors and your server's limits. Worth a look before filing a bug."
-                        ))
-                }
 
-                Section {
-                    Button(.ui("Sign out"), role: .destructive) {
-                        isConfirmingSignOut = true
+                        NavigationLink {
+                            IdentitiesView(sync: sync, store: store)
+                        } label: {
+                            Label(.ui("Sending addresses"), systemImage: "at")
+                        }
+                    } header: {
+                        Text(.ui("Mail"))
                     }
-                } footer: {
-                    Text(.ui("Removes the app password from this device and deletes cached mail."))
+
+                    Section {
+                        NavigationLink {
+                            AppearanceView(preference: appearance, settings: appearanceSettings)
+                        } label: {
+                            LabeledContent {
+                                Text(appearance.choice.title)
+                            } label: {
+                                Label(.ui("Appearance"), systemImage: "circle.lefthalf.filled")
+                            }
+                        }
+
+                        NavigationLink {
+                            NotificationsView(sync: sync)
+                        } label: {
+                            Label(.ui("Notifications"), systemImage: "bell")
+                        }
+
+                        NavigationLink {
+                            RemoteImagesView()
+                        } label: {
+                            Label(.ui("Remote images"), systemImage: "photo")
+                        }
+                    } header: {
+                        Text(.ui("This device"))
+                    }
+
+                    Section {
+                        NavigationLink {
+                            ServerDiagnosticsView(
+                                connection: connection, sync: sync, store: store)
+                        } label: {
+                            LabeledContent {
+                                // The one place a summary earns its space: a
+                                // failing account is exactly what this screen is
+                                // for, and burying it one tap down means it is
+                                // found by people who already suspected.
+                                if sync.degradedAccounts.isEmpty == false {
+                                    Image(systemName: "exclamationmark.triangle.fill")
+                                        .foregroundStyle(ActionTint.spam)
+                                }
+                            } label: {
+                                Label(.ui("Diagnostics"), systemImage: "stethoscope")
+                            }
+                        }
+                    } footer: {
+                        Text(
+                            .ui(
+                                "Last sync, sync cursors and your server's limits. Worth a look before filing a bug."
+                            ))
+                    }
+
+                    Section {
+                        Button(.ui("Sign out"), role: .destructive) {
+                            isConfirmingSignOut = true
+                        }
+                    } footer: {
+                        Text(
+                            .ui(
+                                "Removes the app password from this device and deletes cached mail."
+                            ))
+                    }
                 }
             }
+            .themedFormSurface(palette)
             .navigationTitle(Text(.ui("Settings")))
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -180,6 +190,15 @@ public struct SettingsView: View {
                     ))
             }
         }
+        // **On the stack, not on the list.** Settings is seven screens deep in
+        // places — Accounts, Appearance, Notifications, Remote images,
+        // Identities, Diagnostics, the push log — and every one of them is a
+        // `List` that would otherwise come up in the system's grey while the
+        // mail behind it is Paper. Both of these reach a pushed destination
+        // through the environment, so the stack is the one place they have to
+        // be said.
+        .themedFormSurface(palette)
+        .listRowBackground(palette.surface.color)
     }
 
     private var accountCount: String {
