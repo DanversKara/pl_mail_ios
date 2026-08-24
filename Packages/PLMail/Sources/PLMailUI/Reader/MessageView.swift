@@ -289,7 +289,22 @@ struct MessageView: View {
         // and takes half the row from the sender's name. The day and time are
         // what a reader is actually scanning for in a thread.
         guard dynamicTypeSize.isAccessibilitySize else {
-            return receivedAt.formatted(date: .abbreviated, time: .shortened)
+            // The same three-step rule the list rows use, plus the time — a
+            // reader is in one thread and wants to know when *this* message
+            // landed. `.abbreviated` spells the year on every message, which
+            // is four characters that are only ever news once a year, and on a
+            // 380pt reading pane it was enough to truncate the date **and** the
+            // sender's name in the same row.
+            if Calendar.current.isDateInToday(receivedAt) {
+                return receivedAt.formatted(date: .omitted, time: .shortened)
+            }
+
+            let day =
+                Calendar.current.isDate(receivedAt, equalTo: .now, toGranularity: .year)
+                ? receivedAt.formatted(.dateTime.day().month(.abbreviated))
+                : receivedAt.formatted(.dateTime.day().month(.abbreviated).year())
+
+            return day + ", " + receivedAt.formatted(date: .omitted, time: .shortened)
         }
 
         return receivedAt.formatted(date: .omitted, time: .shortened)
