@@ -106,6 +106,26 @@ struct MailLayoutTests {
                 == false)
     }
 
+    @Test("the sidebar becomes a rail where a reader would be squeezed out")
+    func sidebarRail() {
+        // An 11-inch iPad upright. 224 for a named sidebar plus 404 for the
+        // list leaves the reader 169 points, which is not a reader — so the
+        // sidebar goes down to its 56pt rail and the list gives back 84.
+        let narrow = MailLayout.resolve(width: 834, isCompactSizeClass: false)
+        #expect(narrow.usesSidebarRail)
+        #expect(narrow.listWidth == 320)
+        // 834 - 56 - 320 - four gutters, which leaves the reader over 400.
+        #expect(834 - 56 - narrow.listWidth - 48 > 400)
+
+        // A 13-inch iPad upright has room for the names.
+        let wide = MailLayout.resolve(width: 1032, isCompactSizeClass: false)
+        #expect(wide.usesSidebarRail == false)
+        #expect(wide.listWidth == 404)
+
+        // A phone has one pane at a time and no sidebar beside it to shrink.
+        #expect(MailLayout.resolve(width: 393, isCompactSizeClass: true).usesSidebarRail == false)
+    }
+
     @Test("a view tree with no MailView above it assumes one pane")
     func standalone() {
         #expect(MailLayout.standalone.isSeparated == false)

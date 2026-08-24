@@ -89,6 +89,23 @@ public struct MailLayout: Equatable, Sendable {
         return MailLayout(mode: mode, width: width)
     }
 
+    /// Whether the sidebar is down to its 56-point rail of icons.
+    ///
+    /// **True on `.dual`**, which is an 11-inch iPad held upright at 834
+    /// points. A 224pt sidebar there leaves the reader 169 points once the
+    /// list has taken its share, and a reader 169 points wide is not a reader.
+    /// The rail keeps every destination one tap away and hands the difference
+    /// to the two panes carrying the mail — which is what the design does at
+    /// that width, and the whole of why the rail exists.
+    ///
+    /// False on `.single`: a phone has one pane at a time and no sidebar
+    /// beside it to shrink.
+    public var usesSidebarRail: Bool { mode == .dual }
+
+    /// How wide the list is beside a reader. Narrower once the sidebar is a
+    /// rail, because that width is what the rail was traded for.
+    public var listWidth: CGFloat { mode == .triple ? 404 : 320 }
+
     /// Whether panes are drawn as separate inset surfaces over a gutter.
     ///
     /// Only where more than one is on screen. One pane filling the window has

@@ -1371,3 +1371,22 @@ comment above them.
 - App Intents open the app rather than acting silently
   (`App/Intents/MailIntents.swift:6-12`) — the recipient list is the one thing
   that cannot be taken back. **This rule must survive P7.**
+
+## Not visually verified: 834 points
+
+`MailLayout.usesSidebarRail` is covered by `MailLayoutTests.sidebarRail`, and
+the 13-inch iPad (1032pt, triple) and the iPhone (compact) have both been driven
+on a simulator against the real server. The **dual** band — an 11-inch iPad
+upright, an iPad mini, Split View, a Stage Manager window between 500 and 1000
+points — has only been reasoned about and unit-tested. Attaching an 11-inch
+simulator needs a device-access grant that only the person at the keyboard can
+give.
+
+What to look at when one is attached, in order:
+
+1. The sidebar is the 56pt rail, not the 224pt named column.
+2. The list is 320 wide and the reader has the rest — over 400 points.
+3. The rail's selected feed still tracks the list (tap Travel on the rail, the
+   list follows).
+4. The docked calendar at this width: rail + list + calendar leaves the list
+   around 320, which is the narrowest a three-line row has been asked to be.

@@ -873,7 +873,7 @@ public struct MailView: View {
             globalHeader
 
             HStack(spacing: PanelStyle.inset) {
-                if isCalendarDocked {
+                if isRailed {
                     // Icons only: at 56pt the sidebar's words do not fit, and a
                     // column of truncated names is worse than a column of marks.
                     SidebarRail(
@@ -912,8 +912,8 @@ public struct MailView: View {
             }
             // Fixed beside a reader, elastic beside the calendar: with the
             // reader gone the list is the only thing that can use the width.
-            .frame(width: isCalendarDocked ? nil : Self.listWidth)
-            .frame(maxWidth: isCalendarDocked ? .infinity : Self.listWidth)
+            .frame(width: isCalendarDocked ? nil : listWidth)
+            .frame(maxWidth: isCalendarDocked ? .infinity : listWidth)
 
             if isCalendarDocked == false {
                 Rectangle()
@@ -953,8 +953,14 @@ public struct MailView: View {
     /// design draws them.
     private static let calendarWidth: CGFloat = 392
 
+    /// The docked calendar asks for the rail for the same reason a narrow
+    /// window does: three panes and a named sidebar do not fit beside each
+    /// other, and the sidebar is the one whose words can be spared.
+    private var isRailed: Bool { isCalendarDocked || layout.usesSidebarRail }
+
+    private var listWidth: CGFloat { layout.listWidth }
+
     private static let sidebarWidth: CGFloat = 224
-    private static let listWidth: CGFloat = 404
 
     /// The palette for the appearance actually on screen.
     private var palette: ThemePalette { theme.palette(for: colorScheme) }
