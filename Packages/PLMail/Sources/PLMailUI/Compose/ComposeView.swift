@@ -14,6 +14,12 @@ import UniformTypeIdentifiers
 public struct ComposeView: View {
     @State private var model: ComposeModel
     @Environment(\.dismiss) private var dismiss
+    /// The Send capsule and the recipient chips are drawn from the palette
+    /// rather than from system styles, so a themed composer is themed all the
+    /// way to its one filled button. Injected explicitly by whoever presents
+    /// this sheet — see `MailView` and `ThreadReaderView`.
+    @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
     @FocusState private var focus: Field?
 
     private enum Field: Hashable { case to, cc, bcc, subject, body }
@@ -95,14 +101,7 @@ public struct ComposeView: View {
                         .keyboardShortcut(.cancelAction)
                 }
 
-                ToolbarItem(placement: .confirmationAction) {
-                    Button(.ui("Send"), action: model.send)
-                        .disabled(model.canSend == false)
-                        .fontWeight(.semibold)
-                        // ⌘↩, as in Mail. Deliberately not plain Return, which
-                        // is a newline in the body somebody is still writing.
-                        .keyboardShortcut(.return, modifiers: .command)
-                }
+                ToolbarItem(placement: .confirmationAction) { sendControl }
 
                 ToolbarItem(placement: .topBarLeading) {
                     // A menu rather than a single button: on a phone the thing
@@ -126,19 +125,6 @@ public struct ComposeView: View {
                     .disabled(model.isSending)
                 }
 
-                ToolbarItem(placement: .topBarLeading) {
-                    Menu {
-                        SendLaterMenu(
-                            onPick: { model.scheduleSend(at: $0) },
-                            onPickExact: { isPickingSendTime = true }
-                        )
-                    } label: {
-                        Label(.ui("Send later"), systemImage: "clock")
-                    }
-                    // Same condition as Send: a time is no use without
-                    // somebody to send to.
-                    .disabled(model.canSend == false)
-                }
             }
             .safeAreaInset(edge: .bottom) { sendingBar }
             // Copied into memory on pick rather than held as a URL: the
@@ -331,6 +317,61 @@ public struct ComposeView: View {
         // somebody has written has to go through the same question Cancel
         // asks, or the gesture becomes the way drafts are lost.
         .interactiveDismissDisabled(model.isSending || model.needsCloseConfirmation)
+    }
+
+    // MARK: - Send
+
+    /// Send, and the chevron that holds "send later".
+    ///
+    /// **One control with two halves, per the mock.** Sending now and sending
+    /// at a time are the same decision taken twice, and the clock used to sit
+    /// on the *other* side of the bar from the button it modifies — so the two
+    /// halves are adjacent, and the chevron is the disclosure it looks like.
+    /// Both are disabled by the same condition: a time is no use without
+    /// somebody to send to.
+    private var sendControl: some View {
+        HStack(spacing: 2) {
+            Button(action: model.send) {
+                Text(.ui("Send"))
+                    .font(.subheadline.weight(.semibold))
+                    // Not assumed white: the accent is the user's, and a pale
+                    // one wants black on it — what `accentInk` is derived for.
+                    .foregroundStyle(palette.accentInk.color)
+                    .padding(.horizontal, 14)
+                    .frame(height: 32)
+                    .background(palette.accent.color, in: .capsule)
+                    // A disabled capsule keeps its shape and loses its weight.
+                    // Left at full strength it reads as a button that ignores
+                    // taps, which is the one thing worse than a dimmed one.
+                    .opacity(model.canSend ? 1 : 0.4)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.canSend == false)
+            // ⌘↩, as in Mail. Deliberately not plain Return, which is a
+            // newline in the body somebody is still writing.
+            .keyboardShortcut(.return, modifiers: .command)
+
+            Menu {
+                SendLaterMenu(
+                    onPick: { model.scheduleSend(at: $0) },
+                    onPickExact: { isPickingSendTime = true }
+                )
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(palette.accent.color)
+                    .frame(width: 32, height: 32)
+                    .contentShape(.rect)
+            }
+            .disabled(model.canSend == false)
+            // The glyph says nothing on its own, and this is the only name
+            // this control has now that the clock has left the bar.
+            .accessibilityLabel(Text(.ui("Send later")))
+        }
+    }
+
+    private var palette: ThemePalette {
+        theme.palette(for: colorScheme)
     }
 
     /// Names a link's recipients for a dialog.
@@ -754,6 +795,14 @@ public struct ComposeView: View {
 }
 
 /// One address field, with completions drawn from mail already synced.
+///
+/// **The field is still one string.** Everything below the view layer — the
+/// draft, the autosave, `RecipientParsing`, the send — reads
+/// `"a@x.example, b@y.example"` and always has. The chips are a rendering of
+/// the part of that string which has been typed past: a separator commits a
+/// recipient, and the text field edits only the fragment after the last one.
+/// Making the tokens the model instead would have put a second representation
+/// of the recipient list next to the one that gets sent.
 private struct RecipientField: View {
     let label: LocalizedStringResource
     @Binding var text: String
@@ -762,15 +811,31 @@ private struct RecipientField: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack {
+            HStack(alignment: .top, spacing: 8) {
                 Text(label)
                     .foregroundStyle(.secondary)
-                    .frame(width: 40, alignment: .leading)
+                    .frame(width: 36, alignment: .leading)
+                    // The label sits on the first line of chips rather than
+                    // centred against a stack of them.
+                    .padding(.top, 6)
 
-                TextField("", text: $text)
-                    .keyboardType(.emailAddress)
-                    .textInputAutocapitalization(.never)
-                    .autocorrectionDisabled()
+                VStack(alignment: .leading, spacing: 6) {
+                    if committed.isEmpty == false {
+                        ChipFlow(spacing: 6) {
+                            // By position, because two chips can legitimately
+                            // be the same string — a list pasted twice — and
+                            // removing one of them must remove that one.
+                            ForEach(Array(committed.enumerated()), id: \.offset) { index, token in
+                                RecipientChip(token: token) { remove(at: index) }
+                            }
+                        }
+                    }
+
+                    TextField("", text: typing)
+                        .keyboardType(.emailAddress)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                }
             }
 
             // The address book is consulted for what is being typed now, not
@@ -805,18 +870,31 @@ private struct RecipientField: View {
         model.suggestions(for: current)
     }
 
+    /// The recipients that are settled, in the order they were typed. The
+    /// arithmetic is ``RecipientTokens``, where it can be tested.
+    private var committed: [String] {
+        RecipientTokens.committed(in: text)
+    }
+
     private var current: String {
-        String(text.split(whereSeparator: { $0 == "," || $0 == ";" }).last ?? "")
+        RecipientTokens.fragment(in: text)
+    }
+
+    /// The text field's own binding: the fragment after the last separator,
+    /// written back into the whole string.
+    private var typing: Binding<String> {
+        Binding(
+            get: { current },
+            set: { fragment in text = RecipientTokens.joined(committed, typing: fragment) }
+        )
+    }
+
+    private func remove(at index: Int) {
+        text = RecipientTokens.removing(at: index, in: text)
     }
 
     private func complete(with address: EmailAddress) {
-        var parts = text.split(whereSeparator: { $0 == "," || $0 == ";" })
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-
-        if parts.isEmpty == false { parts.removeLast() }
-
-        parts.append(address.email)
-        text = parts.joined(separator: ", ") + ", "
+        text = RecipientTokens.joined(committed + [address.email], typing: "")
     }
 }
 

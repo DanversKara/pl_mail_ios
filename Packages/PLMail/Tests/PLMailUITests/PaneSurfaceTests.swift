@@ -70,16 +70,142 @@ struct PaneSurfaceTests {
 
     /// A pane is only a pane if you can see where it ends.
     ///
-    /// The `mailPane` treatment draws no border on purpose — the surface
-    /// reading differently from the window is the entire edge — so a palette
-    /// whose two were within rounding would produce an iPad layout with no
-    /// visible columns and nothing in the code saying why.
+    /// The `mailPane` treatment now draws a 1px ``PanelStyle/paneBorder`` as
+    /// well, but the border is a hairline at ten per cent and cannot carry the
+    /// edge alone — the surface reading differently from the window is still
+    /// what makes a column a column, so a palette whose two were within
+    /// rounding would produce an iPad layout with no visible columns and
+    /// nothing in the code saying why.
     @Test("a pane is distinguishable from the window it sits on, in every palette")
     func paneReadsAgainstItsWindow() {
         for (name, palette) in ThemePalette.allShipped {
             let separation = palette.surface.contrastRatio(against: palette.window)
 
             #expect(separation >= 1.05, "\(name)'s pane and window are the same colour")
+        }
+    }
+
+    // MARK: - The redesign's geometry
+
+    /// The two numbers the pane treatment is built from, pinned because they
+    /// are read from three places that cannot see each other.
+    ///
+    /// ``PaneColumn`` splits ``PanelStyle/inset`` in half against a
+    /// neighbouring pane and keeps it whole against the window, so the gap
+    /// between two panes is one inset and the margin at the edge is one inset
+    /// too. The card is drawn as a *background* with the same insets the
+    /// content is padded by; when those two drifted apart, rows ran past the
+    /// card's edge — which looks like a clipping bug rather than a spacing
+    /// one, and is why it is asserted rather than described.
+    @Test("the pane geometry the redesign specifies, and the two halves that must agree")
+    func paneGeometry() {
+        #expect(PanelStyle.cornerRadius == 12)
+        #expect(PanelStyle.inset == 12)
+
+        // `PaneColumn` lives behind `#if os(iOS)` with the pane treatment it
+        // serves; on the macOS test host there is no split view to inset.
+        #if os(iOS)
+        #expect(PaneColumn.leading.leadingInset == PanelStyle.inset)
+        #expect(PaneColumn.trailing.trailingInset == PanelStyle.inset)
+
+        // Facing margins sum to one full gutter, whichever pair faces.
+        #expect(
+            PaneColumn.leading.trailingInset + PaneColumn.middle.leadingInset == PanelStyle.inset)
+        #expect(
+            PaneColumn.middle.trailingInset + PaneColumn.trailing.leadingInset == PanelStyle.inset)
+        #endif
+    }
+
+    /// One outer margin, for all three columns.
+    ///
+    /// The gaps *between* panes were consistent long before the outer edges
+    /// were: the sidebar is flat and read as flush to the screen, the list
+    /// showed its card at twelve points, and the reader's edge was hidden
+    /// behind chrome. ``PanelStyle/outerMargin`` is the single number the three
+    /// window-facing edges now read, and this is what stops the next person
+    /// tuning one of them on its own — the sidebar's margin is
+    /// ``PaneColumn/leading``'s, taken rather than restated, so a change here
+    /// moves all three or fails.
+    @Test("the three columns keep one margin against the window")
+    func outerMarginIsOneNumber() {
+        #if os(iOS)
+        // The sidebar's leading edge, and the reader's trailing one: the two
+        // edges that actually touch the screen.
+        #expect(PaneColumn.leading.leadingInset == PanelStyle.outerMargin)
+        #expect(PaneColumn.trailing.trailingInset == PanelStyle.outerMargin)
+
+        // And nothing else claims it: an inner edge is half a gutter, never a
+        // margin, or the columns drift apart by the difference.
+        #expect(PaneColumn.middle.leadingInset != PanelStyle.outerMargin)
+        #expect(PaneColumn.middle.trailingInset != PanelStyle.outerMargin)
+        #endif
+    }
+
+    // MARK: - The new tokens
+
+    /// The star has to be visible before it can mean anything.
+    ///
+    /// The mock's `#fbbf24` measures 1.36:1 on the paper surface, so the
+    /// palette walks it to the 3:1 non-text floor. This asserts the floor, not
+    /// the resulting hex: the walk is allowed to land wherever a theme's
+    /// surface puts it, and pinning the value would make adding a sixth theme
+    /// a test edit.
+    @Test("the star clears the non-text floor on every surface of every theme")
+    func starIsVisible() {
+        for (name, palette) in ThemePalette.allShipped {
+            for surface in palette.surfaces {
+                let ratio = palette.star.contrastRatio(against: surface)
+
+                #expect(ratio >= 3, "\(name): the star is \(ratio) on a surface, under 3")
+            }
+        }
+    }
+
+    /// An unread row is a fill now, not just a weight — and a fill that reads
+    /// as a different surface has to hold the text drawn on it.
+    ///
+    /// Both new fills are checked against ``ThemePalette/ink`` at the text
+    /// floor rather than the body floor: they are backgrounds under rows and
+    /// under matched substrings, and the ink ladder's own 7:1 is asserted
+    /// against the pane, which these deliberately are not.
+    @Test("ink stays readable on the unread tint and on a search highlight")
+    func newFillsHoldTheirText() {
+        for (name, palette) in ThemePalette.allShipped {
+            #expect(
+                palette.ink.contrastRatio(against: palette.unreadTint) >= 4.5,
+                "\(name): ink is unreadable on an unread row")
+            #expect(
+                palette.ink.contrastRatio(against: palette.searchHighlight) >= 4.5,
+                "\(name): ink is unreadable on a search match")
+
+            // A tint nobody can see is a tint that does not mark anything.
+            #expect(
+                palette.unreadTint != palette.surface,
+                "\(name): an unread row is the same colour as a read one")
+            #expect(
+                palette.searchHighlight != palette.surface,
+                "\(name): a search match is the same colour as the pane")
+        }
+    }
+
+    /// The light ladder is the mock's, and only the light one.
+    ///
+    /// Both halves matter. The drawn values landing verbatim is what says the
+    /// override actually reached the palette rather than being faded past by
+    /// the derivation; every other theme still differing from them is what
+    /// says a light-only decision stayed light-only. A dark palette that
+    /// happened to match these would mean the override had leaked into
+    /// `derived` for everybody — the exact regression the doc comment on
+    /// ``ThemePalette/light`` asks the next reader not to introduce.
+    @Test("the light ink ladder is the drawn one, and no other theme takes it")
+    func lightLadderIsDrawn() {
+        #expect(ThemePalette.light.inkSoft == Swatch(hex: "#524e48"))
+        #expect(ThemePalette.light.inkMuted == Swatch(hex: "#5f5b54"))
+        #expect(ThemePalette.light.inkFaint == Swatch(hex: "#746f67"))
+
+        for (name, palette) in ThemePalette.allShipped where name != "light" {
+            #expect(palette.inkSoft != ThemePalette.light.inkSoft, "\(name) took light's ladder")
+            #expect(palette.inkFaint != ThemePalette.light.inkFaint, "\(name) took light's ladder")
         }
     }
 

@@ -22,6 +22,12 @@ struct SearchResultsView: View {
     /// silently reverting to the last settled query.
     @Binding var queryText: String
 
+    /// Passed straight through to the results list, which draws its own header
+    /// bar on a separated layout and therefore owns the only visible sidebar
+    /// toggle in this column. Threaded rather than dropped: searching is not a
+    /// reason to lose the way back to the mailboxes.
+    var onToggleSidebar: (() -> Void)?
+
     @State private var isSearching = false
 
     /// Read from the live text, so the tokens and the chips describe the same
@@ -42,7 +48,8 @@ struct SearchResultsView: View {
             } else {
                 ThreadListView(
                     feed: feed, sync: sync, actions: actions, outbox: outbox,
-                    selection: $selection
+                    selection: $selection,
+                    onToggleSidebar: onToggleSidebar
                 )
                 .safeAreaInset(edge: .top, spacing: 0) {
                     VStack(spacing: 0) {

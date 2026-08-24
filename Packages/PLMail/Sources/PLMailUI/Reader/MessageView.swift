@@ -48,6 +48,10 @@ struct MessageView: View {
     /// Follows the system, so mail matches the rest of the phone rather than
     /// being the one screen that stays white at night.
     @Environment(\.colorScheme) private var colorScheme
+    /// The ink ladder the redesign states its greys against. `.secondary` is a
+    /// system grey and reads cold on paper — the same reason the list stopped
+    /// using it for a read row's sender.
+    @Environment(\.theme) private var theme
     /// The disclosure curves, already reconciled with Reduce Motion by the
     /// root. Written as `.snappy(duration: 0.2)` twice before, which no
     /// preference could reach.
@@ -93,31 +97,49 @@ struct MessageView: View {
 
     // MARK: - Header
 
+    private var palette: ThemePalette {
+        theme.palette(for: colorScheme)
+    }
+
     private var header: some View {
         Button(action: onToggle) {
             HStack(alignment: .top, spacing: 10) {
                 // The same circle the list draws, so a message and its row are
-                // recognisably the same correspondent.
+                // recognisably the same correspondent. Smaller when collapsed:
+                // a folded message is a one-line summary in the mock, and a
+                // full-size avatar on it sets the row's height rather than the
+                // text doing so.
                 SenderAvatar(
                     name: message.fromName ?? message.displayName,
                     address: message.fromAddress,
-                    diameter: 36
+                    diameter: isExpanded ? 38 : 30
                 )
 
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         found(.sender, in: message.displayName)
                             .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(palette.ink.color)
                             .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
 
                         if message.isDraft {
                             Text(.ui("Draft"))
                                 .font(.caption2)
-                                .foregroundStyle(.red)
+                                .foregroundStyle(palette.danger.color)
                         }
                     }
 
                     if isExpanded {
+                        // Only where it says something the name does not. On a
+                        // message whose display name *is* the address this
+                        // would be the same string twice.
+                        if let address = message.fromAddress, address != message.displayName {
+                            Text(address)
+                                .font(.caption)
+                                .foregroundStyle(palette.inkFaint.color)
+                                .lineLimit(1)
+                        }
+
                         recipientLine
                     } else if message.preview.isEmpty == false {
                         // Only when there is one. An empty line still takes a
@@ -125,7 +147,7 @@ struct MessageView: View {
                         // phantom second lines reads as broken spacing.
                         Text(message.preview)
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(palette.inkFaint.color)
                             .lineLimit(1)
                     }
                 }
@@ -135,7 +157,7 @@ struct MessageView: View {
                 VStack(alignment: .trailing, spacing: 2) {
                     Text(date)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(palette.inkFaint.color)
                         .lineLimit(1)
                         // Never squeezed to nothing so a long sender name can
                         // fit: the name truncates first, and it is the thing
@@ -238,7 +260,7 @@ struct MessageView: View {
                 Text(showsDetails ? .ui("Hide details") : .ui("Show details")))
         }
         .font(.caption)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(palette.inkFaint.color)
         .lineLimit(1)
     }
 
@@ -313,6 +335,21 @@ struct MessageView: View {
                 currentFindOccurrence: find?.currentOccurrence(in: message.id, field: .body),
                 onCurrentMatchPositioned: onCurrentMatchPositioned
             )
+            // **The one thing in the reader that is not paper.** A message body
+            // renders on white — deliberately, and in every appearance, because
+            // recolouring a sender's markup is how mail starts looking wrong —
+            // so on a cream pane it is a sheet of a different colour. Left
+            // full-bleed it ran to the pane card's own edges and squared its
+            // rounded corners off, which is what stopped the reader reading as
+            // a card at all beside the list. The message card used to do this
+            // clipping; the thread is flat now, so the body does it for itself:
+            // inset from the measure and rounded at the control radius, so the
+            // white is visibly a document laid on the page rather than the page.
+            //
+            // Clipped *before* it is padded: the other order rounds the corners
+            // of the margin instead of the sheet, which draws nothing at all.
+            .clipShape(.rect(cornerRadius: 8, style: .continuous))
+            .padding(.horizontal, 12)
             .padding(.top, 8)
             // The handle the find scrolls to once it knows how far down this
             // body the match is. Separate from the card's own, because the
@@ -364,12 +401,15 @@ struct MessageView: View {
         } label: {
             Image(systemName: "ellipsis")
                 .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.inkMuted.color)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 3)
                 .background(
+                    // 6 is the control radius, not the pane's: this is a chip
+                    // in a message, and rounding it to the pane radius would
+                    // make a seam look like a card.
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(.quaternary))
+                        .fill(palette.sunken.color))
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 16)

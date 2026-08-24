@@ -12,13 +12,38 @@ import SwiftUI
 /// cannot drift between the list and the reader, which is exactly the kind of
 /// difference that is invisible in isolation and obvious side by side.
 enum PanelStyle {
-    /// Matches the radius the system uses for sheets and popovers at this
-    /// size. Panes are panes; this is deliberately *not* the control radius.
-    static let cornerRadius: CGFloat = 20
+    /// The redesign's pane radius (was 20). 12 is what the mock draws on every
+    /// pane, and it is deliberately *not* the control radius — panes are
+    /// panes. Kept here so the list, the reader and `messageCard()` cannot
+    /// disagree, and so `ResolvedTheme.paneRadius(fromRem:)` keeps anchoring
+    /// the server's default rem to whatever this app actually draws.
+    static let cornerRadius: CGFloat = 12
 
-    /// Space between panes, and between a pane and the window edge. Enough to
-    /// read as a gap at arm's length without wasting a column's worth of width.
-    static let inset: CGFloat = 10
+    /// Space between panes, and between a pane and the window edge (was 10).
+    /// The mock uses 12 for both the window padding and the inter-pane gap.
+    /// ``PaneColumn`` derives *both* the content insets and the card's own
+    /// margins from this one number — change it anywhere else and the row
+    /// content runs past the card edge.
+    static let inset: CGFloat = 12
+
+    /// The margin every column keeps against the *window*, as one number.
+    ///
+    /// The gaps *between* panes were already one value — ``PaneColumn`` splits
+    /// ``inset`` in half and the facing halves sum back to it. The outer edges
+    /// were not: the sidebar is flat and was read as flush to the screen, the
+    /// list showed a card at 12, and the reader's own edge was hidden behind a
+    /// navigation bar the system lays out in the column's *full* bounds rather
+    /// than inside the pane's padding. Three different numbers on the three
+    /// edges that face the user's screen is what stopped the columns reading as
+    /// one app.
+    ///
+    /// Named separately from ``inset`` even though it is the same value,
+    /// because the two answer different questions — "how far apart are two
+    /// panes" and "how far in from the screen does the app start" — and the
+    /// day one of them moves, the other must not follow silently. Read by
+    /// ``PaneColumn`` for the window-facing edge of every column, including the
+    /// de-carded sidebar's.
+    static let outerMargin: CGFloat = inset
 
     /// The pane itself, and the window behind it.
     ///
@@ -32,10 +57,22 @@ enum PanelStyle {
     /// does not read as paper, it reads as a colour cast, and it eats the
     /// contrast the muted avatars need.
     /// The light pane, stated as a ``Swatch`` rather than a `Color` so the
-    /// contrast suite can measure it. The rendered value is unchanged.
-    static let surfaceLight = Swatch(0.988, 0.976, 0.957)
+    /// contrast suite can measure it.
+    ///
+    /// Now the server's own paper pair — surface `#f7f5ef`, window `#f2efe7` —
+    /// per the redesign spec, which asked for the mock's hexes verbatim. The
+    /// old values were within three points of these; stating the server's
+    /// exactly is what stops the phone and the browser disagreeing about what
+    /// paper looks like. The two are close: `PaneSurfaceTests` asserts the
+    /// pair still separates (≥ 1.05:1), so a further nudge of either one must
+    /// keep that gap or the iPad layout loses its columns.
+    ///
+    /// **Dark is untouched.** The mock draws light only; repainting dark from
+    /// an undrawn design would be inventing values (coordinator's decision,
+    /// spec Q7).
+    static let surfaceLight = Swatch(247 / 255, 245 / 255, 239 / 255)
     static let surfaceDark = Swatch(0.086, 0.086, 0.090)
-    static let windowLight = Swatch(0.961, 0.945, 0.918)
+    static let windowLight = Swatch(242 / 255, 239 / 255, 231 / 255)
     static let windowDark = Swatch(0, 0, 0)
 
     /// plMail's own accent, `#7d6b4f`.
@@ -69,10 +106,59 @@ enum PanelStyle {
     /// Low enough to be felt rather than read: its job is to stop two rows
     /// merging, not to draw a grid. `.separator` is too dark on cream and too
     /// light on near-black, so both ends are stated.
+    ///
+    /// Light is now **ink at 9%** — the mock's `rgba(35,34,32,.09)` — rather
+    /// than the old near-brown at 10%. The hue is the point, not the point of
+    /// opacity: a rule mixed from a browner ink than the text it separates
+    /// reads warm beside a hairline drawn from ``ThemePalette/line``, and the
+    /// two sit within a few pixels of each other in every list. **Dark is
+    /// untouched** (see ``surfaceLight``).
     static let hairline = Color(
-        light: Color(red: 0.09, green: 0.07, blue: 0.03).opacity(0.10),
+        light: inkLight.color.opacity(0.09),
         dark: Color.white.opacity(0.08)
     )
+
+    /// The light theme's ink, `#232220`, as the mock states it.
+    ///
+    /// Stated here as well as in ``ThemePalette/light`` because the hairline
+    /// and the pane border are tints *of the ink* and are drawn by views that
+    /// have no palette in hand. Same number, one place to change it.
+    static let inkLight = Swatch(35 / 255, 34 / 255, 32 / 255)
+
+    /// The 1px edge around a pane, ink at 10% (`rgba(35,34,32,.10)`).
+    ///
+    /// **New in the redesign, and it is doing the job the shadow used to do
+    /// alone.** The old pane was a surface three per cent lighter than the
+    /// window with a fairly heavy black shadow under it; softening that shadow
+    /// to the mock's two faint ink-tinted ones (see ``MailPane``) leaves the
+    /// card's edge undefined on a bright screen, which is how a pane stops
+    /// reading as an object. The border restores the edge without drawing the
+    /// vertical rule between columns that this layout exists to avoid — it is
+    /// a closed outline, not a divider.
+    ///
+    /// Dark takes the value dark already draws for ``hairline`` rather than a
+    /// new one: the mock draws light only, and a pane in dark mode needs the
+    /// same edge for the same reason, so borrowing the appearance's existing
+    /// rule is the change that invents nothing (spec Q7).
+    static let paneBorder = Color(
+        light: inkLight.color.opacity(0.10),
+        dark: Color.white.opacity(0.08)
+    )
+
+    /// The pane's shadow, as the mock's two layers.
+    ///
+    /// Was one `.black.opacity(0.10) radius 8 y2`. Black under a warm cream
+    /// window greys the gutter; the mock tints both layers with the ink
+    /// (`rgba(35,34,32,.05)`) and splits them into a wide, low one and a tight
+    /// contact one, which is what makes a 12pt card look laid on the paper
+    /// rather than floating over it. CSS blur radius is roughly twice
+    /// SwiftUI's, so `12px`/`4px` become 6 and 2 here.
+    ///
+    /// Dark stays black at the same 5%. Warming a shadow on a near-black
+    /// window is the colour cast the surfaces already refuse, and 5% twice is
+    /// within a point of the single 10% dark used to draw — so dark keeps the
+    /// weight it had while both appearances keep one shadow recipe.
+    static let paneShadow = Color(light: inkLight.color.opacity(0.05), dark: .black.opacity(0.05))
 }
 
 extension Color {
@@ -198,12 +284,16 @@ public enum PaneColumn: Sendable {
     case trailing
 
     /// Full margin against the window, half against another pane.
+    ///
+    /// The window-facing case reads ``PanelStyle/outerMargin`` rather than
+    /// ``PanelStyle/inset`` so the three outer edges are one stated number —
+    /// see there.
     var leadingInset: CGFloat {
-        self == .leading ? PanelStyle.inset : PanelStyle.inset / 2
+        self == .leading ? PanelStyle.outerMargin : PanelStyle.inset / 2
     }
 
     var trailingInset: CGFloat {
-        self == .trailing ? PanelStyle.inset : PanelStyle.inset / 2
+        self == .trailing ? PanelStyle.outerMargin : PanelStyle.inset / 2
     }
 }
 
@@ -256,11 +346,20 @@ private struct MailPane: ViewModifier {
                         // The surface reads about three per cent lighter than
                         // the window, which on a device is not enough to say
                         // "these are separate objects" — the columns looked
-                        // like one sheet with gaps cut in it. A soft shadow
-                        // does what a stroke would, without drawing the rule
-                        // this layout exists to avoid.
+                        // like one sheet with gaps cut in it.
+                        //
+                        // Three things now say it, and each covers where the
+                        // others fail: a 1px ink border, which is the only one
+                        // that survives a bright screen; a wide, low shadow
+                        // that puts the card above the paper; and a tight
+                        // contact shadow that stops the wide one reading as a
+                        // blur. The border is a closed outline around a pane,
+                        // never a divider between two — the vertical rule this
+                        // layout exists to avoid is still nobody's.
                         .fill(palette.surface.color)
-                        .shadow(color: .black.opacity(0.10), radius: 8, y: 2)
+                        .stroke(PanelStyle.paneBorder, lineWidth: 1)
+                        .shadow(color: PanelStyle.paneShadow, radius: 6, y: 3)
+                        .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
                         .padding(.vertical, PanelStyle.inset)
                         // Asymmetric by column: full against the window, half
                         // against another pane. See ``PaneColumn``.

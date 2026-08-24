@@ -38,6 +38,12 @@ public struct MailboxSidebarView: View {
     /// the same `isShowingCalendar` the toolbar button and ⌘0 drive — so the
     /// three cannot disagree about what is on screen.
     let openCalendar: (() -> Void)?
+    /// Starts a new message, when the shell wants the compose entry point to
+    /// live here — the resident-sidebar layouts, where the mock pins a
+    /// full-width Compose button above the mailboxes. Nil on layouts whose
+    /// compose control lives elsewhere (the phone's floating button, the
+    /// dual-pane toolbar item), so this view never draws a second one.
+    let compose: (() -> Void)?
     @Binding var selection: FeedID?
     /// Which row a conversation is currently hovering over, so exactly one
     /// lights up. A per-row `@State` flag cannot manage that — SwiftUI does not
@@ -59,6 +65,7 @@ public struct MailboxSidebarView: View {
         actions: MailActions? = nil,
         calendar: CalendarService? = nil,
         openCalendar: (() -> Void)? = nil,
+        compose: (() -> Void)? = nil,
         selection: Binding<FeedID?>
     ) {
         self.sync = sync
@@ -67,6 +74,7 @@ public struct MailboxSidebarView: View {
         self.actions = actions
         self.calendar = calendar
         self.openCalendar = openCalendar
+        self.compose = compose
         _selection = selection
     }
 
@@ -82,6 +90,125 @@ public struct MailboxSidebarView: View {
     /// `tint(for:accent:)` call sites below cannot drift apart.
     private var accent: Color { theme.accentColor(in: colorScheme) }
 
+    /// The full palette for this appearance, for the slots the accent alone
+    /// does not cover — the soft selection fill, badge ink, hairlines.
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
+
+    /// The selected row's background: a pill attached to the leading edge —
+    /// square against the edge it grows from, a capsule on the side it points —
+    /// filled with the palette's soft accent. Clear when unselected, so every
+    /// row can carry it and the `List` never draws its own competing highlight.
+    ///
+    /// Handed to `listRowBackground`, which fills the whole cell rather than
+    /// the row's content, so the flat edge genuinely lands on the sidebar's
+    /// leading edge. That is also why the fill is stated for *both* states: a
+    /// row given no `listRowBackground` at all keeps the system's selection
+    /// tint, and the two highlights would then stack on the open row.
+    private func rowPill(isSelected: Bool) -> some View {
+        UnevenRoundedRectangle(
+            cornerRadii: .init(
+                topLeading: 0, bottomLeading: 0, bottomTrailing: 100, topTrailing: 100),
+            style: .continuous
+        )
+        .fill(isSelected ? palette.accentSoft.color : Color.clear)
+    }
+
+    /// A row's title, which says whether the row is the open one: the accent
+    /// and one step of weight, matching the pill behind it.
+    ///
+    /// The *icon* deliberately does not follow. Colour carries the role there —
+    /// trash is never green — and repainting it accent on selection would throw
+    /// away the one cue that works before the words are read.
+    private func rowTitle(_ title: Text, isSelected: Bool) -> some View {
+        title
+            .font(.system(size: 15, weight: isSelected ? .medium : .regular))
+            .foregroundStyle(isSelected ? accent : palette.ink.color)
+    }
+
+    /// An unread count: accent capsule, badge ink — the "something new" badge.
+    /// Distinct from ``countBadge(_:)``, which is a plain tally.
+    @ViewBuilder
+    private func unreadBadge(_ count: Int) -> some View {
+        if count > 0 {
+            Text(count, format: .number)
+                .font(.system(size: 12, weight: .semibold))
+                .monospacedDigit()
+                .foregroundStyle(palette.accentInk.color)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(palette.accent.color))
+                // Spoken, because the drawn glyph is a bare number: `.badge()`
+                // used to say "12 unread" for these rows, and a custom badge
+                // that only says "12" loses the word that made it mean
+                // something.
+                .accessibilityLabel(Text(.ui("\(count) unread")))
+        }
+    }
+
+    /// A count of items — Drafts, Outbox — drawn as an outlined rounded rect
+    /// rather than a filled capsule, so a pile of drafts never masquerades as
+    /// unread mail.
+    @ViewBuilder
+    private func countBadge(_ count: Int) -> some View {
+        if count > 0 {
+            Text(count, format: .number)
+                .font(.system(size: 12, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(palette.inkSoft.color)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(palette.line.color)
+                )
+                // The same reason as the unread capsule, and the different
+                // word is the point: this one is a tally, not new mail.
+                .accessibilityLabel(Text(.ui("\(count) in total")))
+        }
+    }
+
+    /// The mock's eyebrow treatment for section titles: small, uppercased,
+    /// tracked out, faint.
+    private func eyebrow(_ title: LocalizedStringResource) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .textCase(.uppercase)
+            .kerning(0.8)
+            .foregroundStyle(palette.inkFaint.color)
+    }
+
+    /// The Compose button the mock pins above the mailboxes: full-width accent
+    /// fill, radius 8. Drawn only when the shell handed a compose action over.
+    @ViewBuilder
+    private var composeHeader: some View {
+        if let compose {
+            Section {
+                Button(action: compose) {
+                    Label(.ui("New message"), systemImage: "square.and.pencil")
+                        .font(.system(size: 15, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: 28)
+                }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.roundedRectangle(radius: 8))
+                .tint(accent)
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+                // Inset horizontally and closed off with a rule, as the design
+                // draws it: Compose is not one of the mailboxes, and the line is
+                // what says so. Without it the button reads as the first row of
+                // the list rather than as the thing above it.
+                .listRowInsets(EdgeInsets(top: 2, leading: 12, bottom: 12, trailing: 12))
+                .overlay(alignment: .bottom) {
+                    Rectangle()
+                        .fill(PanelStyle.hairline)
+                        .frame(height: 1)
+                        .padding(.horizontal, 12)
+                }
+            }
+        }
+    }
+
     public var body: some View {
         // Built once for the whole sidebar rather than inside either `ForEach`.
         // The walk is per label and the index is per list: constructing it in a
@@ -90,17 +217,39 @@ public struct MailboxSidebarView: View {
         let hierarchy = LabelHierarchy(sync.mailboxes)
 
         List(selection: $selection) {
+            composeHeader
+
             Section {
                 ForEach(unifiedRoles, id: \.self) { role in
-                    Label {
-                        Text(role.displayName)
-                    } icon: {
-                        Image(systemName: role.symbolName)
-                            .foregroundStyle(Self.tint(for: role, accent: accent))
+                    let feed = FeedID.unified(role)
+                    let isSelected = selection == feed
+
+                    HStack(spacing: 8) {
+                        Label {
+                            rowTitle(Text(role.displayName), isSelected: isSelected)
+                        } icon: {
+                            Image(systemName: role.symbolName)
+                                .foregroundStyle(Self.tint(for: role, accent: accent))
+                        }
+
+                        Spacer(minLength: 8)
+
+                        // Drafts is a pile of things you started, not mail that
+                        // arrived. An accent capsule there reads as "six new",
+                        // which is the one thing a draft is not — so it takes
+                        // the outlined tally instead, and counts everything in
+                        // the mailbox rather than the unread part of it, since
+                        // a draft you have not read is not a state that exists.
+                        if Self.usesTallyBadge(for: role) {
+                            countBadge(totalCount(for: role))
+                        } else {
+                            unreadBadge(unreadCount(for: role))
+                        }
                     }
-                    .badge(unreadCount(for: role))
-                    .tag(FeedID.unified(role))
-                    .listRowBackground(Color.clear)
+                    .accessibilityElement(children: .combine)
+                    .tag(feed)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(rowPill(isSelected: isSelected))
                     .dropTarget(.role(role), current: $dropTarget, accept: accept)
                 }
             }
@@ -113,18 +262,25 @@ public struct MailboxSidebarView: View {
             // send.
             if outbox.pendingCount > 0 {
                 Section {
-                    Button {
-                        showingOutbox = true
-                    } label: {
-                        Label {
-                            Text(.ui("Outbox"))
-                                .foregroundStyle(.primary)
-                        } icon: {
-                            Image(systemName: "tray.and.arrow.up.fill")
-                                .foregroundStyle(.orange)
+                    HStack(spacing: 8) {
+                        Button {
+                            showingOutbox = true
+                        } label: {
+                            Label {
+                                rowTitle(Text(.ui("Outbox")), isSelected: false)
+                            } icon: {
+                                Image(systemName: "tray.and.arrow.up.fill")
+                                    .foregroundStyle(.orange)
+                            }
                         }
+
+                        Spacer(minLength: 8)
+
+                        // Queued, not unread: what is waiting here is mail of
+                        // your own that has not left yet.
+                        countBadge(outbox.pendingCount)
                     }
-                    .badge(outbox.pendingCount)
+                    .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                 }
             }
@@ -132,44 +288,59 @@ public struct MailboxSidebarView: View {
             // Shown even with no labels yet, because the row that *makes* one
             // lives here. Hiding the section until a label exists would leave
             // a new account with no way to create its first.
-            Section(.ui("Labels")) {
+            Section {
                 ForEach(labels(in: hierarchy), id: \.id) { label in
-                    Label {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(label.name)
+                    let feed = FeedID.unifiedLabel(label.labelID)
+                    let isSelected = selection == feed
 
-                            // The leaf alone makes two labels called `Q1`,
-                            // one under Work and one under Personal, into two
-                            // identical rows with no way to tell which is
-                            // which. Nil for a top-level label, so a flat
-                            // account draws nothing extra.
-                            if let parents = label.parentPath {
-                                Text(parents)
-                                    .font(.caption2)
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                                    // Tail truncation would eat the nearest
-                                    // ancestor, which is the component that
-                                    // actually disambiguates the row.
-                                    .truncationMode(.middle)
+                    HStack(spacing: 8) {
+                        Label {
+                            VStack(alignment: .leading, spacing: 1) {
+                                rowTitle(Text(label.name), isSelected: isSelected)
+
+                                // The leaf alone makes two labels called `Q1`,
+                                // one under Work and one under Personal, into
+                                // two identical rows with no way to tell which
+                                // is which. Nil for a top-level label, so a
+                                // flat account draws nothing extra.
+                                if let parents = label.parentPath {
+                                    Text(parents)
+                                        .font(.caption2)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                        // Tail truncation would eat the nearest
+                                        // ancestor, which is the component that
+                                        // actually disambiguates the row.
+                                        .truncationMode(.middle)
+                                }
                             }
+                        } icon: {
+                            // The colour the user picked, falling back to the
+                            // hashed tint only when none was chosen — so a
+                            // label still keeps one colour across a rename, and
+                            // a deliberate grey stays grey.
+                            Image(systemName: "tag.fill")
+                                .foregroundStyle(
+                                    LabelTint.color(
+                                        for: label.color, seed: label.labelID.rawValue))
                         }
-                    } icon: {
-                        // The colour the user picked, falling back to the
-                        // hashed tint only when none was chosen — so a label
-                        // still keeps one colour across a rename, and a
-                        // deliberate grey stays grey.
-                        Image(systemName: "tag.fill")
-                            .foregroundStyle(
-                                LabelTint.color(
-                                    for: label.color, seed: label.labelID.rawValue))
+                        // Spoken rather than drawn: VoiceOver reads `Work / Q1`
+                        // as "Work slash Q1", and the caption would otherwise
+                        // be read as a second, separate string.
+                        //
+                        // On the `Label` rather than on the row, so the combine
+                        // below still picks the badge's count up after it. A
+                        // label on the row itself would replace both.
+                        .accessibilityLabel(Text(label.spokenPath))
+
+                        Spacer(minLength: 8)
+
+                        unreadBadge(unreadCount(forLabel: label.labelID))
                     }
-                    // Spoken rather than drawn: VoiceOver reads `Work / Q1` as
-                    // "Work slash Q1", and the caption would otherwise be read
-                    // as a second, separate string.
-                    .accessibilityLabel(Text(label.spokenPath))
-                    .tag(FeedID.unifiedLabel(label.labelID))
-                    .listRowBackground(Color.clear)
+                    .accessibilityElement(children: .combine)
+                    .tag(feed)
+                    .listRowSeparator(.hidden)
+                    .listRowBackground(rowPill(isSelected: isSelected))
                     .dropTarget(
                         .unifiedLabel(labelID: label.labelID, name: label.name),
                         current: $dropTarget, accept: accept)
@@ -185,18 +356,35 @@ public struct MailboxSidebarView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 }
+                .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
+            } header: {
+                eyebrow(.ui("Labels"))
             }
 
             if sync.accounts.count > 1 {
-                Section(.ui("Accounts")) {
+                Section {
                     ForEach(sync.accounts) { account in
                         accountGroup(for: account, hierarchy: hierarchy)
                     }
+                } header: {
+                    eyebrow(.ui("Accounts"))
                 }
             }
         }
-        .listStyle(.sidebar)
+        // **Plain, not `.sidebar`.** The sidebar style draws its own inset,
+        // rounded selection background and clips `listRowBackground` to it, so
+        // the left-flat pill came out rounded on both edges and floating off the
+        // leading edge — the design's attached tab was unreachable through it.
+        // Plain gives the cell the full width and lets the pill be the pill.
+        .listStyle(.plain)
+        .listSectionMargins(.horizontal, 0)
+        // The design has no rules between mailbox rows: the pill is what marks
+        // the open one, and hairlines under every row turn a short list of
+        // places into a table. Stated per row — on the `List` it does not
+        // propagate, which is why they were still drawn.
+        .listSectionSeparator(.hidden)
+        .environment(\.defaultMinListRowHeight, 34)
         .scrollContentBackground(.hidden)
         .sheet(isPresented: $showingOutbox) {
             OutboxView(outbox: outbox)
@@ -235,6 +423,7 @@ public struct MailboxSidebarView: View {
                             .foregroundStyle(.themeAccent)
                     }
                 }
+                .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
         }
@@ -276,36 +465,58 @@ public struct MailboxSidebarView: View {
                 // flat account is noise that says nothing.
                 let parents = nested ? hierarchy.parentPath(for: mailbox) : nil
 
-                Label {
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(mailbox.name)
+                let feed = FeedID.mailbox(
+                    accountKey: account.accountKey, mailboxID: mailbox.mailboxID)
+                let isSelected = selection == feed
 
-                        if let parents {
-                            Text(parents)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                                // The nearest ancestor is the component that
-                                // disambiguates, and tail truncation is what
-                                // removes it.
-                                .truncationMode(.middle)
+                HStack(spacing: 8) {
+                    Label {
+                        VStack(alignment: .leading, spacing: 1) {
+                            rowTitle(Text(mailbox.name), isSelected: isSelected)
+
+                            if let parents {
+                                Text(parents)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                                    // The nearest ancestor is the component
+                                    // that disambiguates, and tail truncation
+                                    // is what removes it.
+                                    .truncationMode(.middle)
+                            }
                         }
+                    } icon: {
+                        Image(systemName: mailbox.role?.symbolName ?? "tag.fill")
+                            .foregroundStyle(
+                                // A role keeps its platform colour — trash is
+                                // never green. Only a custom label reaches the
+                                // chosen colour, and only an uncoloured one the
+                                // hash.
+                                Self.tint(for: mailbox.role, accent: accent)
+                                    ?? LabelTint.color(
+                                        for: mailbox.color,
+                                        seed: mailbox.labelID?.rawValue ?? mailbox.name))
                     }
-                } icon: {
-                    Image(systemName: mailbox.role?.symbolName ?? "tag.fill")
-                        .foregroundStyle(
-                            // A role keeps its platform colour — trash is never
-                            // green. Only a custom label reaches the chosen
-                            // colour, and only an uncoloured one the hash.
-                            Self.tint(for: mailbox.role, accent: accent)
-                                ?? LabelTint.color(
-                                    for: mailbox.color,
-                                    seed: mailbox.labelID?.rawValue ?? mailbox.name))
+                    // On the `Label`, so the combine below still reaches the
+                    // badge after it.
+                    .accessibilityLabel(
+                        Text(spokenName(of: mailbox, in: hierarchy, nested: nested)))
+
+                    Spacer(minLength: 8)
+
+                    // The same split as the unified rows above: a tally for
+                    // the drafts you have written, new mail for everything
+                    // that arrived.
+                    if Self.usesTallyBadge(for: mailbox.role) {
+                        countBadge(mailbox.totalThreads)
+                    } else {
+                        unreadBadge(mailbox.unreadThreads)
+                    }
                 }
-                .accessibilityLabel(Text(spokenName(of: mailbox, in: hierarchy, nested: nested)))
-                .badge(mailbox.unreadThreads)
-                .tag(FeedID.mailbox(accountKey: account.accountKey, mailboxID: mailbox.mailboxID))
-                .listRowBackground(Color.clear)
+                .accessibilityElement(children: .combine)
+                .tag(feed)
+                .listRowSeparator(.hidden)
+                .listRowBackground(rowPill(isSelected: isSelected))
                 .dropTarget(
                     .mailbox(
                         accountKey: account.accountKey, mailboxID: mailbox.mailboxID,
@@ -324,19 +535,42 @@ public struct MailboxSidebarView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                 }
+                .listRowSeparator(.hidden)
                 .listRowBackground(Color.clear)
             }
         } label: {
             HStack(spacing: 10) {
-                SenderAvatar(
-                    name: account.displayName, address: account.displayName, diameter: 24)
+                // A dot rather than the 24pt initial disc this row used to
+                // carry. These are addresses, not people: the initial in a
+                // circle is the treatment the *list* gives a sender, and
+                // repeating it here made a section of accounts look like a
+                // section of correspondents. The hue is still
+                // ``AvatarPalette``'s, hashed from the same name, so an
+                // account's colour is one colour wherever it is drawn.
+                Circle()
+                    .fill(AvatarPalette.color(for: account.displayName))
+                    .frame(width: 8, height: 8)
 
                 Text(account.displayName)
-                    .font(.subheadline)
+                    .font(.system(size: 13))
+                    .foregroundStyle(palette.inkSoft.color)
                     .lineLimit(1)
+
+                // Only when the server actually said something went wrong. A
+                // permanent glyph would be a permanent warning, and the
+                // failure it reports — this account did not finish syncing —
+                // is otherwise invisible from a sidebar that keeps drawing
+                // the mail it already has.
+                if account.lastSyncError != nil {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(palette.warning.color)
+                        .accessibilityLabel(Text(.ui("Some accounts didn't sync")))
+                }
             }
             .accessibilityElement(children: .combine)
         }
+        .listRowSeparator(.hidden)
         .listRowBackground(Color.clear)
     }
 
@@ -487,6 +721,43 @@ public struct MailboxSidebarView: View {
     private func unreadCount(for role: MailboxRole) -> Int {
         sync.mailboxes
             .filter { $0.role == role }
+            .reduce(0) { $0 + $1.unreadThreads }
+    }
+
+    /// Which of the two badges a row takes: the outlined tally, or the accent
+    /// unread capsule.
+    ///
+    /// Drafts is the one role that is a pile of things *you* started rather
+    /// than mail that arrived, and an accent capsule there says "six new" about
+    /// six messages nobody sent you. The Outbox row takes the tally for the
+    /// same reason and does not come through here, having no role at all.
+    ///
+    /// Stated as a function so the unified rows and the per-account rows cannot
+    /// answer it differently — the two drew the same mailbox with two different
+    /// badges for as long as each decided for itself.
+    ///
+    /// - Parameter role: The row's role, or nil for a custom label.
+    /// - Returns: Whether the row counts items rather than unread mail.
+    static func usesTallyBadge(for role: MailboxRole?) -> Bool { role == .drafts }
+
+    /// Everything in a role, across accounts — what Drafts counts.
+    ///
+    /// A draft is not mail that arrived, so "unread drafts" is a number about a
+    /// state nothing puts a message into: on a server that never marks them
+    /// read the row said six, and on one that does it said nothing at all while
+    /// six drafts sat there.
+    private func totalCount(for role: MailboxRole) -> Int {
+        sync.mailboxes
+            .filter { $0.role == role }
+            .reduce(0) { $0 + $1.totalThreads }
+    }
+
+    /// One unified label's unread, summed over the accounts it is bound in —
+    /// the same collapsing by `labelID` the rows themselves do, so the badge
+    /// counts exactly the mail the row opens.
+    private func unreadCount(forLabel labelID: LabelID) -> Int {
+        sync.mailboxes
+            .filter { $0.labelID == labelID && $0.role == nil }
             .reduce(0) { $0 + $1.unreadThreads }
     }
 

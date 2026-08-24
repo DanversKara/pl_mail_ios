@@ -43,7 +43,7 @@ public struct ThreadListView: View {
     /// it. **Temporary, for the performance investigation** — remove it once the
     /// reader is fast, because a version string does not belong in a mailbox
     /// title.
-    static let buildStamp = "b0310"
+    static let buildStamp = "c4"
 
     /// How many threads the join will hold at once. See the descriptor in
     /// `init` for why this is bounded rather than open.
@@ -106,6 +106,10 @@ public struct ThreadListView: View {
     /// ignores whatever the server set.
     @Environment(\.theme) private var theme
     @Environment(\.colorScheme) private var colorScheme
+
+    /// Both inputs resolved together, for the header's ink. Computed rather
+    /// than stored for the reason above: either one changing has to repaint.
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
 
     @State private var isLoadingMore = false
     /// Conversations picked out for a bulk action. Non-empty *is* selection
@@ -176,6 +180,26 @@ public struct ThreadListView: View {
     /// every list on a server that classifies nothing.
     private var categorySelection: Binding<MessageCategory?>?
 
+    /// Shows or hides the mailbox column, where this list draws its own header
+    /// bar instead of using the navigation bar.
+    ///
+    /// **Not decoration.** With the bar hidden the split view's own sidebar
+    /// toggle goes with it, and on the layouts where that button is the only
+    /// visible way back to the mailboxes, hiding it would strand anyone who
+    /// closed the sidebar with nothing but ⌘⌃S to reopen it. The shell owns
+    /// the visibility, so it hands the action down rather than this view
+    /// reaching for it. Nil where there is nothing to toggle — a phone, or a
+    /// search results list.
+    private let onToggleSidebar: (() -> Void)?
+
+    /// New Message, for the layouts that put it here.
+    ///
+    /// It used to be a `ToolbarItem` the shell attached to this column. The
+    /// bar it lived in is gone on a separated layout, so the shell passes the
+    /// action instead and the header draws it — still the same single closure,
+    /// so the three compose entry points cannot drift.
+    private let onCompose: (() -> Void)?
+
     /// Conversations badged **New** for as long as this feed is on screen.
     ///
     /// Held here rather than read from `StoredThread.isNew`, and that is the
@@ -208,7 +232,9 @@ public struct ThreadListView: View {
         outbox: OutboxSender,
         selection: Binding<ThreadRef?>,
         isSelectionActive: Binding<Bool> = .constant(false),
-        categorySelection: Binding<MessageCategory?>? = nil
+        categorySelection: Binding<MessageCategory?>? = nil,
+        onToggleSidebar: (() -> Void)? = nil,
+        onCompose: (() -> Void)? = nil
     ) {
         self.feed = feed
         self.sync = sync
@@ -216,6 +242,8 @@ public struct ThreadListView: View {
         self.labelActions = labelActions
         self.outbox = outbox
         self.categorySelection = categorySelection
+        self.onToggleSidebar = onToggleSidebar
+        self.onCompose = onCompose
         _selection = selection
         _isSelectionActive = isSelectionActive
 
@@ -252,9 +280,18 @@ public struct ThreadListView: View {
         // press, and the row it lands on is almost always off screen after two
         // presses. A selection that moves invisibly is a selection that is not
         // there.
-        ScrollViewReader { scroll in
-            list
-                .shortcuts { keyboardShortcuts(scroll) }
+        // The chrome sits *above* the list rather than inside it as a
+        // `safeAreaInset`. Inset content rides the scroll view's rubber-band,
+        // so the category strip drifted up and down whenever the list was
+        // dragged — the tabs appeared to be draggable themselves.
+        VStack(spacing: 0) {
+            categoryStrip
+            listHeader
+
+            ScrollViewReader { scroll in
+                list
+                    .shortcuts { keyboardShortcuts(scroll) }
+            }
         }
     }
 
@@ -472,8 +509,6 @@ public struct ThreadListView: View {
                 labelActions: labelActions)
         }
         .undoOverlay(actions)
-        .safeAreaInset(edge: .top, spacing: 0) { listHeader }
-        .safeAreaInset(edge: .top, spacing: 0) { categoryStrip }
         .safeAreaInset(edge: .top, spacing: 0) { offlineBanner }
         .refreshable { await sync.refresh(feed: feed) }
         .overlay { emptyState }
@@ -486,46 +521,32 @@ public struct ThreadListView: View {
         // because its title is empty and the bar collapses. The name of the
         // list belongs inside the card anyway; see `listHeader`.
         .navigationTitle(.ui(""))
+        // **Gone entirely on a separated layout**, which is what reclaims the
+        // band of empty pane above the header. The bar was already carrying no
+        // title — see above — so all it drew was one floating ellipsis in
+        // roughly a hundred and eighty points of cream, and a card whose top
+        // edge nothing reached. Everything the bar held now sits in
+        // ``listHeader``, at the top of the card where the mock draws it, which
+        // is also the only place a control is inside the pane's margins: the
+        // system lays a navigation bar out in the column's *full* bounds, so a
+        // button in it hugs the screen edge past the card. Collapsed the bar
+        // stays: it carries the back button to the mailboxes.
+        .toolbarVisibility(layout.isSeparated ? .hidden : .automatic, for: .navigationBar)
         .toolbar {
-            if isSelecting == false {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        Button(.ui("Mark all as read"), systemImage: "envelope.open") {
-                            markAllAsRead()
-                        }
-                        .disabled(isMarkingAllRead)
-
-                        Button(.ui("Swipe actions"), systemImage: "hand.draw") {
-                            isPickingSwipeActions = true
-                        }
-
-                        // Only on one pane. Where there is a column to spare
-                        // the strip above the rows is already the control, and
-                        // a second one in the menu would be two places that
-                        // say what is showing.
-                        if let categorySelection, layout.isSeparated == false {
-                            Divider()
-
-                            InboxCategoryPicker.menu(selection: categorySelection)
-                        }
-                    } label: {
-                        Label(.ui("More"), systemImage: "ellipsis.circle")
-                    }
-                }
-            }
-
-            if isSelecting {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(.ui("Cancel")) { checked = [] }
+            // Only where the bar is still on screen. Drawn as well as the
+            // header's own copies, these would be two controls for one action
+            // — and on the separated layouts they would be two invisible ones.
+            if layout.isSeparated == false {
+                if isSelecting == false {
+                    ToolbarItem(placement: .topBarTrailing) { moreMenu }
                 }
 
-                ToolbarItem(placement: .topBarTrailing) {
-                    // Named for what it does. "Select all" next to a paged
-                    // list reads as the whole mailbox, and it is not — it is
-                    // the rows that have actually loaded.
-                    Button(allChecked ? .ui("Deselect all") : .ui("Select all loaded")) {
-                        checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+                if isSelecting {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(.ui("Cancel")) { checked = [] }
                     }
+
+                    ToolbarItem(placement: .topBarTrailing) { selectAllButton }
                 }
             }
         }
@@ -541,38 +562,206 @@ public struct ThreadListView: View {
         .toolbarBackgroundVisibility(.hidden, for: .navigationBar)
     }
 
-    /// The capsules, on a layout with a column to spare for them.
+    /// The list's name and its controls, drawn inside the card rather than in
+    /// the bar.
     ///
-    /// Absent on one pane, where the same choices live in the overflow menu:
-    /// a permanent strip costs a row of a five-row phone screen for a control
-    /// most people set once, and mail is what the screen is for. Absent
-    /// entirely on a server that classifies nothing — the shell withholds the
-    /// binding — because five permanently empty tabs above a working inbox
-    /// reads as mail having gone missing.
+    /// See the empty `navigationTitle` for why the name is here. Since the
+    /// separated layouts hide the navigation bar outright, this is also the
+    /// list's *toolbar*: the sidebar toggle, New Message, the overflow menu and
+    /// the selection buttons all live in this row. That is the point — a
+    /// control in a navigation bar is laid out in the column's full bounds and
+    /// hugs the screen edge past the card, while everything in here is inside
+    /// the pane's own margins along with the mail.
     ///
-    /// Above the offline banner in the inset order, so the banner sits directly
-    /// over the rows it is describing rather than with a strip wedged between.
-    /// The list's name, drawn inside the card rather than in the bar.
-    ///
-    /// See the empty `navigationTitle` for why. Carries the selection count
-    /// while selecting, so the number stays where the eye already is.
+    /// Carries the selection count while selecting, so the number stays where
+    /// the eye already is.
     private var listHeader: some View {
-        Text(
-            verbatim: isSelecting
-                ? "\(checked.count) selected"
-                : "\(feed.title(mailboxes: sync.mailboxes)) · \(Self.buildStamp)"
-        )
-        .font(.headline)
+        HStack(spacing: 10) {
+            if isSelecting {
+                Button(.ui("Cancel")) { checked = [] }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(ThemeAccent())
+            }
+
+            selectAllBox
+
+            // **No mailbox name here.** The design gives this row a checkbox, a
+            // gap and a count — nothing else. Which mailbox is open is answered
+            // by the selected row in the sidebar, two inches to the left, and
+            // repeating it here spends the widest part of the row saying what is
+            // already on screen. The selection count is the one thing that has
+            // nowhere else to go.
+            if isSelecting {
+                Text(verbatim: "\(checked.count) selected")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(palette.ink.color)
+                    .lineLimit(1)
+            }
+
+            Spacer(minLength: 8)
+
+            if isSelecting {
+                selectAllButton
+                    .buttonStyle(.plain)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(ThemeAccent())
+            } else {
+                // What is in the list, on the trailing edge — the one number
+                // the header has room for and the only one people ask it for.
+                // Tabular so it does not shuffle as rows page in.
+                //
+                // Counted from the feed table rather than from `rows`, which is
+                // the *built window* and would read "150 conversations" in a
+                // 60,000-message mailbox.
+                Text(verbatim: Self.buildStamp)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(palette.inkFaint.color)
+
+                Text(.ui("\(entries.count) conversations"))
+                    .font(.system(size: 12))
+                    .monospacedDigit()
+                    .foregroundStyle(palette.inkFaint.color)
+                    .lineLimit(1)
+
+                // Only where the bar that used to hold them is gone. Collapsed
+                // they are still toolbar items, and drawing them twice would
+                // put two ellipses on one phone screen.
+                if layout.isSeparated {
+                    // No compose or sidebar-toggle icon: on a separated layout
+                    // the window header owns the toggle and the sidebar owns
+                    // Compose. Two controls for one destination is how they
+                    // drift apart.
+                    moreMenu
+                        .menuStyle(.button)
+                        .buttonStyle(.plain)
+                        .labelStyle(.iconOnly)
+                        .font(.system(size: 15))
+                        .foregroundStyle(palette.inkMuted.color)
+                        .frame(width: 32, height: 32)
+                        .contentShape(.rect)
+                }
+            }
+        }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 16)
-        .padding(.top, 4)
-        .padding(.bottom, 8)
+        .padding(.vertical, 10)
+        // The rows scroll *under* this, so it has to be paper rather than
+        // nothing — and the pane card is what supplies the colour, so the
+        // header takes the same surface rather than a fill of its own. Clear
+        // where there is no card behind it to disagree with.
+        .background {
+            if layout.isSeparated {
+                palette.surface.color
+            }
+        }
+        .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isHeader)
     }
 
+    /// One of the header's own toolbar buttons: a 32pt icon, the size the mock
+    /// draws every circular control at, with a 44pt-tall row around it.
+    private func headerIcon(
+        _ title: LocalizedStringResource, systemImage: String, action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.system(size: 15))
+                .foregroundStyle(palette.inkMuted.color)
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .hoverEffect(.highlight)
+        .accessibilityLabel(Text(title))
+    }
+
+    /// The overflow, drawn by the header on a separated layout and by the
+    /// navigation bar on a collapsed one — one definition either way.
+    private var moreMenu: some View {
+        Menu {
+            Button(.ui("Mark all as read"), systemImage: "envelope.open") {
+                markAllAsRead()
+            }
+            .disabled(isMarkingAllRead)
+
+            Button(.ui("Swipe actions"), systemImage: "hand.draw") {
+                isPickingSwipeActions = true
+            }
+
+            // No category picker here any more. The strip above the rows is now
+            // drawn on every layout, and a second control in the menu would be
+            // two places that say what is showing — the failure the strip's own
+            // comment warns about, in the other direction.
+        } label: {
+            Label(.ui("More"), systemImage: "ellipsis.circle")
+        }
+    }
+
+    /// Named for what it does. "Select all" next to a paged list reads as the
+    /// whole mailbox, and it is not — it is the rows that have actually loaded.
+    private var selectAllButton: some View {
+        Button(allChecked ? .ui("Deselect all") : .ui("Select all loaded")) {
+            checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+        }
+    }
+
+    /// Select-all, as a checkbox in the header rather than only as a toolbar
+    /// button that appears once something is already ticked.
+    ///
+    /// It says the same thing the toolbar's "Select all loaded" says, and
+    /// deliberately with the same limit: the box covers the rows that have
+    /// actually paged in, never the whole mailbox. Spelled out for VoiceOver
+    /// for that reason — the glyph cannot carry "loaded".
+    ///
+    /// Hidden when there is nothing to tick, so an empty list does not offer a
+    /// control that would do nothing.
+    ///
+    /// Both the emptiness test and the ticked test are written to avoid
+    /// building ``rows`` while the header merely draws: `entries` is the query
+    /// itself, and `allChecked` — which does build the window — is only
+    /// reached once something is actually ticked. The header redraws on every
+    /// body evaluation, and this is the same hot path the join is cached for.
+    @ViewBuilder
+    private var selectAllBox: some View {
+        if entries.isEmpty == false {
+            let isAllChecked = isSelecting && allChecked
+
+            Button {
+                checked = isAllChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+            } label: {
+                Image(systemName: isAllChecked ? "checkmark.square.fill" : "square")
+                    .font(.system(size: 16))
+                    .foregroundStyle(
+                        isAllChecked
+                            ? AnyShapeStyle(ThemeAccent())
+                            : AnyShapeStyle(palette.inkFaint.color)
+                    )
+                    .frame(width: 20, height: 20)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .hoverEffect(.highlight)
+            .accessibilityLabel(
+                Text(isAllChecked ? .ui("Deselect all") : .ui("Select all loaded")))
+        }
+    }
+
+    /// The tabs, on every layout.
+    ///
+    /// Drawn on one pane as well as three since the redesign: the same control
+    /// used to be demoted to the overflow menu on a phone, which made the
+    /// categories something you had to already know about. The strip's job is
+    /// to say what the list is currently narrowed to, and a menu item cannot
+    /// do that without being opened.
+    ///
+    /// Still absent entirely on a server that classifies nothing — the shell
+    /// withholds the binding — because five permanently empty tabs above a
+    /// working inbox reads as mail having gone missing.
     @ViewBuilder
     private var categoryStrip: some View {
-        if let categorySelection, layout.isSeparated {
+        if let categorySelection {
             InboxCategoryPicker(selection: categorySelection, isStrip: true)
         }
     }

@@ -22,6 +22,14 @@ public struct ThreadReaderView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.standardAnimation) private var standardAnimation
     @Environment(\.slowAnimation) private var slowAnimation
+    /// Whether there is a pane card behind this view, which is what decides
+    /// who lays the paper down — see the `background` below. Read from the
+    /// environment for the same reason ``ThreadListView`` does: the reader is
+    /// also built by a standalone window, which has no shell to ask.
+    @Environment(\.mailLayout) private var layout
+    @Environment(\.displayScale) private var displayScale
+    /// Read only to hand on to the composer sheet below — see there.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Whether the reply bar drops its words.
     ///
@@ -136,7 +144,7 @@ public struct ThreadReaderView: View {
 
     private func reader(_ scroller: ScrollViewProxy) -> some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 10) {
+            LazyVStack(alignment: .leading, spacing: 0) {
                 header
 
                 ForEach(Array(loader.messages.enumerated()), id: \.element.id) { index, message in
@@ -144,15 +152,19 @@ public struct ThreadReaderView: View {
                     // the first hidden position so it keeps its place in the
                     // chronology instead of floating to the top.
                     if index == collapsedRange?.lowerBound {
+                        separator
                         earlierMessagesBar
                     }
 
                     if collapsedRange?.contains(index) != true {
+                        separator
                         row(for: message, with: scroller)
                     }
                 }
             }
-            .padding(.horizontal, 10)
+            // Full bleed, because the hairlines are: a rule that stops short of
+            // the measure reads as a box someone forgot to close. The messages
+            // keep their own 16pt text inset.
             .padding(.bottom, 12)
 
             // A line of text is readable up to roughly 75 characters and
@@ -163,22 +175,44 @@ public struct ThreadReaderView: View {
             .frame(maxWidth: 700)
             .frame(maxWidth: .infinity)
         }
-        // Cards need something to be cards *on*. Without this the surface
-        // colour and the scroll view's own background are the same white and
-        // the separation does not exist — which is how the first version of
-        // this looked, and it looked like nothing had changed.
+        // The thread is flat now: one surface with rules across it rather than
+        // a stack of cards on the window. So the scroll view must not paint
+        // anything of its own — the pane card behind it is the paper.
         .scrollContentBackground(.hidden)
-        // The theme's window rather than `PanelStyle.window`, so a card and the
-        // ground it sits on move together. Left fixed, a themed pane would put
-        // a slate card on cream and the two would read as a rendering fault
-        // rather than a theme.
-        .background(theme.palette(for: colorScheme).window.color)
+        // Collapsed there is no pane behind, so the reader lays the paper down
+        // itself; separated it must not, or it would paint over the pane card
+        // and square off its rounded corners. The same split, and the same
+        // reasoning, as `ThreadListView`.
+        .background(layout.isSeparated ? Color.clear : palette.surface.color)
+        // iOS 26 paints a "hard" edge effect behind a bar over scrolling
+        // content, which over a pane card lands as an opaque square band across
+        // the card's top. The list already asks for the soft one; the reader
+        // needs it too on the layouts that still have a bar.
+        .scrollEdgeEffectStyle(.soft, for: .top)
         // Empty on purpose: the subject is the headline at the top of the
         // content, at the size a subject deserves. Repeating it in the bar,
         // truncated to a column's width, says the same thing twice and worse.
         .navigationTitle(.ui(""))
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { toolbar }
+        // **Hidden on a separated layout**, exactly as the list's is, and for
+        // the same two reasons. A navigation bar is laid out in the *column's*
+        // full bounds rather than inside the pane's margins, so its buttons
+        // hugged the screen's trailing edge past the card and made the reader
+        // read as a different surface from the carded list beside it; and the
+        // thread scrolled underneath them, which is how a subject ended up
+        // half-behind Archive. The same actions are drawn by ``actionBar``, at
+        // the top of the card, with the thread starting below it. Collapsed the
+        // bar stays: it carries the back button to the list.
+        .toolbarVisibility(layout.isSeparated ? .hidden : .automatic, for: .navigationBar)
+        .toolbar {
+            // Never both: the two draw the same actions and carry the same
+            // keyboard shortcuts, and a duplicated `.keyboardShortcut` is a
+            // shortcut with two claimants.
+            if layout.isSeparated == false { toolbar }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            if layout.isSeparated { actionBar }
+        }
         .safeAreaInset(edge: .top) {
             if isFinding {
                 ThreadFindBar(model: find, onClose: closeFind)
@@ -188,7 +222,19 @@ public struct ThreadReaderView: View {
         .sheet(item: $composing) { kind in
             ComposeView(
                 kind: kind, accountKey: accountKey, accountID: accountID,
-                client: client, store: store, outbox: outbox)
+                client: client, store: store, outbox: outbox
+            )
+            // **Injected explicitly**, for the reason spelled out where the
+            // shell presents the same sheet: a sheet is its own hosting
+            // context and does not reliably inherit the environment set below
+            // it in the chain. Without this the composer opened from a
+            // conversation drew the default palette while the thread behind it
+            // was themed. The reduce-motion flag is read here rather than
+            // resolved because this is the presenting view — the same
+            // arrangement `MailView` uses, and the only place the rule about
+            // never consulting it in a view does not apply.
+            .environment(\.theme, theme)
+            .resolvedMotion(theme.motion, reduced: reduceMotion)
         }
         .safeAreaInset(edge: .bottom) { replyBar }
         .undoOverlay(actions)
@@ -250,7 +296,13 @@ public struct ThreadReaderView: View {
         Task { await loader.markRead(emailIDs: claimed) }
     }
 
-    /// One message, as its own card.
+    /// One message in the thread.
+    ///
+    /// Flat since the redesign — no `.messageCard()` — because the mock draws
+    /// the conversation as one surface ruled by hairlines rather than as a
+    /// stack of cards. The rule above each row does the separating the fill
+    /// used to do; the separator is emitted by the caller so it can also sit
+    /// above the "earlier messages" bar.
     ///
     /// Its own function rather than inline in the `ForEach`: with the find's
     /// two extra arguments the closure stopped type-checking in reasonable
@@ -279,7 +331,6 @@ public struct ThreadReaderView: View {
         // The policy lives outside SwiftUI's observation, so trusting a sender
         // has to invalidate the message that was showing the blocked notice.
         .id("\(message.id)-\(remoteContentRevision)")
-        .messageCard()
         // A stable handle for the find to scroll to. The one above changes
         // whenever a sender is trusted, which is exactly what a scroll target
         // must not do.
@@ -308,38 +359,97 @@ public struct ThreadReaderView: View {
     @ViewBuilder
     private var header: some View {
         if loader.messages.isEmpty == false {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(subject)
-                    .font(.title2.weight(.semibold))
-                    .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 8) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text(subject)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(palette.ink.color)
+                        .fixedSize(horizontal: false, vertical: true)
 
-                if loader.labels.isEmpty == false || loader.snoozedUntil != nil {
-                    HStack(spacing: 6) {
-                        if let snoozedUntil = loader.snoozedUntil {
-                            chip(
-                                SnoozeMenu.badge(for: snoozedUntil), systemImage: "clock",
-                                tint: theme.accentColor(in: colorScheme))
-                        }
-
-                        ForEach(loader.labels) { label in
-                            chip(
-                                label.name,
-                                systemImage: label.role == nil ? "tag.fill" : "tray.fill",
-                                tint: MailboxSidebarView.tint(
-                                    for: label.role,
-                                    accent: theme.accentColor(in: colorScheme))
-                                    ?? AvatarPalette.color(
-                                        for: label.labelID?.rawValue ?? label.name)
-                            )
-                        }
-                    }
+                    metaLine
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+
+                // The star, where the mock draws it. It is in the More menu
+                // too, and that is not a duplicate worth removing: the menu
+                // entry is what carries the ⌘S shortcut, and this is what
+                // makes the state visible without opening anything.
+                headerStar
             }
             .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 14)
-            .accessibilityElement(children: .combine)
         }
+    }
+
+    /// What the conversation is filed under, and how long it is.
+    @ViewBuilder
+    private var metaLine: some View {
+        let hasChips = loader.labels.isEmpty == false || loader.snoozedUntil != nil
+
+        if hasChips || loader.messages.count > 1 {
+            HStack(spacing: 6) {
+                if let snoozedUntil = loader.snoozedUntil {
+                    chip(
+                        SnoozeMenu.badge(for: snoozedUntil), systemImage: "clock",
+                        tint: theme.accentColor(in: colorScheme))
+                }
+
+                ForEach(loader.labels) { label in
+                    chip(
+                        label.name,
+                        systemImage: label.role == nil ? "tag.fill" : "tray.fill",
+                        tint: MailboxSidebarView.tint(
+                            for: label.role,
+                            accent: theme.accentColor(in: colorScheme))
+                            ?? AvatarPalette.color(
+                                for: label.labelID?.rawValue ?? label.name)
+                    )
+                }
+
+                // Singular is never drawn rather than being written out: this
+                // catalogue has no plural rules, and "1 messages" under the
+                // subject of every two-party exchange is worse than silence.
+                if loader.messages.count > 1 {
+                    Text(.ui("\(loader.messages.count) messages"))
+                        .font(.caption)
+                        .foregroundStyle(palette.inkFaint.color)
+                }
+            }
+        }
+    }
+
+    private var headerStar: some View {
+        Button(action: toggleStar) {
+            Image(systemName: isFlagged ? "star.fill" : "star")
+                .font(.system(size: 17, weight: .semibold))
+                // The palette's amber when set, and the faint ink when not, so
+                // the control is discoverable rather than appearing only once
+                // it has been used — the rule the list's star follows too.
+                .foregroundStyle(isFlagged ? palette.star.color : palette.inkFaint.color)
+                .contentTransition(.symbolEffect(.replace))
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(Text(isFlagged ? .ui("Remove star") : .ui("Star")))
+    }
+
+    /// The rule between two messages.
+    ///
+    /// One device pixel rather than a `Divider`, which draws the system's
+    /// separator grey — too dark on paper and too light on the near-black, the
+    /// reason ``ThemePalette/line`` exists.
+    private var separator: some View {
+        Rectangle()
+            .fill(palette.line.color)
+            .frame(height: 1 / displayScale)
+            .accessibilityHidden(true)
+    }
+
+    private var palette: ThemePalette {
+        theme.palette(for: colorScheme)
     }
 
     private func chip(_ text: String, systemImage: String, tint: Color) -> some View {
@@ -355,60 +465,102 @@ public struct ThreadReaderView: View {
     ///
     /// These were in the More menu, which is two taps and a read for the two
     /// things anyone actually does with a message they have just finished
-    /// reading. Floating glass rather than a bar so the message keeps scrolling
-    /// visibly underneath — the bar is over the mail, not a wall beneath it.
+    /// reading.
+    ///
+    /// **Docked rather than floating glass, per the mock.** The redesign draws
+    /// this as an edge-to-edge bar in the blur material with a top hairline:
+    /// one filled Reply and the other two beside it. The floating capsules read
+    /// as three equal choices; the message a reader has just finished has one
+    /// obvious next action and two that are occasionally right, and the bar
+    /// says so.
+    ///
+    /// **The Reply button only fills the width on a phone.** A full-bleed
+    /// accent capsule across a column beside a page of mail is a block of solid
+    /// colour the size of a paragraph, and it won the reader — which is the
+    /// opposite of what a docked bar is for. On a separated layout the mock
+    /// draws the three as a left-aligned row of ordinary buttons under the last
+    /// message, so here Reply is sized by its own words and the other two sit
+    /// next to it at the same height.
     @ViewBuilder
     private var replyBar: some View {
         if let newest = loader.messages.last {
-            GlassEffectContainer(spacing: 12) {
-                HStack(spacing: 12) {
-                    Button {
-                        composing = .reply(to: newest, all: false)
-                    } label: {
-                        Label(.ui("Reply"), systemImage: "arrowshape.turn.up.left")
-                            .iconOnly(when: compactActions)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .glassEffect(.regular.interactive(), in: .capsule)
+            let isRow = layout.isSeparated
 
-                    // Only when there is someone else to include. On a message
-                    // with one recipient it does the same thing as Reply, and
-                    // an affordance that duplicates its neighbour is noise.
-                    if hasOtherRecipients(newest) {
-                        Button {
-                            composing = .reply(to: newest, all: true)
-                        } label: {
-                            Label(.ui("Reply all"), systemImage: "arrowshape.turn.up.left.2")
-                                .labelStyle(.iconOnly)
-                                .padding(12)
-                        }
-                        .glassEffect(.regular.interactive(), in: .circle)
-                    }
-
-                    Button {
-                        composing = .forward(newest)
-                    } label: {
-                        Label(.ui("Forward"), systemImage: "arrowshape.turn.up.right")
-                            .iconOnly(when: compactActions)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                    }
-                    .glassEffect(.regular.interactive(), in: .capsule)
+            HStack(spacing: 8) {
+                Button {
+                    composing = .reply(to: newest, all: false)
+                } label: {
+                    Label(.ui("Reply"), systemImage: "arrowshape.turn.up.left")
+                        .iconOnly(when: compactActions)
+                        .font(.subheadline.weight(.semibold))
+                        // Not assumed white: a pale user accent wants black on
+                        // it, which is what `accentInk` is derived to answer.
+                        .foregroundStyle(palette.accentInk.color)
+                        .padding(.horizontal, isRow ? 16 : 0)
+                        .frame(maxWidth: isRow ? nil : .infinity, minHeight: isRow ? 34 : 44)
+                        .background(
+                            palette.accent.color,
+                            in: .rect(cornerRadius: isRow ? 8 : 22, style: .continuous))
                 }
-                .font(.subheadline.weight(.medium))
+
+                // Only when there is someone else to include. On a message
+                // with one recipient it does the same thing as Reply, and
+                // an affordance that duplicates its neighbour is noise.
+                if hasOtherRecipients(newest) {
+                    secondaryAction(
+                        .ui("Reply all"), systemImage: "arrowshape.turn.up.left.2", isRow: isRow
+                    ) {
+                        composing = .reply(to: newest, all: true)
+                    }
+                }
+
+                secondaryAction(
+                    .ui("Forward"), systemImage: "arrowshape.turn.up.right", isRow: isRow
+                ) {
+                    composing = .forward(newest)
+                }
+
+                // Everything sits at the leading edge on a wide pane, where
+                // the mock puts the row under the last message; on a phone the
+                // three fill the bar between them and there is nothing left to
+                // push.
+                if isRow { Spacer(minLength: 0) }
             }
             .buttonStyle(.plain)
-            .padding(.leading, 16)
-            // Symmetrical again. This used to reserve 96pt on a separated
-            // layout for the floating compose button that hung over this
-            // corner; P5 moved that button into the list column's toolbar on
-            // every layout with more than one pane, and on compact the button
-            // stands down entirely while a message is open. So on iPad the
-            // inset was holding a gap open for a control that is no longer
-            // there, and the reply bar sat 80pt short of the edge for nothing.
-            .padding(.trailing, 16)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(alignment: .top) {
+                // The material reaches into the home-indicator strip; the
+                // hairline does not, because it marks where the mail stops
+                // scrolling under the bar.
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .ignoresSafeArea(edges: .bottom)
+                    .overlay(alignment: .top) { separator }
+            }
+        }
+    }
+
+    /// One of the two secondary replies.
+    ///
+    /// A 44pt circle where the bar is a phone's dock, and a 34pt rounded
+    /// rectangle on the ink-tinted fill where it is the mock's inline row —
+    /// the same shape and height as the Reply beside it, so the three read as
+    /// one row of buttons with one of them emphasised rather than as a
+    /// primary action with two satellites.
+    private func secondaryAction(
+        _ title: LocalizedStringResource, systemImage: String, isRow: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: systemImage)
+                .labelStyle(.iconOnly)
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(palette.inkMuted.color)
+                .frame(width: isRow ? 34 : 44, height: isRow ? 34 : 44)
+                .background(
+                    palette.sunken.color,
+                    in: .rect(cornerRadius: isRow ? 8 : 22, style: .continuous))
         }
     }
 
@@ -425,100 +577,148 @@ public struct ThreadReaderView: View {
     }
 
     /// The actions a thread affords, in the order Gmail puts them.
+    ///
+    /// Two presentations, one definition. Collapsed they are navigation-bar
+    /// items; separated they are the circular buttons of ``actionBar``, because
+    /// a navigation bar is laid out in the column's bounds and not inside the
+    /// pane's. The buttons themselves — and the keyboard shortcuts hanging off
+    /// them — are written once below and rendered by whichever is on screen.
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .topBarTrailing) {
-            Button(action: archiveThread) {
-                Label(.ui("Archive"), systemImage: "archivebox")
-            }
-            // Gmail's own letters throughout, so anyone arriving from it
-            // keeps their muscle memory. Unmodified keys: a hardware
-            // keyboard is the only way to reach them, and nothing here is
-            // typing into a field.
-            .keyboardShortcut("e", modifiers: [])
+            archiveButton
+            trashButton
+            moreMenu
+        }
+    }
 
-            Button(action: trashThread) {
-                Label(.ui("Trash"), systemImage: "trash")
+    /// The reader's own toolbar, at the top of the pane card.
+    ///
+    /// 32pt circular icon buttons in a 44pt row with a hairline under it, as
+    /// the mock draws them. It is a `safeAreaInset`, so the thread starts
+    /// *below* it and scrolls under it rather than beginning behind Archive —
+    /// and it is filled with the pane's own surface for the same reason the
+    /// list's header is: the mail passes underneath.
+    private var actionBar: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+
+            archiveButton
+            trashButton
+            moreMenu
+        }
+        .buttonStyle(.plain)
+        .menuStyle(.button)
+        .labelStyle(.iconOnly)
+        .font(.system(size: 16))
+        .foregroundStyle(palette.inkMuted.color)
+        .padding(.horizontal, 12)
+        .frame(height: 44)
+        .background(palette.surface.color)
+        .overlay(alignment: .bottom) { separator }
+    }
+
+    private var archiveButton: some View {
+        Button(action: archiveThread) {
+            Label(.ui("Archive"), systemImage: "archivebox")
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        // Gmail's own letters throughout, so anyone arriving from it
+        // keeps their muscle memory. Unmodified keys: a hardware
+        // keyboard is the only way to reach them, and nothing here is
+        // typing into a field.
+        .keyboardShortcut("e", modifiers: [])
+    }
+
+    private var trashButton: some View {
+        Button(action: trashThread) {
+            Label(.ui("Trash"), systemImage: "trash")
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
+        }
+        // Not Gmail's "#": it needs shift on most layouts, so the plain
+        // keypress would never arrive. ⌘⌫ is what a Mac keyboard user
+        // reaches for to delete anyway.
+        .keyboardShortcut(.delete, modifiers: .command)
+    }
+
+    private var moreMenu: some View {
+        Menu {
+            // Reply, reply-all and forward live in the bar at the bottom
+            // now. They stay here as hidden shortcut targets only: a
+            // `.keyboardShortcut` needs a control to hang off, and the bar's
+            // buttons are not in a menu the shortcut system can reach.
+            if let newest = loader.messages.last {
+                Section {
+                    Button(.ui("Reply")) { composing = .reply(to: newest, all: false) }
+                        .keyboardShortcut("r", modifiers: [])
+                    Button(.ui("Reply all")) { composing = .reply(to: newest, all: true) }
+                        .keyboardShortcut("a", modifiers: [])
+                    Button(.ui("Forward")) { composing = .forward(newest) }
+                        .keyboardShortcut("f", modifiers: [])
+                }
             }
-            // Not Gmail's "#": it needs shift on most layouts, so the plain
-            // keypress would never arrive. ⌘⌫ is what a Mac keyboard user
-            // reaches for to delete anyway.
-            .keyboardShortcut(.delete, modifiers: .command)
+
+            Button {
+                Task { await actions.setSpam(true, target) }
+                dismiss()
+            } label: {
+                Label(.ui("Report spam"), systemImage: "exclamationmark.shield")
+            }
+
+            Button(action: pickLabels) {
+                Label(.ui("Labels"), systemImage: "tag")
+            }
+            .keyboardShortcut("l", modifiers: [])
+
+            Button(action: openFind) {
+                Label(.ui("Find in conversation"), systemImage: "magnifyingglass")
+            }
+            // ⌘F everywhere, rather than Gmail's "/": the bar it opens is
+            // a text field, and a bare letter that opens a text field is
+            // one keystroke away from being typed into it.
+            .keyboardShortcut("f", modifiers: .command)
 
             Menu {
-                // Reply, reply-all and forward live in the bar at the bottom
-                // now. They stay here as hidden shortcut targets only: a
-                // `.keyboardShortcut` needs a control to hang off, and the bar's
-                // buttons are not in a menu the shortcut system can reach.
-                if let newest = loader.messages.last {
-                    Section {
-                        Button(.ui("Reply")) { composing = .reply(to: newest, all: false) }
-                            .keyboardShortcut("r", modifiers: [])
-                        Button(.ui("Reply all")) { composing = .reply(to: newest, all: true) }
-                            .keyboardShortcut("a", modifiers: [])
-                        Button(.ui("Forward")) { composing = .forward(newest) }
-                            .keyboardShortcut("f", modifiers: [])
-                    }
-                }
-
-                Button {
-                    Task { await actions.setSpam(true, target) }
-                    dismiss()
-                } label: {
-                    Label(.ui("Report spam"), systemImage: "exclamationmark.shield")
-                }
-
-                Button(action: pickLabels) {
-                    Label(.ui("Labels"), systemImage: "tag")
-                }
-                .keyboardShortcut("l", modifiers: [])
-
-                Button(action: openFind) {
-                    Label(.ui("Find in conversation"), systemImage: "magnifyingglass")
-                }
-                // ⌘F everywhere, rather than Gmail's "/": the bar it opens is
-                // a text field, and a bare letter that opens a text field is
-                // one keystroke away from being typed into it.
-                .keyboardShortcut("f", modifiers: .command)
-
-                Menu {
-                    SnoozeMenu(
-                        isSnoozed: loader.snoozedUntil != nil,
-                        onPick: { until in
-                            Task { await actions.snooze(target, until: until) }
-                            // Snoozing takes the thread out of the inbox, so
-                            // there is nothing left here to look at.
-                            if until != nil { dismiss() }
-                        },
-                        onPickExact: { isPickingSnoozeDate = true }
-                    )
-                } label: {
-                    Label(.ui("Snooze"), systemImage: "clock")
-                }
-
-                Button(action: markUnread) {
-                    Label(.ui("Mark as unread"), systemImage: "envelope.badge")
-                }
-                .keyboardShortcut("u", modifiers: [])
-
-                Button(action: toggleStar) {
-                    Label(
-                        isFlagged ? .ui("Remove star") : .ui("Star"),
-                        systemImage: "star")
-                }
-                .keyboardShortcut("s", modifiers: [])
-
-                // The visible route to P6's second window. Absent rather than
-                // disabled where the system cannot open one at all — an
-                // iPhone, or an iPad with multitasking switched off.
-                if supportsMultipleWindows {
-                    Button(action: openInNewWindow) {
-                        Label(.ui("Open in new window"), systemImage: "macwindow.on.rectangle")
-                    }
-                }
+                SnoozeMenu(
+                    isSnoozed: loader.snoozedUntil != nil,
+                    onPick: { until in
+                        Task { await actions.snooze(target, until: until) }
+                        // Snoozing takes the thread out of the inbox, so
+                        // there is nothing left here to look at.
+                        if until != nil { dismiss() }
+                    },
+                    onPickExact: { isPickingSnoozeDate = true }
+                )
             } label: {
-                Label(.ui("More"), systemImage: "ellipsis.circle")
+                Label(.ui("Snooze"), systemImage: "clock")
             }
+
+            Button(action: markUnread) {
+                Label(.ui("Mark as unread"), systemImage: "envelope.badge")
+            }
+            .keyboardShortcut("u", modifiers: [])
+
+            Button(action: toggleStar) {
+                Label(
+                    isFlagged ? .ui("Remove star") : .ui("Star"),
+                    systemImage: "star")
+            }
+            .keyboardShortcut("s", modifiers: [])
+
+            // The visible route to P6's second window. Absent rather than
+            // disabled where the system cannot open one at all — an
+            // iPhone, or an iPad with multitasking switched off.
+            if supportsMultipleWindows {
+                Button(action: openInNewWindow) {
+                    Label(.ui("Open in new window"), systemImage: "macwindow.on.rectangle")
+                }
+            }
+        } label: {
+            Label(.ui("More"), systemImage: "ellipsis.circle")
+                .frame(width: 32, height: 32)
+                .contentShape(.rect)
         }
     }
 
@@ -749,10 +949,11 @@ public struct ThreadReaderView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "ellipsis.circle.fill")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.inkFaint.color)
 
                 Text(.ui("\(collapsedRange?.count ?? 0) earlier messages"))
                     .font(.subheadline)
+                    .foregroundStyle(palette.inkMuted.color)
 
                 Spacer(minLength: 0)
             }
@@ -761,7 +962,6 @@ public struct ThreadReaderView: View {
             .contentShape(.rect)
         }
         .buttonStyle(.plain)
-        .messageCard()
     }
 
     private func isExpanded(_ message: MessageSnapshot) -> Bool {

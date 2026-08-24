@@ -134,6 +134,8 @@
 "Show quoted history" = "Show quoted history";
 "Hide quoted history" = "Hide quoted history";
 "%lld earlier messages" = "%lld earlier messages";
+"%lld messages" = "%lld messages";
+"Remove recipient" = "Remove recipient";
 "Photo or video" = "Photo or video";
 "File" = "File";
 "That photo couldn't be loaded." = "That photo couldn't be loaded.";
@@ -551,3 +553,15 @@
 "Loading…" = "Loading…";
 
 "Downloading %lld messages for offline" = "Downloading %lld messages for offline";
+
+/* The header row inside the list card: how many conversations the feed holds. */
+"%lld conversations" = "%lld conversations";
+
+/* Spoken for the sidebar's unread capsule, which is drawn as a bare number. */
+"%lld unread" = "%lld unread";
+
+/* Spoken for the sidebar's outlined tally — Drafts, Outbox — where the count is
+   of items rather than of new mail. */
+"%lld in total" = "%lld in total";
+
+"Clear search" = "Clear search";

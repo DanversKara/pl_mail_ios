@@ -171,9 +171,9 @@
    die Registerkarte ein Ausschnitt des Posteingangs ist und kein Konto. */
 
 "Primary" = "Allgemein";
-"Social" = "Soziale Netzwerke";
+"Social" = "Soziales";
 "Promotions" = "Werbung";
-"Updates" = "Benachrichtigungen";
+"Updates" = "Updates";
 "Forums" = "Foren";
 
 /* Die Widgets für Home- und Sperrbildschirm. In diesem Katalog und nicht in

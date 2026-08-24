@@ -101,6 +101,7 @@ public struct MailView: View {
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// The resolved theme, for the motion level the server set.
     @Environment(\.theme) private var theme
+    @Environment(\.colorScheme) private var colorScheme
     /// **The one place the two motion preferences meet.** Read here rather
     /// than at any call site: `Motion` exists so that a view can never honour
     /// the server's setting and forget Reduce Motion, and reading it in ten
@@ -263,25 +264,14 @@ public struct MailView: View {
         return AccountOrder.shared.ordered(sync.accounts, key: \.accountKey).first
     }
 
-    /// New Message in the list column's toolbar.
-    ///
-    /// Where it belongs on anything wider than a phone. The floating circle
-    /// below is pinned to the bottom-trailing corner of the *whole* split view,
-    /// which on a 13-inch iPad puts the button that creates mail in the corner
-    /// of the reader — as far from the list it adds to as the window allows,
-    /// and on top of whatever the reader has down there.
-    ///
-    /// The bare `c` stays on the floating button only, because on iPad the
-    /// reader is on screen at the same time and already claims bare letters;
-    /// ⌘N is bound here and reaches the same action.
-    private var composeToolbarButton: some View {
-        Button {
-            newMessage()
-        } label: {
-            Label(.ui("New message"), systemImage: "square.and.pencil")
-        }
-        .keyboardShortcut("n", modifiers: .command)
-    }
+    // New Message on a layout between the phone and the three-column iPad now
+    // lives in the list's own header row — `ThreadListView(onCompose:)` — and
+    // no longer in that column's navigation bar, which is hidden there so the
+    // pane card has a top edge. ⌘N is unaffected: it is bound in the ⌘ menu
+    // below, which is on screen whatever the layout.
+    //
+    // The bare `c` stays on the floating button only, because on iPad the
+    // reader is on screen at the same time and already claims bare letters.
 
     /// The compose button, where every mail app has put it for a decade.
     private var composeButton: some View {
@@ -449,13 +439,31 @@ public struct MailView: View {
                 raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
                 selection: $selectedThread, queryText: $searchText)
         } else {
+            // Nil everywhere but the resident sidebar, so the compose control
+            // is never drawn twice. See ``usesSidebarCompose``.
+            let compose: (() -> Void)? = usesSidebarCompose ? { newMessage() } : nil
+
             MailboxSidebarView(
                 sync: sync, outbox: outbox, labelActions: labels, actions: actions,
                 calendar: calendar,
                 openCalendar: { isShowingCalendar = true },
+                compose: compose,
                 selection: $selectedFeed)
         }
     }
+
+    /// Whether New Message lives at the top of the sidebar.
+    ///
+    /// Only where the sidebar is a resident column. In `.dual` it is a floating
+    /// overlay that goes away the moment it is used, so a compose button there
+    /// would be one dismissal away from being invisible; on a phone the
+    /// floating button already has the job.
+    ///
+    /// The three compose entry points — this, the list toolbar item and the
+    /// floating button — are alternatives and never two at once: two New
+    /// Message controls on one screen is one too many, and both would answer
+    /// ⌘N.
+    private var usesSidebarCompose: Bool { layout.mode == .triple }
 
     /// The list actually on screen, which is the selected mailbox narrowed by
     /// whatever category is chosen.
@@ -494,7 +502,11 @@ public struct MailView: View {
         if isSearching, layout.placesSearchResultsInSidebar == false {
             SearchResultsView(
                 raw: settledSearch, sync: sync, actions: actions, outbox: outbox,
-                selection: $selectedThread, queryText: $searchText)
+                selection: $selectedThread, queryText: $searchText,
+                // The middle column hides its navigation bar on a separated
+                // layout, so the results list carries the only visible way back
+                // to the mailboxes. See `ThreadListView(onToggleSidebar:)`.
+                onToggleSidebar: { columns = columns == .all ? .doubleColumn : .all })
         } else if let listFeed {
             // `.inline`, not large: a large title silently fails to render
             // when this column is restored rather than pushed, which is
@@ -504,7 +516,16 @@ public struct MailView: View {
                 feed: listFeed, sync: sync, actions: actions, labelActions: labels,
                 outbox: outbox,
                 selection: $selectedThread, isSelectionActive: $isSelectionActive,
-                categorySelection: offersCategories ? $inboxCategory : nil
+                categorySelection: offersCategories ? $inboxCategory : nil,
+                // The list draws its own header bar on a separated layout, so
+                // the two controls the shell used to hang in that column's
+                // navigation bar are handed down instead. Both stay the
+                // shell's decisions: the split view's visibility is state here,
+                // and New Message is the same closure the sidebar and the
+                // floating button call — see ``usesSidebarCompose``.
+                onToggleSidebar: { columns = columns == .all ? .doubleColumn : .all },
+                onCompose: layout.usesFloatingCompose == false && usesSidebarCompose == false
+                    ? { newMessage() } : nil
             )
             // Identity per feed. The list builds its `@Query` in `init`, so a
             // reused view keeps the descriptor — and the category binding — it
@@ -531,11 +552,8 @@ public struct MailView: View {
         sizeClass == .compact ? $selectedThread : .constant(nil)
     }
 
-    public var body: some View {
-        // Three columns — mailboxes, conversations, message — which is the
-        // web UI's three regions and what an iPad has room for. On iPhone the
-        // split view collapses the same three into one stack, so `Back`
-        // genuinely means back and no second layout has to be maintained.
+    /// The phone's shell, and the one the app has always used.
+    private var splitShell: some View {
         NavigationSplitView(columnVisibility: $columns) {
             sidebarContent
                 .searchable(
@@ -597,13 +615,18 @@ public struct MailView: View {
                     }
                 }
                 .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
-                // A card only where the sidebar is a resident column. In
-                // `.dual` the system presents it as a floating overlay with
-                // its own panel material and shadow, and a card inside that
-                // gives two competing rounded edges. Margins come from
-                // ``PaneColumn``: full against the window, half against the
-                // next pane.
-                .mailPane(isSeparated: layout.mode == .triple, column: .leading)
+                // **Flat, never a card.** The list and the reader are cards;
+                // the sidebar sits directly on the window colour, which is
+                // what lets a selected row's pill run out to its leading edge
+                // and stops the mailboxes carrying the same visual weight as
+                // the mail. It still paints the window per column and hides
+                // the bar background — see ``SwiftUI/View/sidebarPane(isResident:)``.
+                //
+                // Only where the sidebar is a resident column. In `.dual` the
+                // system presents it as a floating overlay with its own panel
+                // material, and chrome of ours inside that fights the panel it
+                // is drawn on.
+                .sidebarPane(isResident: layout.mode == .triple)
         } content: {
             listContent
                 // The push that a collapsed split view would normally do for
@@ -640,15 +663,14 @@ public struct MailView: View {
                 //
                 // The inset comes out of this width, so it is a little wider
                 // than it was before the panes were separated.
+                // No compose item in this column's toolbar any more. The
+                // layouts that put New Message here are exactly the separated
+                // ones, and those hide the navigation bar so the card's top
+                // edge is the card's — so the button is passed to
+                // `ThreadListView` and drawn in the header row inside the pane.
+                // Still exactly one control per layout: floating on a phone, in
+                // the sidebar on three columns, in the list header between.
                 .navigationSplitViewColumnWidth(min: 396, ideal: 440, max: 540)
-                .toolbar {
-                    // Only where the floating button has stood down. The two
-                    // are alternatives, never both — two New Message controls
-                    // on one screen is one too many, and both would answer ⌘N.
-                    if layout.usesFloatingCompose == false {
-                        ToolbarItem(placement: .topBarTrailing) { composeToolbarButton }
-                    }
-                }
         } detail: {
             // Its own stack so the reader can push further — an attachment
             // preview, a sender's other mail — without disturbing the columns
@@ -671,218 +693,431 @@ public struct MailView: View {
         .background {
             if layout.hidesColumnSeparator { SplitSeparatorHider().frame(width: 0, height: 0) }
         }
-        // Over the whole split view rather than over the list column, so on a
-        // tablet it sits at the window's right edge instead of floating in the
-        // middle against a column divider. Collapsed on iPhone the two are the
-        // same place.
-        .overlay(alignment: .bottomTrailing) {
-            // The bulk action bar occupies this corner while a selection is
-            // up, and composing is not something anyone reaches for
-            // mid-selection anyway.
-            //
-            // Hidden over an open message on a phone too: the reader puts
-            // Reply, Reply all and Forward along the bottom, and a floating
-            // button there sits on top of Forward. The reader has its own
-            // reply actions, so nothing is lost by standing aside.
-            // And only where the layout still wants a floating button at all:
-            // above phone width it is in the list toolbar, and below ~400pt —
-            // a Slide Over panel — a 56pt circle with a 20pt inset is a
-            // quarter of the window sitting on top of the mail.
-            if isSelectionActive == false, isReadingOnPhone == false,
-                layout.usesFloatingCompose
-            {
-                composeButton
+    }
+
+    /// The window's own header, spanning every column.
+    ///
+    /// **The search field is centred in the window, not in a column.** A
+    /// `.searchable` field belongs to whichever navigation bar encloses it, so
+    /// it can only ever sit above one pane; the design puts it across the whole
+    /// width, which is why this is a plain field rather than the system one.
+    /// What is lost with it — the search bar's own suggestion popover — is
+    /// rebuilt below the field, and the token grammar is unchanged.
+    private var globalHeader: some View {
+        HStack(spacing: 8) {
+            Button {
+                columns = columns == .all ? .detailOnly : .all
+            } label: {
+                Image(systemName: "sidebar.leading")
+                    .font(.system(size: 16))
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.inkSoft.color)
+            .accessibilityLabel(Text(.ui("Show or hide the sidebar")))
+
+            HStack(spacing: 8) {
+                Text(verbatim: "plMail")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(palette.ink.color)
+
+                // Green while the last check succeeded, amber once the server
+                // has failed often enough to be worth mentioning. The design
+                // draws a dot here and never says what it means; this is the one
+                // fact the header can carry that the mail below it cannot.
+                Circle()
+                    .fill(
+                        sync.offlineState == .current
+                            ? palette.success.color : palette.warning.color
+                    )
+                    .frame(width: 6, height: 6)
+                    .accessibilityHidden(true)
+            }
+            .frame(width: 196, alignment: .leading)
+
+            headerSearchField
+                .frame(maxWidth: 560)
+                .frame(maxWidth: .infinity)
+
+            Button {
+                Task { if let listFeed { await sync.refresh(feed: listFeed) } }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+                    .font(.system(size: 16))
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.inkSoft.color)
+            .accessibilityLabel(Text(.ui("Check now")))
+
+            if calendar.availability.isAvailable {
+                Button {
+                    isShowingCalendar = true
+                } label: {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 16))
+                        .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.inkSoft.color)
+                .accessibilityLabel(Text(.ui("Calendar")))
+            }
+
+            Button {
+                isShowingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 16))
+                    .frame(width: 36, height: 36)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(palette.inkSoft.color)
+            .accessibilityLabel(Text(.ui("Settings")))
+        }
+        .frame(height: 52)
+        .padding(.horizontal, 12)
+    }
+
+    /// The header's search field.
+    private var headerSearchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 13))
+                .foregroundStyle(palette.inkFaint.color)
+
+            TextField(text: $searchText) { Text(.ui("Search mail")) }
+                .textFieldStyle(.plain)
+                .font(.system(size: 15))
+                .foregroundStyle(palette.ink.color)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .focused($isSearchFocused)
+                .onSubmit {
+                    settledSearch = searchText
+                    recents.record(searchText)
+                }
+
+            if searchText.isEmpty == false {
+                Button {
+                    searchText = ""
+                    settledSearch = ""
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 14))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(palette.inkFaint.color)
+                .accessibilityLabel(Text(.ui("Clear search")))
             }
         }
-        // The separated counterpart to the sidebar push above. The calendar
-        // earns the whole window here rather than a 260pt column: a full-screen
-        // cover is what lets its board, standing inspector and rail all appear
-        // on a 13-inch iPad. `CalendarScreen` rather than `CalendarView`,
-        // because a cover has no stack of its own to supply.
-        .fullScreenCover(
-            isPresented: Binding(
-                get: { isShowingCalendar && layout.isSeparated },
-                set: { isShowingCalendar = $0 })
-        ) {
-            // Not `CalendarScreen`: a full-screen cover supplies no back
-            // button, and `CalendarView`'s own toolbar has none either — it
-            // relied on the pushed presentation for the way out. Wrapping the
-            // stack here keeps `CalendarView` reusable as a plain column while
-            // making sure a cover can always be left.
+        .padding(.horizontal, 14)
+        .frame(height: 38)
+        .background(
+            palette.sunken.color,
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// Which shell is on screen.
+    ///
+    /// A `NavigationSplitView` collapses to a stack on a phone, which is
+    /// exactly what a phone wants and why it is kept there. It cannot,
+    /// however, express the design's regular layout: a header spanning every
+    /// column with the search field centred in the *window*, a sidebar drawn
+    /// straight onto the window with no chrome of its own, and the list and
+    /// reader sharing **one** card divided by a hairline. A split view owns
+    /// its own bars and column separators and insists each column is a peer,
+    /// so the regular layout is built by hand instead.
+    @ViewBuilder
+    private var shell: some View {
+        if layout.isSeparated {
+            regularShell
+        } else {
+            splitShell
+        }
+    }
+
+    /// The hand-built regular layout: header, then sidebar beside one card.
+    private var regularShell: some View {
+        VStack(spacing: PanelStyle.inset) {
+            globalHeader
+
+            HStack(spacing: PanelStyle.inset) {
+                if columns != .detailOnly {
+                    sidebarContent
+                        .frame(width: Self.sidebarWidth)
+                }
+
+                paneCard
+            }
+        }
+        .padding(PanelStyle.outerMargin)
+        .background(palette.window.color.ignoresSafeArea())
+    }
+
+    /// The list and the reader, in **one** card.
+    ///
+    /// Not two cards with a gutter between them: the design draws a single
+    /// surface divided by a one-pixel rule, and two cards read as two
+    /// documents rather than one mailbox. The card is the only thing in the
+    /// regular layout that carries a border or a shadow — the sidebar has
+    /// neither, which is what makes it read as the ground the card sits on.
+    private var paneCard: some View {
+        HStack(spacing: 0) {
             NavigationStack {
-                CalendarView(service: calendar)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button(.ui("Done")) { isShowingCalendar = false }
-                        }
-                    }
+                listContent
             }
-        }
-        // Measured rather than classified. A size class reports two widths and
-        // Stage Manager produces every width, so this is the only honest input
-        // to the layout decision. See `MailLayout`.
-        .onGeometryChange(for: CGFloat.self) {
-            $0.size.width
-        } action: {
-            containerWidth = $0
-        }
-        // Follows the mode, not every resize: within a mode the visibility is
-        // whatever the user last chose, so ⌘⌃S is not undone by the next
-        // redraw.
-        .onChange(of: layout.mode, initial: true) { _, _ in
-            columns = layout.preferredColumnVisibility
-        }
-        // Read by every pane below, including the `ThreadListView` that
-        // `SearchResultsView` builds — which this package cannot reach with an
-        // initialiser argument.
-        .environment(\.mailLayout, layout)
-        .shortcuts {
-            // Every one of these has a visible equivalent: the sidebar rows,
-            // the sidebar toggle in the split view's own chrome, the search
-            // field, and the Settings toolbar button. They are accelerators,
-            // not the only route.
-            HiddenShortcut(
-                title: .ui("Search mail"), key: "f", modifiers: [.command, .option]
-            ) {
-                isSearchFocused = true
-            }
+            .frame(width: Self.listWidth)
 
-            HiddenShortcut(
-                title: .ui("Show or hide the sidebar"), key: "s",
-                modifiers: [
-                    .command, .control,
-                ]
-            ) {
-                columns = columns == .all ? .doubleColumn : .all
-            }
+            Rectangle()
+                .fill(palette.line.color)
+                .frame(width: 1)
 
-            HiddenShortcut(title: .ui("Settings"), key: ",") { isShowingSettings = true }
-
-            // ⌘1…⌘9 over exactly the rows the sidebar draws, in the order it
-            // draws them — numbered from the same function, so ⌘3 cannot mean
-            // Drafts on the keyboard and Sent on screen.
-            //
-            // Withdrawn while the calendar is open, because `CalendarView`
-            // binds ⌘1…⌘4 to its own view modes. One key with two meanings is
-            // not a shortcut, it is a guess.
-            if isShowingCalendar == false {
-                ForEach(Array(numberedFeeds.enumerated()), id: \.offset) { index, role in
-                    HiddenShortcut(
-                        title: .ui("Go to mailbox \(index + 1)"),
-                        key: KeyEquivalent(Character("\(index + 1)"))
-                    ) {
-                        selectedFeed = .unified(role)
-                    }
+            NavigationStack {
+                if let selectedThread {
+                    reader(for: selectedThread)
+                        .id(selectedThread)
+                } else {
+                    ContentUnavailableView(
+                        .ui("No conversation selected"), systemImage: "envelope",
+                        description: Text(.ui("Pick a message to read it here.")))
                 }
             }
         }
-        // What the ⌘ menu bar drives. A scene value rather than a focused
-        // value: the menu has to work when focus is in the search field, in
-        // the list or nowhere at all, and `focusedValue` publishes only while
-        // the modified view itself holds focus.
-        //
-        // Every closure here is the same one a control or a hidden shortcut in
-        // this file already calls. The menu is a second *route*, never a
-        // second implementation — see ``MailShellCommands``.
-        .focusedSceneValue(\.mailShellCommands, shellCommands)
-        // Once, when the screen exists and again if the account list changes.
-        // **Never on a timer**: the calendar surface has no `/changes` and no
-        // push — `state` is the literal string "fixed" — and this audience runs
-        // the server on a Raspberry Pi with one PHP worker pool.
-        .task(id: sync.accounts.count) { await calendar.probeAvailability() }
-        // Shortcuts and Siri. The router holds the request because an intent
-        // is built by the system and cannot be handed a reference to any of
-        // this; here is where it gets picked up.
-        .onChange(of: IntentRouter.shared.pending) { _, _ in performPendingIntent() }
-        .task { performPendingIntent() }
-        .task(id: searchText) {
-            // The first keystroke is the signal that this session will search
-            // at all, and the addresses are wanted before the debounce is up.
-            if searchText.isEmpty == false { await loadCorrespondents() }
+        .background(palette.surface.color)
+        .clipShape(RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: PanelStyle.cornerRadius, style: .continuous)
+                .strokeBorder(PanelStyle.paneBorder, lineWidth: 1)
+        }
+        .shadow(color: PanelStyle.paneShadow, radius: 6, y: 3)
+        .shadow(color: PanelStyle.paneShadow, radius: 2, y: 1)
+    }
 
-            // 350ms: long enough that typing a word is one query rather than
-            // five, short enough not to feel laggy.
-            try? await Task.sleep(for: .milliseconds(350))
+    /// The sidebar's width, and the list's, as the design draws them.
+    private static let sidebarWidth: CGFloat = 224
+    private static let listWidth: CGFloat = 404
 
-            guard Task.isCancelled == false else { return }
+    /// The palette for the appearance actually on screen.
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
 
-            let abandoned = settledSearch
-            settledSearch = searchText
-
-            if searchText.isEmpty, abandoned.isEmpty == false {
-                await sync.discardSearch(feed: .search(abandoned))
+    public var body: some View {
+        // Three columns — mailboxes, conversations, message — which is the
+        // web UI's three regions and what an iPad has room for. On iPhone the
+        // split view collapses the same three into one stack, so `Back`
+        // genuinely means back and no second layout has to be maintained.
+        shell
+            // Over the whole split view rather than over the list column, so on a
+            // tablet it sits at the window's right edge instead of floating in the
+            // middle against a column divider. Collapsed on iPhone the two are the
+            // same place.
+            .overlay(alignment: .bottomTrailing) {
+                // The bulk action bar occupies this corner while a selection is
+                // up, and composing is not something anyone reaches for
+                // mid-selection anyway.
+                //
+                // Hidden over an open message on a phone too: the reader puts
+                // Reply, Reply all and Forward along the bottom, and a floating
+                // button there sits on top of Forward. The reader has its own
+                // reply actions, so nothing is lost by standing aside.
+                // And only where the layout still wants a floating button at all:
+                // above phone width it is in the list toolbar, and below ~400pt —
+                // a Slide Over panel — a 56pt circle with a 20pt inset is a
+                // quarter of the window sitting on top of the mail.
+                if isSelectionActive == false, isReadingOnPhone == false,
+                    layout.usesFloatingCompose
+                {
+                    composeButton
+                }
             }
-        }
-        // Switching mailbox leaves the reader showing a thread that is no
-        // longer in the list beside it — on a wide layout the two columns
-        // would visibly disagree.
-        .onChange(of: selectedFeed) { _, _ in
-            selectedThread = nil
-            // Leaving the inbox drops the narrowing with it. Keeping it would
-            // put the user back on Promotions the next time they pressed
-            // Inbox — a filter they set once and cannot see from Sent.
-            inboxCategory = nil
-        }
-        // Keyed on the *effective* feed, not the selected mailbox: picking a
-        // category changes which list is on screen, and a task that ignored
-        // that would leave the live-update stream attached to the unnarrowed
-        // inbox while a tab was showing.
-        // Whether the server classifies mail is a fact about the cache, not
-        // about this screen — but the tabs are drawn from it, so it is re-read
-        // whenever the visible feed changes rather than once at launch.
-        .task(id: selectedFeed) { await sync.refreshCategoryAvailability() }
-        .task(id: listFeed) {
-            guard let listFeed else { return }
+            // The separated counterpart to the sidebar push above. The calendar
+            // earns the whole window here rather than a 260pt column: a full-screen
+            // cover is what lets its board, standing inspector and rail all appear
+            // on a 13-inch iPad. `CalendarScreen` rather than `CalendarView`,
+            // because a cover has no stack of its own to supply.
+            .fullScreenCover(
+                isPresented: Binding(
+                    get: { isShowingCalendar && layout.isSeparated },
+                    set: { isShowingCalendar = $0 })
+            ) {
+                // Not `CalendarScreen`: a full-screen cover supplies no back
+                // button, and `CalendarView`'s own toolbar has none either — it
+                // relied on the pushed presentation for the way out. Wrapping the
+                // stack here keeps `CalendarView` reusable as a plain column while
+                // making sure a cover can always be left.
+                NavigationStack {
+                    CalendarView(service: calendar)
+                        .toolbar {
+                            ToolbarItem(placement: .confirmationAction) {
+                                Button(.ui("Done")) { isShowingCalendar = false }
+                            }
+                        }
+                }
+            }
+            // Measured rather than classified. A size class reports two widths and
+            // Stage Manager produces every width, so this is the only honest input
+            // to the layout decision. See `MailLayout`.
+            .onGeometryChange(for: CGFloat.self) {
+                $0.size.width
+            } action: {
+                containerWidth = $0
+            }
+            // Follows the mode, not every resize: within a mode the visibility is
+            // whatever the user last chose, so ⌘⌃S is not undone by the next
+            // redraw.
+            .onChange(of: layout.mode, initial: true) { _, _ in
+                columns = layout.preferredColumnVisibility
+            }
+            // Read by every pane below, including the `ThreadListView` that
+            // `SearchResultsView` builds — which this package cannot reach with an
+            // initialiser argument.
+            .environment(\.mailLayout, layout)
+            .shortcuts {
+                // Every one of these has a visible equivalent: the sidebar rows,
+                // the sidebar toggle in the split view's own chrome, the search
+                // field, and the Settings toolbar button. They are accelerators,
+                // not the only route.
+                HiddenShortcut(
+                    title: .ui("Search mail"), key: "f", modifiers: [.command, .option]
+                ) {
+                    isSearchFocused = true
+                }
 
-            await sync.start(feed: listFeed)
+                HiddenShortcut(
+                    title: .ui("Show or hide the sidebar"), key: "s",
+                    modifiers: [
+                        .command, .control,
+                    ]
+                ) {
+                    columns = columns == .all ? .doubleColumn : .all
+                }
 
-            // Only once a list is actually on screen, and torn down as soon as
-            // it is not — each stream holds a server worker for its life.
-            await sync.beginLiveUpdates(feed: listFeed)
-        }
-        .sheet(item: $composing) { kind in
-            if let account = composeAccount {
-                ComposeView(
-                    kind: kind,
-                    accountKey: account.accountKey,
-                    accountID: account.accountID,
-                    client: sync.jmapClient,
+                HiddenShortcut(title: .ui("Settings"), key: ",") { isShowingSettings = true }
+
+                // ⌘1…⌘9 over exactly the rows the sidebar draws, in the order it
+                // draws them — numbered from the same function, so ⌘3 cannot mean
+                // Drafts on the keyboard and Sent on screen.
+                //
+                // Withdrawn while the calendar is open, because `CalendarView`
+                // binds ⌘1…⌘4 to its own view modes. One key with two meanings is
+                // not a shortcut, it is a guess.
+                if isShowingCalendar == false {
+                    ForEach(Array(numberedFeeds.enumerated()), id: \.offset) { index, role in
+                        HiddenShortcut(
+                            title: .ui("Go to mailbox \(index + 1)"),
+                            key: KeyEquivalent(Character("\(index + 1)"))
+                        ) {
+                            selectedFeed = .unified(role)
+                        }
+                    }
+                }
+            }
+            // What the ⌘ menu bar drives. A scene value rather than a focused
+            // value: the menu has to work when focus is in the search field, in
+            // the list or nowhere at all, and `focusedValue` publishes only while
+            // the modified view itself holds focus.
+            //
+            // Every closure here is the same one a control or a hidden shortcut in
+            // this file already calls. The menu is a second *route*, never a
+            // second implementation — see ``MailShellCommands``.
+            .focusedSceneValue(\.mailShellCommands, shellCommands)
+            // Once, when the screen exists and again if the account list changes.
+            // **Never on a timer**: the calendar surface has no `/changes` and no
+            // push — `state` is the literal string "fixed" — and this audience runs
+            // the server on a Raspberry Pi with one PHP worker pool.
+            .task(id: sync.accounts.count) { await calendar.probeAvailability() }
+            // Shortcuts and Siri. The router holds the request because an intent
+            // is built by the system and cannot be handed a reference to any of
+            // this; here is where it gets picked up.
+            .onChange(of: IntentRouter.shared.pending) { _, _ in performPendingIntent() }
+            .task { performPendingIntent() }
+            .task(id: searchText) {
+                // The first keystroke is the signal that this session will search
+                // at all, and the addresses are wanted before the debounce is up.
+                if searchText.isEmpty == false { await loadCorrespondents() }
+
+                // 350ms: long enough that typing a word is one query rather than
+                // five, short enough not to feel laggy.
+                try? await Task.sleep(for: .milliseconds(350))
+
+                guard Task.isCancelled == false else { return }
+
+                let abandoned = settledSearch
+                settledSearch = searchText
+
+                if searchText.isEmpty, abandoned.isEmpty == false {
+                    await sync.discardSearch(feed: .search(abandoned))
+                }
+            }
+            // Switching mailbox leaves the reader showing a thread that is no
+            // longer in the list beside it — on a wide layout the two columns
+            // would visibly disagree.
+            .onChange(of: selectedFeed) { _, _ in
+                selectedThread = nil
+                // Leaving the inbox drops the narrowing with it. Keeping it would
+                // put the user back on Promotions the next time they pressed
+                // Inbox — a filter they set once and cannot see from Sent.
+                inboxCategory = nil
+            }
+            // Keyed on the *effective* feed, not the selected mailbox: picking a
+            // category changes which list is on screen, and a task that ignored
+            // that would leave the live-update stream attached to the unnarrowed
+            // inbox while a tab was showing.
+            // Whether the server classifies mail is a fact about the cache, not
+            // about this screen — but the tabs are drawn from it, so it is re-read
+            // whenever the visible feed changes rather than once at launch.
+            .task(id: selectedFeed) { await sync.refreshCategoryAvailability() }
+            .task(id: listFeed) {
+                guard let listFeed else { return }
+
+                await sync.start(feed: listFeed)
+
+                // Only once a list is actually on screen, and torn down as soon as
+                // it is not — each stream holds a server worker for its life.
+                await sync.beginLiveUpdates(feed: listFeed)
+            }
+            .sheet(item: $composing) { kind in
+                if let account = composeAccount {
+                    ComposeView(
+                        kind: kind,
+                        accountKey: account.accountKey,
+                        accountID: account.accountID,
+                        client: sync.jmapClient,
+                        store: store,
+                        outbox: outbox,
+                        prefill: prefilled
+                    )
+                    // **Injected explicitly.** A sheet is presented in its own
+                    // hosting context, and the environment set further down this
+                    // modifier chain does not reliably reach it — so the composer
+                    // came up on the placeholder theme while the mail behind it was
+                    // themed, which reads as opening a different app.
+                    .environment(\.theme, theme)
+                    .resolvedMotion(theme.motion, reduced: reduceMotion)
+                }
+            }
+            .onChange(of: composing) { _, kind in
+                // Consumed when the sheet closes, so opening the composer by hand
+                // afterwards does not resurrect a dictated recipient.
+                if kind == nil { prefilled = nil }
+            }
+            .sheet(isPresented: $isShowingSettings) {
+                SettingsView(
+                    connection: connection,
+                    sync: sync,
                     store: store,
-                    outbox: outbox,
-                    prefill: prefilled
+                    onSignOut: onSignOut
                 )
-                // **Injected explicitly.** A sheet is presented in its own
-                // hosting context, and the environment set further down this
-                // modifier chain does not reliably reach it — so the composer
-                // came up on the placeholder theme while the mail behind it was
-                // themed, which reads as opening a different app.
                 .environment(\.theme, theme)
                 .resolvedMotion(theme.motion, reduced: reduceMotion)
             }
-        }
-        .onChange(of: composing) { _, kind in
-            // Consumed when the sheet closes, so opening the composer by hand
-            // afterwards does not resurrect a dictated recipient.
-            if kind == nil { prefilled = nil }
-        }
-        .sheet(isPresented: $isShowingSettings) {
-            SettingsView(
-                connection: connection,
-                sync: sync,
-                store: store,
-                onSignOut: onSignOut
-            )
-            .environment(\.theme, theme)
+            // Applied here as well as at the app's root, which owns the
+            // `AppearanceSettings` this view only reads. The root is in another
+            // module and another agent's file; this shell is the ancestor of every
+            // list, reader, sidebar and toast in the app, so putting it here means
+            // Reduce Motion is honoured whether or not the root remembered — and
+            // recomputing the same three animations from the same two inputs is
+            // idempotent, so doing it twice costs a comparison.
             .resolvedMotion(theme.motion, reduced: reduceMotion)
-        }
-        // Applied here as well as at the app's root, which owns the
-        // `AppearanceSettings` this view only reads. The root is in another
-        // module and another agent's file; this shell is the ancestor of every
-        // list, reader, sidebar and toast in the app, so putting it here means
-        // Reduce Motion is honoured whether or not the root remembered — and
-        // recomputing the same three animations from the same two inputs is
-        // idempotent, so doing it twice costs a comparison.
-        .resolvedMotion(theme.motion, reduced: reduceMotion)
     }
 }
 

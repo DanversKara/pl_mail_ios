@@ -574,6 +574,7 @@ public final class MailSyncService {
         guard let account = accounts.first(where: { $0.accountKey == accountKey }) else { return }
 
         degradedAccounts[accountKey] = nil
+        failureStreak[accountKey] = nil
 
         await breaker.allowRetry()
         await syncMailboxes(for: account)
@@ -889,6 +890,11 @@ public final class MailSyncService {
             }
 
             try await store.recordSyncSuccess(accountKey: account.accountKey)
+
+            // A good answer clears both the banner and the streak that would
+            // have raised it.
+            failureStreak[account.accountKey] = nil
+            degradedAccounts[account.accountKey] = nil
         } catch {
             await degrade(account, error: error)
         }
@@ -1124,11 +1130,42 @@ public final class MailSyncService {
 
     // MARK: - Failure
 
+    /// How many consecutive failures an account has had.
+    ///
+    /// Reset by any success. See ``degrade(_:error:)`` for why a single failure
+    /// is not enough to say anything to the user.
+    private var failureStreak: [String: Int] = [:]
+
+    /// How many failures in a row before the interface calls a server
+    /// unreachable.
+    ///
+    /// **One is far too few.** A self-hosted server on a LAN, a Tailscale node
+    /// or a NAS drops the occasional request — a Wi-Fi roam, a PHP worker
+    /// recycling, a laptop lid — and the app now makes several times as many
+    /// requests as it used to because it prefetches message bodies. Reporting
+    /// the first of those as "plMail could not reach <host>" cries wolf over a
+    /// server that is up and answering, and an owner who has learned to ignore
+    /// the banner will ignore the real outage too. Two in a row over a cache
+    /// that is still perfectly readable is the point at which it is worth
+    /// saying something.
+    private static let failuresBeforeDegrading = 2
+
     private func degrade(_ account: AccountSnapshot, error: any Error) async {
         let message = describe(error)
-        degradedAccounts[account.accountKey] = message
+        let streak = (failureStreak[account.accountKey] ?? 0) + 1
+
+        failureStreak[account.accountKey] = streak
+
+        // Recorded from the first failure — the diagnostics screen and the
+        // accounts list want the truth — but not *said* until it repeats.
         try? await store.recordSyncFailure(message, accountKey: account.accountKey)
-        logger.error("\(account.name, privacy: .public) failed: \(error, privacy: .public)")
+        logger.error(
+            "\(account.name, privacy: .public) failed \(streak, privacy: .public)x: \(error, privacy: .public)"
+        )
+
+        guard streak >= Self.failuresBeforeDegrading else { return }
+
+        degradedAccounts[account.accountKey] = message
     }
 
     private func allMailboxes() async throws -> [MailboxSnapshot] {

@@ -14,19 +14,17 @@ import SwiftUI
 /// condition on it, so it belongs where the other things that narrow a list
 /// already live, not as a sibling of Inbox and Sent.
 ///
-/// **The two idioms get different answers, because they have different room.**
+/// **One presentation now, on both idioms.** The strip is drawn wherever the
+/// list is — the redesign puts it on the phone too, because a category is the
+/// first thing people reach for on a screen that shows five rows, and the
+/// version that hid it behind the overflow menu made the tabs invisible to
+/// anyone who had not already found them. It is a strip of underline tabs
+/// rather than capsules: an underline is the lightest mark that can say "this
+/// one", which is what lets a permanent control sit above the rows without
+/// competing with them for the eye.
 ///
-/// - Wide enough for panes (``MailLayout/isSeparated``), the choices are drawn
-///   as a strip of capsules above the rows. The list column is permanent there
-///   and 396–540pt across, which is enough for the whole vocabulary to be
-///   visible and one tap away; hiding it behind a menu would be spending the
-///   iPad's width on nothing.
-/// - On one pane the strip is not drawn at all and the same choices sit in the
-///   list's existing overflow menu, behind the platform's own filter glyph. A
-///   permanent strip on a phone costs a row of a five-row screen for a control
-///   most people set once, and mail is what the screen is for.
-///
-/// One binding drives both, so the two presentations cannot come to disagree
+/// ``menu(selection:)`` remains for anywhere the choices have to appear as
+/// menu items, and drives the same binding, so the two cannot come to disagree
 /// about what is showing.
 struct InboxCategoryPicker: View {
     /// Nil is **All**, not Primary.
@@ -40,46 +38,58 @@ struct InboxCategoryPicker: View {
     /// Drawn as a strip when true and left to ``menu`` when false.
     let isStrip: Bool
 
+    /// The tab strip's own ground and its underline both come from the
+    /// palette, so the strip separates from the rows below it on every theme
+    /// rather than only on paper.
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.theme) private var theme
+
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
+
     var body: some View {
         if isStrip { strip }
     }
 
-    /// The capsules, for a layout with a column to spare.
+    /// The tabs.
     ///
     /// Horizontally scrolling rather than a `Picker(.segmented)`: five segments
     /// in a 396pt column are 79pt each, and German's "Werbung" and "Soziales"
     /// truncate inside them at the default text size, never mind an
-    /// accessibility one. Capsules size to their words instead, so a longer
-    /// language costs a scroll rather than a truncation.
-    private var strip: some View {
-        ScrollViewReader { scroll in
-            ScrollView(.horizontal) {
-                HStack(spacing: 8) {
-                    capsule(for: nil)
+    /// accessibility one. Tabs size to their words instead, so a longer
+    /// language costs a scroll rather than a truncation — which is what makes
+    /// the same strip usable on a 390pt phone.
+    /// The tabs the design draws: four, filling the width, never scrolling.
+    ///
+    /// **No "All mail" tab and no Forums.** Forums is always empty on this
+    /// server, and an always-empty tab teaches people to distrust the others.
+    /// "All mail" is not a category — the unnarrowed inbox is what the Inbox row
+    /// already means, so it is reached by tapping the chosen tab again rather
+    /// than by spending a sixth of the strip on it. That also keeps mail the
+    /// classifier has not labelled reachable, which a strip of categories alone
+    /// would hide.
+    ///
+    /// Fixed widths rather than a scroll view: four tabs fit 404pt, and a strip
+    /// that can be dragged is a strip that moves when somebody meant to scroll
+    /// the list under it.
+    static let shownCategories: [MessageCategory] = [.primary, .social, .promotions, .updates]
 
-                    ForEach(MessageCategory.allCases, id: \.self) { category in
-                        capsule(for: category)
-                    }
-                }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-            }
-            // The bar itself is chrome; the rows below it are the content. An
-            // indicator here would be a second scrollbar over a list that
-            // already has one.
-            .scrollIndicators(.hidden)
-            // Brings the chosen capsule into view when the choice was made
-            // somewhere else — the overflow menu, or a restored selection on a
-            // cold launch. Without it the strip can sit scrolled to the left
-            // while the list below shows Forums, which reads as the control
-            // having been ignored.
-            .onChange(of: selection, initial: true) { _, chosen in
-                withAnimation { scroll.scrollTo(Self.id(of: chosen), anchor: .center) }
+    private var strip: some View {
+        HStack(spacing: 0) {
+            ForEach(Self.shownCategories, id: \.self) { category in
+                tab(for: category)
+                    .frame(maxWidth: .infinity)
             }
         }
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
-        // `.contain`, never `.combine`: combining folds six buttons into one
+        // The strip's own ground, a shade under the pane, with a hairline
+        // closing it off — the mock's `ink @ 4%` on a rule, which is
+        // ``ThemePalette/sunken`` and ``PanelStyle/hairline``.
+        .background(palette.sunken.color)
+        .overlay(alignment: .bottom) {
+            Rectangle()
+                .fill(PanelStyle.hairline)
+                .frame(height: 1)
+        }
+        // `.contain`, never `.combine`: combining folds the tabs into one
         // sentence and leaves VoiceOver with no way to press any of them.
         .accessibilityElement(children: .contain)
     }
@@ -93,38 +103,45 @@ struct InboxCategoryPicker: View {
         category?.rawValue ?? "all"
     }
 
-    private func capsule(for category: MessageCategory?) -> some View {
+    /// One tab: icon, name, and a 2pt accent rule under the chosen one.
+    ///
+    /// The underline is drawn on every tab and merely goes clear when the tab
+    /// is not chosen, so choosing one moves nothing — a rule that appears only
+    /// when active would make the whole strip jump by two points on every tap,
+    /// and the tab under the finger would be the one that moved.
+    ///
+    /// The chosen tab is also accent-coloured and medium-weight. Colour alone
+    /// would fail anyone who cannot pick the accent out of the ink; the
+    /// underline is the mark that does not depend on seeing a hue.
+    private func tab(for category: MessageCategory?) -> some View {
         let isChosen = selection == category
 
         return Button {
-            selection = category
+            // Tapping the chosen tab again clears the narrowing. With no
+            // "All mail" tab this is the only route back to the whole inbox,
+            // and to mail the classifier gave no category at all.
+            selection = isChosen ? nil : category
         } label: {
-            Label {
-                Text(Self.title(of: category))
-            } icon: {
-                Image(systemName: category?.symbolName ?? "tray.2")
+            VStack(spacing: 6) {
+                HStack(spacing: 5) {
+                    Image(systemName: category?.symbolName ?? "tray.2")
+                        .font(.system(size: 11))
+
+                    Text(Self.title(of: category))
+                        .font(.system(size: 13, weight: isChosen ? .semibold : .regular))
+                }
+                .lineLimit(1)
+                .padding(.horizontal, 10)
+                .padding(.top, 9)
+
+                Rectangle()
+                    .fill(isChosen ? AnyShapeStyle(ThemeAccent()) : AnyShapeStyle(.clear))
+                    .frame(height: 2)
             }
-            .font(.footnote)
-            .lineLimit(1)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 7)
-            .background(
-                isChosen ? AnyShapeStyle(ThemeAccent().opacity(0.16)) : AnyShapeStyle(.clear),
-                in: Capsule()
+            .foregroundStyle(
+                isChosen ? AnyShapeStyle(ThemeAccent()) : AnyShapeStyle(palette.inkMuted.color)
             )
-            .overlay {
-                // A ring on the unchosen ones too, so a capsule reads as
-                // pressable before it has been pressed. Colour alone carrying
-                // "this is a control" fails for anyone who cannot see the
-                // accent against the bar.
-                Capsule().strokeBorder(
-                    isChosen
-                        ? AnyShapeStyle(ThemeAccent().opacity(0.45))
-                        : AnyShapeStyle(PanelStyle.hairline),
-                    lineWidth: 1)
-            }
-            .foregroundStyle(isChosen ? AnyShapeStyle(ThemeAccent()) : AnyShapeStyle(.secondary))
-            .contentShape(.capsule)
+            .contentShape(.rect)
         }
         .buttonStyle(.plain)
         .id(Self.id(of: category))

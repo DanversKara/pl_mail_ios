@@ -35,6 +35,27 @@ public struct ThemePalette: Hashable, Sendable {
     /// rows merging, not to draw a grid.
     public var line: Swatch
 
+    /// What an **unread** row is filled with, one step brighter than the pane.
+    ///
+    /// New in the redesign: unread used to be carried by weight alone, which
+    /// works on one row and stops working on a screenful, because weight is
+    /// only legible next to a read row to compare against. A fill is legible
+    /// on its own. The mock draws `rgba(255,255,255,.40)` over the surface —
+    /// deliberately *not* ``accentSoft``, which already means "selected"; two
+    /// meanings on one fill is how a list stops saying anything.
+    ///
+    /// **Light is the mock's value; dark is not drawn (spec Q7)** and takes
+    /// ``raised`` rather than a number invented here — white at 40% over a
+    /// near-black surface is a grey card, not an emphasis.
+    public var unreadTint: Swatch
+
+    /// The background behind a matched substring in search results.
+    ///
+    /// The accent at 22% over the pane, per the mock. A tint rather than a
+    /// foreground colour because the match has to survive text that is already
+    /// coloured — a sender in ``inkMuted``, a subject in ``inkSoft``.
+    public var searchHighlight: Swatch
+
     // MARK: - Ink
 
     /// Body and heading text. Held at 7:1 against every surface above, not
@@ -84,6 +105,19 @@ public struct ThemePalette: Hashable, Sendable {
     public var success: Swatch
     public var info: Swatch
 
+    /// A starred thread's star.
+    ///
+    /// Its own slot rather than ``warning``, which it is not: a star is a
+    /// user's mark, and drawing it in the colour that also means "this account
+    /// has a problem" is how a list teaches people to ignore a warning.
+    ///
+    /// The mock states `#fbbf24`, which measures **1.36:1 on the paper
+    /// surface** — invisible in daylight — so it is walked to the 3:1 non-text
+    /// floor like every other derived colour. The shape carries the state too
+    /// (filled versus outlined), but the colour is the part that is read first
+    /// and it has to be there to be read.
+    public var star: Swatch
+
     /// Every surface ink has to clear its floor against. Kept as a computed
     /// list so a palette that grows a fourth surface cannot forget to test it.
     public var surfaces: [Swatch] { [surface, window, raised, sunken, hover] }
@@ -116,6 +150,13 @@ extension ThemePalette {
     ///   - window: Overridden only where this app already had a value people
     ///     have been looking at; deriving it would repaint the gutters.
     ///   - line: The same, for the hairline.
+    ///   - inkLadder: The three secondary ink rungs, where a design states
+    ///     them outright instead of leaving them to the fade. Passed as a
+    ///     triple rather than three parameters so a caller cannot supply one
+    ///     and let the other two drift out of step with it — the rungs are
+    ///     only legible as a ladder. **Still floored**: each override is run
+    ///     through the same contrast walk the derived value gets, so a drawn
+    ///     colour that fails is corrected rather than trusted.
     /// - Returns: Every slot filled and every contrast floor already cleared.
     static func derived(
         surface: Swatch,
@@ -123,7 +164,8 @@ extension ThemePalette {
         accent: Swatch,
         isDark: Bool,
         window: Swatch? = nil,
-        line: Swatch? = nil
+        line: Swatch? = nil,
+        inkLadder: (soft: Swatch, muted: Swatch, faint: Swatch)? = nil
     ) -> ThemePalette {
         // Elevation is toward white in both appearances — a raised surface
         // that got darker on a dark theme is the mistake that makes a popover
@@ -148,6 +190,10 @@ extension ThemePalette {
             sunken: sunken,
             hover: hover,
             line: resolvedLine,
+            // Light: the mock's white at 40%. Dark: the elevation this palette
+            // already draws, not a value invented for an undrawn appearance.
+            unreadTint: isDark ? raised : surface.mixed(with: .white, amount: 0.40),
+            searchHighlight: surface,
             ink: ink,
             inkSoft: ink,
             inkMuted: ink,
@@ -160,7 +206,8 @@ extension ThemePalette {
             danger: ActionTint.destructiveSwatch,
             warning: ActionTint.spamSwatch,
             success: ActionTint.archiveSwatch,
-            info: ActionTint.readStateSwatch
+            info: ActionTint.readStateSwatch,
+            star: Self.starAmber
         )
 
         // The ladder is walked against the surface each step contrasts worst
@@ -174,6 +221,20 @@ extension ThemePalette {
             from: palette.ink, towards: surface, by: 0.34, floor: 4.5, in: palette)
         palette.inkFaint = Self.step(
             from: palette.ink, towards: surface, by: 0.56, floor: 3, in: palette)
+
+        // A stated ladder replaces the faded one, but not the floors: the
+        // override goes through the same walk with a fade of zero, so a drawn
+        // colour that clears its floor is used verbatim and one that does not
+        // is corrected. That is the only order under which "the design says
+        // so" cannot ship unreadable text.
+        if let inkLadder {
+            palette.inkSoft = Self.step(
+                from: inkLadder.soft, towards: surface, by: 0, floor: 4.5, in: palette)
+            palette.inkMuted = Self.step(
+                from: inkLadder.muted, towards: surface, by: 0, floor: 4.5, in: palette)
+            palette.inkFaint = Self.step(
+                from: inkLadder.faint, towards: surface, by: 0, floor: 3, in: palette)
+        }
 
         palette.accent = Self.step(
             from: accent, towards: surface, by: 0, floor: 4.5, in: palette)
@@ -193,8 +254,23 @@ extension ThemePalette {
         palette.info = Self.step(
             from: ActionTint.readStateSwatch, towards: surface, by: 0, floor: 4.5, in: palette)
 
+        // 3:1, not 4.5:1: the star is a glyph, and the rung the ink ladder
+        // already uses for anything not read as a sentence is the honest floor
+        // for it. Walked from the mock's amber rather than replaced, so it
+        // still reads as amber on every theme.
+        palette.star = Self.step(
+            from: Self.starAmber, towards: surface, by: 0, floor: 3, in: palette)
+
+        // After the accent, because it is a tint *of the resolved* accent —
+        // tinting the one the server sent would highlight matches in a colour
+        // the rest of the theme never draws.
+        palette.searchHighlight = surface.mixed(with: palette.accent, amount: 0.22)
+
         return palette
     }
+
+    /// The mock's star amber, `#fbbf24`, before the contrast walk.
+    static let starAmber = Swatch(hex: "#fbbf24") ?? ActionTint.starSwatch
 
     /// One rung of the ink ladder: fade toward the surface, then walk straight
     /// back out until the floor is cleared.
@@ -217,19 +293,41 @@ extension ThemePalette {
 extension ThemePalette {
     /// The app's own light palette, and the one `paper` maps onto.
     ///
-    /// `surface` and `window` are ``PanelStyle``'s existing values verbatim,
-    /// not the server's `#f7f5ef`: people have been looking at this cream for
-    /// a while and the reasoning behind it — warm paper rather than the
-    /// system's cool grey, so a day's mail reads as a page rather than a
-    /// spreadsheet — is unchanged by the server gaining an opinion. The
-    /// server's own paper swatch is within three points of it either way.
+    /// `surface` and `window` are ``PanelStyle``'s values verbatim, which are
+    /// now the server's own paper pair (`#f7f5ef` / `#f2efe7`) — the redesign
+    /// asked for the mock's hexes and the two were within three points of the
+    /// creams this app tuned by hand anyway. The reasoning is unchanged: warm
+    /// paper rather than the system's cool grey, so a day's mail reads as a
+    /// page rather than a spreadsheet.
+    ///
+    /// `ink` is the mock's `#232220`, stated as ``PanelStyle/inkLight`` so the
+    /// hairline and the pane border — drawn by views with no palette in hand —
+    /// are tints of the same ink this text is drawn in.
+    ///
+    /// **`inkLadder` is drawn, not derived, and that is deliberate — do not
+    /// fold these three back into ``derived(surface:ink:accent:isDark:...)``
+    /// to make the file look consistent.** The redesign draws light and only
+    /// light, so light takes the values it draws and no other theme moves; a
+    /// retune of the fade fractions would repaint five palettes to satisfy
+    /// one, including the dark ones nobody has drawn (spec Q7). The fade is
+    /// still what every *undrawn* theme gets, which is the whole point of it.
+    ///
+    /// The three measure 6.38:1, 5.21:1 and 3.85:1 against `hover`, the
+    /// surface each contrasts worst against — clear of 4.5, 4.5 and 3 — so
+    /// they are used verbatim. Should a future value not be, `derived` walks
+    /// it to its floor rather than trusting the drawing.
     public static let light = ThemePalette.derived(
         surface: PanelStyle.surfaceLight,
-        ink: Swatch(0.137, 0.133, 0.125),
+        ink: PanelStyle.inkLight,
         accent: PanelStyle.defaultAccent,
         isDark: false,
         window: PanelStyle.windowLight,
-        line: nil
+        line: nil,
+        inkLadder: (
+            soft: Swatch(hex: "#524e48") ?? Swatch(0.32, 0.31, 0.28),
+            muted: Swatch(hex: "#5f5b54") ?? Swatch(0.37, 0.36, 0.33),
+            faint: Swatch(hex: "#746f67") ?? Swatch(0.45, 0.44, 0.40)
+        )
     )
 
     /// Dark keeps the near-black the system uses. Warming it does not read as

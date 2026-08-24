@@ -90,6 +90,14 @@ public struct ThreadRowView: View {
     /// ``ThreadListView``.
     var isNew = false
 
+    /// Whether this conversation was last replied to by the user — drawn as a
+    /// `REPLY` pill in the slot the `NEW` pill uses (NEW wins when both hold).
+    ///
+    /// Passed in because the fact is not in the stored model yet (redesign
+    /// spec Q8); nothing sets it today, but the rendering path is here so the
+    /// data wiring is a one-line change when the model grows the flag.
+    var isReplied = false
+
     /// At accessibility sizes a row that keeps its columns has no room left
     /// for any of them: the sender truncates to "Ada Lovel…" so that a
     /// timestamp can sit beside it. Stacking is what the system's own lists
@@ -101,6 +109,11 @@ public struct ThreadRowView: View {
     /// An unpopulated environment is ``ResolvedTheme/placeholder``, whose
     /// values are exactly what the row drew when they were literals.
     @Environment(\.theme) private var theme
+    /// The palette is scheme-resolved at draw time, exactly like `ThemeAccent`,
+    /// so the row cannot cache a light colour into a dark appearance.
+    @Environment(\.colorScheme) private var colorScheme
+
+    private var palette: ThemePalette { theme.palette(for: colorScheme) }
 
     /// Grows with the text size, because the date inside it does.
     @ScaledMetric(relativeTo: .caption2) private var statusWidth: CGFloat = 44
@@ -115,6 +128,7 @@ public struct ThreadRowView: View {
         labels: [LabelChipModel] = [],
         paneWidth: CGFloat = 0,
         isNew: Bool = false,
+        isReplied: Bool = false,
         onToggleStar: (() -> Void)? = nil,
         onToggleSelection: (() -> Void)? = nil
     ) {
@@ -127,6 +141,7 @@ public struct ThreadRowView: View {
         self.labels = labels
         self.paneWidth = paneWidth
         self.isNew = isNew
+        self.isReplied = isReplied
         self.onToggleStar = onToggleStar
         self.onToggleSelection = onToggleSelection
     }
@@ -165,13 +180,40 @@ public struct ThreadRowView: View {
             if isOpen || isSelected {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(ThemeAccent().opacity(isOpen ? 0.16 : 0.10))
+            } else if thread.isUnread {
+                unreadTint
+            }
+        }
+        // The open/ticked row's own edge, drawn over the fill rather than
+        // instead of it. Weight and colour are the mock's; it reads at a
+        // glance down a column of rows in a way an interior fill does not,
+        // and it survives the unread tint sitting under it.
+        .overlay(alignment: .leading) {
+            if isOpen || isSelected {
+                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                    .fill(ThemeAccent())
+                    .frame(width: 3)
+                    .accessibilityHidden(true)
             }
         }
         // Over the fill, not instead of it: on a wide layout the cursor and
         // the open message are the same row, and a stroke that replaced the
         // fill would make moving the keyboard look like closing the message.
+        //
+        // Still a **stroke**, deliberately, now that unread has a fill of its
+        // own: three fills on one row is exactly the confusion the original
+        // rule was written against, and the keyboard cursor is the one of the
+        // three that has to stay legible on top of either of the others.
+        //
+        // Drawn only where it says something the row does not already say. On a
+        // wide layout moving the cursor moves the selection, so the cursor and
+        // the open message are the same row and the stroke merely outlines a row
+        // that is already marked — which on a real device read as a heavy box
+        // around whatever had just been tapped. Collapsed, where a cursor can
+        // sit on a row without opening it, it is the only thing marking that row
+        // and it stays.
         .overlay {
-            if isFocused {
+            if isFocused, isOpen == false, isSelected == false {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .strokeBorder(ThemeAccent(), lineWidth: 2)
             }
@@ -185,6 +227,61 @@ public struct ThreadRowView: View {
         }
         .accessibilityAction(named: Text(isSelected ? .ui("Deselect") : .ui("Select"))) {
             onToggleSelection?()
+        }
+    }
+
+    /// The unread row's own paper, one step lighter than the pane's.
+    ///
+    /// **A fill, which this row used to refuse.** Weight alone carried unread
+    /// before; the redesign's list is scanned in blocks rather than row by
+    /// row, and a tint is what makes "how much of this screen is unread"
+    /// answerable without reading any of it. The mock draws white at 40% over
+    /// the surface, which is what ``ThemePalette/unreadTint`` carries — derived
+    /// per theme, so dark mode lifts by its own much smaller step instead of
+    /// washing out.
+    ///
+    /// Read from the palette rather than stated as `white.opacity(0.4)` for
+    /// that reason: the literal is a light-mode value and dark mode is undrawn
+    /// (spec Q7).
+    private var unreadTint: some View {
+        RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .fill(palette.unreadTint.color)
+    }
+
+    /// Which account a row arrived in, as an 8pt dot at the head of its top
+    /// line.
+    ///
+    /// **Was a 10pt triangle in the row's bottom leading corner, and that did
+    /// not survive a real device.** Hard against the row's leading edge it
+    /// clipped into the separator and the open row's 3pt accent border, and at
+    /// that size a wedge with two straight edges reads as a rendering artifact
+    /// rather than as information — which is worse than no marker at all,
+    /// because a glitch is something a reader tries to make sense of.
+    ///
+    /// A dot instead, and deliberately the *same* dot the sidebar puts beside
+    /// an account address: one idiom for "this is which account", so the
+    /// colour in the list is legible by looking at the sidebar rather than by
+    /// being told. It sits at the start of the top line — where the eye already
+    /// begins — inside the text block, so it clips against nothing.
+    ///
+    /// It still replaces the dot-and-name chip that used to cost every row of a
+    /// unified feed a word of width; the account is named in the row's
+    /// accessibility sentence, which is where the name was doing real work.
+    ///
+    /// Seeded on the account key, exactly as the chip was, so renaming a
+    /// mailbox does not recolour its mail.
+    /// **Not drawn on the row.** The design carries account colour in the
+    /// sidebar's Accounts legend, and a mark every single row wears is a mark
+    /// that distinguishes nothing while costing the sender's line its opening.
+    /// Kept because the legend it pairs with is what makes it readable, and
+    /// because the row's spoken sentence still names the account.
+    @ViewBuilder
+    private var accountDot: some View {
+        if let account {
+            Circle()
+                .fill(AvatarPalette.color(for: account.key))
+                .frame(width: 8, height: 8)
+                .accessibilityHidden(true)
         }
     }
 
@@ -223,13 +320,17 @@ public struct ThreadRowView: View {
                 // A capsule sharing the line with a two-line wrapped name at
                 // 53pt text leaves the name about four characters, which is
                 // the truncation this row's whole layout exists to avoid.
-                newBadge
+                statusPill
             }
         } else {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
+                // Ahead of the sender, where the mock puts it: it is the one
+                // thing on the row that is worth seeing before knowing who
+                // sent it, and a pill at the very start of the line is found
+                // by running the eye down a single edge.
+                statusPill
                 senderName.lineLimit(1)
                 messageCountBadge
-                newBadge
 
                 Spacer(minLength: 4)
             }
@@ -249,24 +350,46 @@ public struct ThreadRowView: View {
     /// Accent-tinted rather than red: it is a fact about the row, not a warning
     /// about it, and red beside the amber star and the green unread dot would
     /// make three saturated colours competing on one row.
+    ///
+    /// Filled rather than tinted since the redesign, and shared with ``isReplied``:
+    /// the two are the same slot because they answer the same question — what
+    /// happened to this conversation last — and only one of them can be the
+    /// answer. New wins where both hold: mail that has never been shown on any
+    /// device is the stronger claim, and it is the one that expires.
     @ViewBuilder
-    private var newBadge: some View {
+    private var statusPill: some View {
         if isNew {
-            Text(.ui("New"))
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.themeAccent)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 1)
-                .background(ThemeAccent().opacity(0.16), in: Capsule())
-                .fixedSize()
+            pill(Text(.ui("New")), fill: ThemeAccent(), ink: palette.accentInk.color)
+        } else if isReplied {
+            pill(Text(.ui("Reply")), fill: palette.success.color, ink: .white)
         }
+    }
+
+    /// 10pt bold uppercase on a filled capsule, per the mock. The ink is
+    /// passed in rather than assumed white: the accent is user-set, and a pale
+    /// one wants black on it — which is exactly what ``ThemePalette/accentInk``
+    /// is derived to answer.
+    private func pill(_ text: Text, fill: some ShapeStyle, ink: Color) -> some View {
+        text
+            .font(.system(size: 10, weight: .bold))
+            .textCase(.uppercase)
+            .foregroundStyle(ink)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(fill, in: Capsule())
+            .fixedSize()
     }
 
     private var senderName: some View {
         Text(participants)
             .font(.subheadline)
             .fontWeight(theme.unreadEmphasis.weight(isUnread: thread.isUnread))
-            .foregroundStyle(thread.isUnread ? .primary : .secondary)
+            // The read row's sender steps down the ink ladder rather than to
+            // `.secondary`, which is a system grey and reads cold against
+            // paper. Unread keeps full ink: the weight and the colour say the
+            // same thing, which is what makes the state readable at a glance
+            // for anyone the weight alone does not reach.
+            .foregroundStyle(thread.isUnread ? palette.ink.color : palette.inkMuted.color)
     }
 
     /// Bare, not a pill. A capsule around two digits is a badge, and a badge
@@ -292,7 +415,10 @@ public struct ThreadRowView: View {
         Text(subjectText)
             .font(.subheadline)
             .fontWeight(theme.unreadEmphasis.weight(isUnread: thread.isUnread))
-            .foregroundStyle(.primary)
+            // One rung apart from the sender's pair, so the two lines of a
+            // read row are still ordered by importance instead of flattening
+            // into one grey block.
+            .foregroundStyle(thread.isUnread ? palette.ink.color : palette.inkSoft.color)
             // The subject is the one line worth reading in full. At large
             // sizes it gets a second line rather than an ellipsis. The star
             // no longer shares this line, so wrapping costs nothing.
@@ -312,24 +438,26 @@ public struct ThreadRowView: View {
         VStack(alignment: .trailing, spacing: 5) {
             Text(relativeDate)
                 .font(.caption2)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(palette.inkFaint.color)
                 .lineLimit(1)
                 .fixedSize()
 
             if thread.hasAttachment {
                 Image(systemName: "paperclip")
                     .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(palette.inkFaint.color)
             }
 
             star
 
             // Green rather than the tint, so unread is legible as unread and
             // not confused with the accent-coloured highlight the open row
-            // already carries.
+            // already carries. The green is the palette's `success`, which is
+            // the same green the mock uses for this dot — and, unlike
+            // `Color.green`, it is held to the contrast floor on every theme.
             if thread.isUnread {
                 Circle()
-                    .fill(Color.green)
+                    .fill(palette.success.color)
                     .frame(width: 8, height: 8)
             }
         }
@@ -365,12 +493,16 @@ public struct ThreadRowView: View {
 
     /// Amber rather than the system orange, which next to muted avatars is the
     /// most saturated thing on screen and pulls the eye off the subject.
+    ///
+    /// From ``ThemePalette/star`` rather than stated here: the amber is a
+    /// token now, held to the 3:1 glyph floor on every theme, and it is
+    /// deliberately not ``ThemePalette/warning`` — a mark the user put there
+    /// themselves must not wear the colour that means something is wrong.
     private var starIcon: some View {
         Image(systemName: thread.isFlagged ? "star.fill" : "star")
             .font(.caption2)
             .foregroundStyle(
-                thread.isFlagged
-                    ? Color(red: 0.80, green: 0.62, blue: 0.20) : Color.secondary.opacity(0.30)
+                thread.isFlagged ? palette.star.color : palette.inkFaint.color.opacity(0.45)
             )
             .contentTransition(.symbolEffect(.replace))
     }
@@ -400,12 +532,12 @@ public struct ThreadRowView: View {
             if let snippet = highlight?.body {
                 Text(highlighted(snippet, in: .footnote))
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.inkFaint.color)
                     .lineLimit(theme.previewLines)
             } else if thread.snippet.isEmpty == false {
                 Text(thread.snippet)
                     .font(.footnote)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(palette.inkFaint.color)
                     .lineLimit(theme.previewLines)
             }
         }
@@ -441,9 +573,12 @@ public struct ThreadRowView: View {
     /// The row's quiet metadata. Kept on its own line so a long subject never
     /// competes with it for width, and omitted entirely when there is none —
     /// an empty line would make every row taller for the sake of a few.
+    ///
+    /// The account no longer appears here — it is the dot at the head of the
+    /// top line now; see ``accountDot``.
     @ViewBuilder
     private var badges: some View {
-        if account != nil || thread.snoozedUntil != nil || labels.isEmpty == false {
+        if thread.snoozedUntil != nil || labels.isEmpty == false {
             HStack(spacing: 8) {
                 // First on the line, because a label is the one thing here the
                 // user put there themselves. The cluster draws nothing at all
@@ -462,37 +597,9 @@ public struct ThreadRowView: View {
                         .padding(.vertical, 1)
                         .background(ThemeAccent().opacity(0.12), in: Capsule())
                 }
-
-                if let account {
-                    accountTag(account)
-                }
             }
             .padding(.top, 2)
             .accessibilityHidden(true)
-        }
-    }
-
-    /// Which account this arrived in — a dot and a word, not a badge.
-    ///
-    /// It was a filled capsule, which made the least important thing on the row
-    /// the heaviest: a solid shape outweighs text, and against a muted palette
-    /// it was reliably the first thing the eye landed on. The account is context
-    /// for the subject, not a claim on it.
-    ///
-    /// The dot carries the identity and the label merely confirms it, which is
-    /// what lets the text drop to tertiary without becoming unreadable — the
-    /// same colour repeated down a column is recognisable long before it is
-    /// read, and it is the shorthand the web UI and the README already use.
-    private func accountTag(_ account: AccountTag) -> some View {
-        HStack(spacing: 4) {
-            Circle()
-                .fill(AvatarPalette.color(for: account.key))
-                .frame(width: 5, height: 5)
-
-            Text(account.name)
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .lineLimit(1)
         }
     }
 
@@ -535,7 +642,13 @@ public struct ThreadRowView: View {
         // Before "Unread", and said even when the row is also unread: the
         // capsule is the first thing a sighted reader sees, and the two are
         // different claims rather than one restated.
-        if isNew { parts.append("New") }
+        // The pill's other face takes the same slot, and loses to New for the
+        // same reason the drawn pill does.
+        if isNew {
+            parts.append("New")
+        } else if isReplied {
+            parts.append("Replied")
+        }
         if thread.isUnread { parts.append("Unread") }
         if thread.isFlagged { parts.append("Starred") }
 

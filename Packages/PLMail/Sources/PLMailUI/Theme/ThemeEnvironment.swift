@@ -267,14 +267,18 @@ extension ResolvedTheme {
     }
 
     /// The server's `radius` is in **rem** on a 16px root, clamped 0.0…2.0 —
-    /// so 0…32pt, where this app's own pane radius is 20.
+    /// so 0…32pt, against this app's own pane radius of
+    /// ``PanelStyle/cornerRadius``.
     ///
-    /// Anchored rather than taken literally: read as 16px per rem the default
-    /// 0.75 is 12pt, and a fresh account would silently shrink every pane in
-    /// the app from the 20 people have been looking at. So the *default* is
-    /// pinned to this app's own radius and the knob moves either way from
-    /// there, capped at 32 — past which a phone-sized pane is a lozenge and
-    /// the list inside it loses its corners.
+    /// Anchored rather than taken literally, and the anchoring still earns its
+    /// keep now that the redesign has moved the pane radius to 12: the *ratio*
+    /// is what is server-driven, so a fresh account's default 0.75rem is
+    /// whatever this app draws, and a user who moved the knob keeps the same
+    /// proportion of it. Capped at 32 — past which a phone-sized pane is a
+    /// lozenge and the list inside it loses its corners. (At 12pt the default
+    /// happens to coincide with a literal 16px-per-rem reading; that is a
+    /// coincidence, not the rule, and hard-coding 16 here would desynchronise
+    /// the moment the pane radius moves again.)
     static func paneRadius(fromRem rem: Double) -> CGFloat {
         let clamped = min(2, max(0, rem))
 
