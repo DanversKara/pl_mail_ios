@@ -127,6 +127,29 @@ public struct CalendarView: View {
         mode.window(anchor: anchor, using: calendar)
     }
 
+    /// What is asked for, which is **not** always what is drawn.
+    ///
+    /// The week strip marks the days that have something on them, and it can
+    /// only mark what the service has been asked to load. In day mode the
+    /// window is one day, so exactly one dot could ever appear — the day you
+    /// were already looking at — which made the strip look broken rather than
+    /// empty.
+    ///
+    /// So a day or an agenda fetches the whole week the strip is drawing.
+    /// Nothing downstream has to know: the grid places clusters by day and the
+    /// agenda filters by `window.days`, so the extra days are loaded and not
+    /// drawn. It also means stepping a day inside the same week asks the
+    /// server for nothing at all.
+    private var fetchWindow: CalendarWindow {
+        guard mode == .day || mode == .agenda else { return window }
+
+        let weekStart = anchor.startOfWeek(using: calendar)
+        let weekEnd = weekStart.adding(days: 7)
+
+        return CalendarWindow(from: min(weekStart, window.from), to: max(weekEnd, window.to))
+            ?? window
+    }
+
     /// **No `NavigationStack` of its own.**
     ///
     /// The enclosing container supplies one — `MailView`'s split view already
@@ -164,7 +187,7 @@ public struct CalendarView: View {
                 prompt: Text(.ui("Search these dates"))
             )
             .refreshable { await service.refresh(window) }
-            .task(id: window) { await show() }
+            .task(id: fetchWindow) { await show() }
             .environment(\.calendarEventActions, eventActions)
             .navigationDestination(item: $pushed) { cluster in
                 detail(for: cluster)
@@ -964,7 +987,7 @@ public struct CalendarView: View {
     /// are allowed to exist at all against a Raspberry Pi with one PHP worker
     /// pool.
     private func show() async {
-        await service.show(window)
+        await service.show(fetchWindow)
         publishWidgetState()
         await service.indexForSpotlight()
     }

@@ -578,3 +578,14 @@
 "Open the full calendar" = "Open the full calendar";
 "Back to mail" = "Back to mail";
 "Close the calendar" = "Close the calendar";
+
+/* The header. The dot is what the web UI's header dot is: whether the change
+   stream is open, so an edit made in a browser lands here without anybody
+   pressing anything. "Not live" is not a warning — the app still syncs when it
+   checks — so the sentence says what still happens rather than what does not.
+   The sidebar button collapses the named column to its icon rail and back; it
+   never hides it, so both labels name a width rather than an on/off. */
+"Live — changes arrive as they happen" = "Live — changes arrive as they happen";
+"Not live — mail arrives when the app checks" = "Not live — mail arrives when the app checks";
+"Collapse the sidebar to icons" = "Collapse the sidebar to icons";
+"Show mailbox names" = "Show mailbox names";

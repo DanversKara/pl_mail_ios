@@ -1315,6 +1315,28 @@ public actor SyncStore {
     /// nil` fails to type-check inside the macro — and fetching an account's
     /// whole message table to filter it in memory is the thing this query is
     /// supposed to avoid.
+    /// Which of `emailIDs` this device holds no body for.
+    ///
+    /// The screen's question, where ``messagesWithoutBody(accountKey:limit:)``
+    /// answers the mailbox's. Bounded by what was asked about rather than by a
+    /// budget, because the caller is a list of rows somebody is looking at and
+    /// there are only ever a screenful.
+    public func emailsWithoutBody(among emailIDs: [String], accountKey: String) throws -> [String] {
+        guard emailIDs.isEmpty == false else { return [] }
+
+        let uids = Set(emailIDs.map { StoreKey.object(accountKey: accountKey, id: $0) })
+        let descriptor = FetchDescriptor<StoredEmail>(
+            predicate: #Predicate { uids.contains($0.uid) })
+
+        // `body == nil` cannot be written inside the macro — SwiftData will not
+        // compile a comparison against a to-one relationship — so the filter
+        // happens here. Harmless at this size: the fetch is already bounded by
+        // the ids handed in.
+        return try modelContext.fetch(descriptor)
+            .filter { $0.body == nil }
+            .map(\.emailID)
+    }
+
     public func messagesWithoutBody(accountKey: String, limit: Int) throws -> [String] {
         guard limit > 0 else { return [] }
 

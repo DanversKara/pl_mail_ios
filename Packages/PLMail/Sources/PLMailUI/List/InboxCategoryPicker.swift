@@ -77,12 +77,39 @@ struct InboxCategoryPicker: View {
     /// the list under it.
     static let shownCategories: [MessageCategory] = [.primary, .social, .promotions, .updates]
 
-    private var strip: some View {
+    /// One rendering of the whole row, so every tab gives the same things up.
+    ///
+    /// **The choice belongs to the row, not to the tab.** Asking each tab
+    /// separately whether it fits produced a strip where Updates kept its icon
+    /// and its three neighbours had dropped theirs — every tab was right and
+    /// the row looked broken.
+    private func tabsRow(size: CGFloat, showsIcon: Bool, allowsScaling: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(Self.shownCategories, id: \.self) { category in
-                tab(for: category)
+                tab(for: category, size: size, showsIcon: showsIcon, allowsScaling: allowsScaling)
                     .frame(maxWidth: .infinity)
             }
+        }
+    }
+
+    private var strip: some View {
+        // **A tab may not truncate.** "Prim… 41" names nothing and "Pro… 1…"
+        // is worse — it truncates the number, which is the half people are
+        // actually reading. Four tabs across a 335pt list give each of them 84
+        // points, and "Promotions 1,204" has never fitted in 84 points at any
+        // size worth reading.
+        //
+        // So the row gives things up in order and `ViewThatFits` takes the
+        // first that survives the width it was handed: the icon first, because
+        // the word beside it says the same thing, then the size, down to
+        // eleven points. The last candidate is allowed to shrink its text
+        // because it is the one that gets used when nothing fits, and a tab
+        // squeezed to 90% still reads where an ellipsis does not.
+        ViewThatFits(in: .horizontal) {
+            tabsRow(size: 13, showsIcon: true, allowsScaling: false)
+            tabsRow(size: 13, showsIcon: false, allowsScaling: false)
+            tabsRow(size: 12, showsIcon: false, allowsScaling: false)
+            tabsRow(size: 11, showsIcon: false, allowsScaling: true)
         }
         // The strip's own ground, a shade under the pane, with a hairline
         // closing it off — the mock's `ink @ 4%` on a rule, which is
@@ -96,6 +123,43 @@ struct InboxCategoryPicker: View {
         // `.contain`, never `.combine`: combining folds the tabs into one
         // sentence and leaves VoiceOver with no way to press any of them.
         .accessibilityElement(children: .contain)
+    }
+
+    /// One rendering of a tab's contents, at a given size and with or without
+    /// its icon. Sized to its own content so ``ViewThatFits`` can ask whether
+    /// it survives — a label that compressed itself would always "fit" and the
+    /// first candidate would always win.
+    private func label(
+        _ category: MessageCategory?, isChosen: Bool, size: CGFloat, showsIcon: Bool,
+        allowsScaling: Bool
+    ) -> some View {
+        HStack(spacing: 4) {
+            if showsIcon {
+                Image(systemName: category?.symbolName ?? "tray.2")
+                    .font(.system(size: size - 2))
+            }
+
+            Text(Self.title(of: category))
+                .font(.system(size: size, weight: isChosen ? .semibold : .regular))
+
+            if let category, let count = unreadCounts[category] {
+                // Bolder than the name beside it, always — the number is the
+                // thing that changed since you last looked, and the word never
+                // is. Compact above a thousand: "1.2K" is three characters of
+                // width for the one fact a four-digit count carries.
+                Text(verbatim: count.formatted(.number.notation(.compactName)))
+                    .font(.system(size: size, weight: .semibold))
+                    .monospacedDigit()
+            }
+        }
+        .lineLimit(1)
+        .minimumScaleFactor(allowsScaling ? 0.75 : 1)
+        // Natural width, so the row's ideal size is the sum of its tabs' — and
+        // `ViewThatFits` is comparing something real against the width it has.
+        // A tab that compressed itself would always "fit" and the first
+        // candidate would always win.
+        .fixedSize(horizontal: allowsScaling == false, vertical: false)
+        .padding(.horizontal, 4)
     }
 
     /// A scroll id for a choice, with nil given a name of its own.
@@ -117,7 +181,9 @@ struct InboxCategoryPicker: View {
     /// The chosen tab is also accent-coloured and medium-weight. Colour alone
     /// would fail anyone who cannot pick the accent out of the ink; the
     /// underline is the mark that does not depend on seeing a hue.
-    private func tab(for category: MessageCategory?) -> some View {
+    private func tab(
+        for category: MessageCategory?, size: CGFloat, showsIcon: Bool, allowsScaling: Bool
+    ) -> some View {
         let isChosen = selection == category
 
         return Button {
@@ -127,28 +193,10 @@ struct InboxCategoryPicker: View {
             selection = isChosen ? nil : category
         } label: {
             VStack(spacing: 6) {
-                HStack(spacing: 4) {
-                    Image(systemName: category?.symbolName ?? "tray.2")
-                        .font(.system(size: 11))
-
-                    Text(Self.title(of: category))
-                        .font(.system(size: 13, weight: isChosen ? .semibold : .regular))
-                        // A tab is four words in English and one long compound
-                        // in German. Shrinking the name a little beats
-                        // truncating it, because "Allge…" names nothing.
-                        .minimumScaleFactor(0.8)
-
-                    if let category, let count = unreadCounts[category] {
-                        // Bolder than the name beside it, always — the number
-                        // is the thing that changed since you last looked, and
-                        // the word never is.
-                        Text(verbatim: "\(count)")
-                            .font(.system(size: 13, weight: .semibold))
-                            .monospacedDigit()
-                    }
-                }
-                .lineLimit(1)
-                .padding(.horizontal, 6)
+                label(
+                    category, isChosen: isChosen, size: size, showsIcon: showsIcon,
+                    allowsScaling: allowsScaling
+                )
                 .padding(.top, 9)
 
                 Rectangle()

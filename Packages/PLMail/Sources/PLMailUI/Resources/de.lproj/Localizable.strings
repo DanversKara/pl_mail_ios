@@ -577,3 +577,9 @@
 "Open the full calendar" = "Vollen Kalender öffnen";
 "Back to mail" = "Zurück zur Mail";
 "Close the calendar" = "Kalender schließen";
+
+/* Kopfzeile: Punkt = Zustand des Änderungs-Streams, Seitenleisten-Umschalter. */
+"Live — changes arrive as they happen" = "Live — Änderungen kommen sofort an";
+"Not live — mail arrives when the app checks" = "Nicht live — Mail kommt beim nächsten Abruf";
+"Collapse the sidebar to icons" = "Seitenleiste auf Symbole verkleinern";
+"Show mailbox names" = "Postfachnamen anzeigen";

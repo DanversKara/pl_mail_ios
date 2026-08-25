@@ -42,12 +42,26 @@ public actor EventSourceClient {
 
     public var isRunning: Bool { task != nil }
 
+    /// Whether a stream is open **right now**, as opposed to a reconnect loop
+    /// existing. Kept here as well as reported so a caller that arrives late
+    /// can ask rather than wait for the next transition.
+    public private(set) var isConnected = false
+
     /// Opens the stream, reconnecting until stopped.
     ///
-    /// - Parameter onChange: Called for every state change, including the one
-    ///   the server sends immediately on connect — which is why no separate
-    ///   "catch up on connect" request is needed.
-    public func start(onChange: @escaping @Sendable (StateChange) async -> Void) {
+    /// - Parameters:
+    ///   - onChange: Called for every state change, including the one the
+    ///     server sends immediately on connect — which is why no separate
+    ///     "catch up on connect" request is needed.
+    ///   - onConnection: Called with `true` the moment the server answers 200
+    ///     and with `false` whenever the connection ends, including between
+    ///     reconnect attempts. **This is the only honest answer to "is the app
+    ///     live?"** — `isRunning` says a task exists, which stays true through
+    ///     a five-minute backoff against a server that is refusing.
+    public func start(
+        onChange: @escaping @Sendable (StateChange) async -> Void,
+        onConnection: @escaping @Sendable (Bool) async -> Void = { _ in }
+    ) {
         guard task == nil else { return }
 
         // Held for the connection's life. SSE takes no JMAP slot in the
@@ -62,18 +76,28 @@ public actor EventSourceClient {
                 let opened = Date.now
 
                 do {
-                    try await self?.listen(onChange: onChange)
+                    try await self?.listen(onChange: onChange, onConnection: onConnection)
 
                     // A clean close at roughly the expected lifetime is the
                     // server doing what it said it would.
                     let lived = Date.now.timeIntervalSince(opened)
                     attempt = lived >= 240 ? 0 : attempt + 1
                 } catch is CancellationError {
+                    await self?.setConnected(false)
+                    await onConnection(false)
+
                     break
                 } catch {
                     attempt += 1
                     await self?.log(error)
                 }
+
+                // Down between attempts, whichever way the last one ended. A
+                // dot that stayed green through a backoff would be green
+                // exactly when somebody is trying to find out why nothing is
+                // arriving.
+                await self?.setConnected(false)
+                await onConnection(false)
 
                 guard Task.isCancelled == false else { break }
 
@@ -95,6 +119,7 @@ public actor EventSourceClient {
     public func stop() {
         task?.cancel()
         task = nil
+        isConnected = false
 
         let held = reservation
         reservation = nil
@@ -104,7 +129,10 @@ public actor EventSourceClient {
 
     // MARK: - Connection
 
-    private func listen(onChange: @escaping @Sendable (StateChange) async -> Void) async throws {
+    private func listen(
+        onChange: @escaping @Sendable (StateChange) async -> Void,
+        onConnection: @escaping @Sendable (Bool) async -> Void
+    ) async throws {
         let session = try await client.session()
 
         guard
@@ -128,6 +156,9 @@ public actor EventSourceClient {
             throw JMAPError.unexpectedStatus(
                 code: (response as? HTTPURLResponse)?.statusCode ?? -1)
         }
+
+        setConnected(true)
+        await onConnection(true)
 
         var event = ""
         var data = ""
@@ -154,6 +185,10 @@ public actor EventSourceClient {
             // `ping` events and comments need no handling: their only job is
             // to keep the connection from being reaped by an intermediary.
         }
+    }
+
+    private func setConnected(_ connected: Bool) {
+        isConnected = connected
     }
 
     private static func decode(_ data: String) -> StateChange? {

@@ -207,12 +207,132 @@ public final class MailSyncService {
 
         await events.start { [weak self] change in
             await self?.handle(change)
+        } onConnection: { [weak self] connected in
+            await self?.setLive(connected)
         }
+    }
+
+    // MARK: - Warming what is on screen
+
+    /// Message ids this session has already asked the server for.
+    ///
+    /// Not "already has", which the store answers: this is the guard against
+    /// asking twice for the same message while the first request is still in
+    /// flight, and against re-asking forever for a message the server has no
+    /// body for. It is per-session and unbounded on purpose — a mailbox is
+    /// tens of thousands of short ids, and the alternative is a request loop.
+    @ObservationIgnored private var warmed: Set<String> = []
+    @ObservationIgnored private var isWarming = false
+
+    /// Fetches bodies for messages that are **on screen right now**.
+    ///
+    /// The background prefetcher takes the newest fifty messages in an account
+    /// and works down. That is the right shape for a commute and the wrong one
+    /// for a person scrolling: they are five hundred rows into an inbox, and
+    /// the fifty newest messages — most of them in Updates or Promotions — are
+    /// not the ones under their thumb. So the list says which rows it is
+    /// actually showing and this fetches those, which is the only set that
+    /// makes "tap a conversation and it is there" true by construction.
+    ///
+    /// Politeness comes from the caller rather than from a budget: a screen
+    /// holds about fifteen rows, so a chunk of twenty covers a screenful and a
+    /// bit in one round trip. Ids already asked for this session are dropped,
+    /// so scrolling back over the same rows costs nothing.
+    public func warmBodies(accountKey: String, emailIDs: [String]) async {
+        let fresh = emailIDs.filter { warmed.contains($0) == false }
+
+        guard fresh.isEmpty == false, isWarming == false else { return }
+        guard let account = accounts.first(where: { $0.accountKey == accountKey }) else { return }
+
+        let wanted: [String]
+
+        do {
+            wanted = try await store.emailsWithoutBody(among: fresh, accountKey: accountKey)
+        } catch {
+            return
+        }
+
+        guard wanted.isEmpty == false else {
+            // Nothing missing is still an answer: remember it so the same rows
+            // scrolling past again ask the store nothing.
+            warmed.formUnion(fresh)
+
+            return
+        }
+
+        isWarming = true
+        defer { isWarming = false }
+
+        // Recorded before the request, not after. A message the server returns
+        // no body for must not become a candidate again on the next scroll.
+        warmed.formUnion(wanted)
+
+        // Only worth announcing when there is something to announce. A screen
+        // whose last two rows needed topping up is not "downloading for
+        // offline"; a bar that flashed on every scroll stop would be the kind
+        // of indicator people learn to stop seeing.
+        let isWorthShowing = wanted.count >= 5
+
+        if isWorthShowing { reportWarming(fetched: 0, remaining: wanted.count) }
+
+        do {
+            let session = try await client.session()
+            var builder = RequestBuilder(session: session)
+
+            let get = builder.add(
+                EmailGet(
+                    accountID: account.accountID,
+                    ids: .value(wanted.map { EmailID($0) }),
+                    properties: EmailGet.readerProperties))
+
+            let emails = try await client.send(builder).result(of: get).list
+
+            try await store.storeReaderContent(emails, accountKey: accountKey)
+
+            if isWorthShowing { reportWarming(fetched: emails.count, remaining: 0) }
+        } catch {
+            logger.error("Warming visible bodies failed: \(error, privacy: .public)")
+        }
+
+        if isWorthShowing { finishWarming() }
+    }
+
+    /// The indicator, where there is one. `PrefetchActivity` is a view-layer
+    /// concern and iOS-only; the fetch it reports is neither, so the reporting
+    /// is what carries the `#if`.
+    private func reportWarming(fetched: Int, remaining: Int) {
+        #if os(iOS)
+        PrefetchActivity.shared.report(fetched: fetched, remaining: remaining)
+        #endif
+    }
+
+    private func finishWarming() {
+        #if os(iOS)
+        PrefetchActivity.shared.finish()
+        #endif
     }
 
     /// Stops listening. Called the moment the app stops being frontmost.
     public func endLiveUpdates() async {
         await events.stop()
+        isLive = false
+    }
+
+    /// Whether the change stream is **open right now**.
+    ///
+    /// The one fact the web UI puts in its header dot, and the one this app's
+    /// header dot was not carrying: it showed whether the last *poll* had
+    /// succeeded, which stays green on a server whose event stream has been
+    /// refused for an hour. Live means changes made in a browser land here
+    /// without anybody pressing anything.
+    ///
+    /// False while the app is in the background, which is correct rather than
+    /// pessimistic — the stream is deliberately closed there, because each one
+    /// holds a PHP worker.
+    public private(set) var isLive = false
+
+    private func setLive(_ live: Bool) {
+        isLive = live
     }
 
     /// A push says only that a state token moved; this finds out what.

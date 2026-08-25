@@ -177,8 +177,19 @@ public struct ThreadRowView: View {
         .padding(.horizontal, 12)
         .background {
             if isOpen || isSelected {
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(ThemeAccent().opacity(isOpen ? 0.16 : 0.10))
+                // **Square where it meets the bar.** A fill rounded on all
+                // four corners left a sliver of paper between its curve and
+                // the 3pt edge beside it, so the two read as two marks that
+                // had missed each other rather than as one. Rounded on the
+                // trailing side only: the bar *is* the leading edge.
+                UnevenRoundedRectangle(
+                    topLeadingRadius: 0,
+                    bottomLeadingRadius: 0,
+                    bottomTrailingRadius: 14,
+                    topTrailingRadius: 14,
+                    style: .continuous
+                )
+                .fill(ThemeAccent().opacity(isOpen ? 0.16 : 0.10))
             } else if thread.isUnread {
                 unreadTint
             }
@@ -187,9 +198,12 @@ public struct ThreadRowView: View {
         // instead of it. Weight and colour are the mock's; it reads at a
         // glance down a column of rows in a way an interior fill does not,
         // and it survives the unread tint sitting under it.
+        //
+        // A plain rectangle, not a rounded one: its trailing side is a seam
+        // with the fill, and a curve there is a gap.
         .overlay(alignment: .leading) {
             if isOpen || isSelected {
-                RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+                Rectangle()
                     .fill(ThemeAccent())
                     .frame(width: 3)
                     .accessibilityHidden(true)
@@ -243,8 +257,14 @@ public struct ThreadRowView: View {
     /// that reason: the literal is a light-mode value and dark mode is undrawn
     /// (spec Q7).
     private var unreadTint: some View {
-        RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .fill(palette.unreadTint.color)
+        UnevenRoundedRectangle(
+            topLeadingRadius: 0,
+            bottomLeadingRadius: 0,
+            bottomTrailingRadius: 14,
+            topTrailingRadius: 14,
+            style: .continuous
+        )
+        .fill(palette.unreadTint.color)
     }
 
     /// Which account a row arrived in, as an 8pt dot at the head of its top

@@ -325,7 +325,7 @@ public struct ThreadListView: View {
                             emailID: emailID, accountKey: row.thread.accountKey)
                     } else {
                         spendBadge(for: row.thread)
-                        selection = ref
+                        immediately { selection = ref }
                     }
                 } label: {
                     rowContent(for: row)
@@ -348,7 +348,10 @@ public struct ThreadListView: View {
                 // a delta pull, a notification and the body prefetcher are not.
                 // This is the only place in the app that reports one, which is
                 // why it is on the row and not on the sync path.
-                .onAppear { noteDisplayed(row.thread) }
+                .onAppear {
+                    noteDisplayed(row.thread)
+                    noteOnScreen(row.entry)
+                }
                 // Both edges chosen by the user, both undoable, and everything
                 // a swipe does is also reachable from the row's context menu —
                 // a gesture must never be the only way to reach an action.
@@ -464,7 +467,7 @@ public struct ThreadListView: View {
                 labelActions: labelActions,
                 store: sync.store
             ) {
-                checked = []
+                immediately { checked = [] }
             }
         }
         .alert(
@@ -555,7 +558,7 @@ public struct ThreadListView: View {
 
                 if isSelecting {
                     ToolbarItem(placement: .topBarLeading) {
-                        Button(.ui("Cancel")) { checked = [] }
+                        Button(.ui("Cancel")) { immediately { checked = [] } }
                     }
 
                     ToolbarItem(placement: .topBarTrailing) { selectAllButton }
@@ -590,7 +593,7 @@ public struct ThreadListView: View {
     private var listHeader: some View {
         HStack(spacing: 10) {
             if isSelecting {
-                Button(.ui("Cancel")) { checked = [] }
+                Button(.ui("Cancel")) { immediately { checked = [] } }
                     .buttonStyle(.plain)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(ThemeAccent())
@@ -717,7 +720,9 @@ public struct ThreadListView: View {
     /// whole mailbox, and it is not — it is the rows that have actually loaded.
     private var selectAllButton: some View {
         Button(allChecked ? .ui("Deselect all") : .ui("Select all loaded")) {
-            checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+            immediately {
+                checked = allChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+            }
         }
     }
 
@@ -743,7 +748,9 @@ public struct ThreadListView: View {
             let isAllChecked = isSelecting && allChecked
 
             Button {
-                checked = isAllChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+                immediately {
+                    checked = isAllChecked ? [] : Set(rows.map { ThreadRef(thread: $0.thread) })
+                }
             } label: {
                 Image(systemName: isAllChecked ? "checkmark.square.fill" : "square")
                     .font(.system(size: 16))
@@ -868,9 +875,9 @@ public struct ThreadListView: View {
         // keep a selection while moving the cursor off it.
         HiddenShortcut(title: .ui("Clear selection"), key: .escape, modifiers: []) {
             if isSelecting {
-                checked = []
+                immediately { checked = [] }
             } else {
-                cursor = nil
+                immediately { cursor = nil }
             }
         }
 
@@ -909,14 +916,14 @@ public struct ThreadListView: View {
         let row = loaded[next]
         let ref = ThreadRef(thread: row.thread)
 
-        cursor = ref
+        immediately { cursor = ref }
 
         // Moving the cursor *is* reading where the reader is the next column
         // over. Collapsed it is not, and following the cursor would push a
         // message on the first press and leave nothing to move through.
         if layout.isSeparated, isSelecting == false, row.thread.isDraft == false {
             spendBadge(for: row.thread)
-            selection = ref
+            immediately { selection = ref }
         }
 
         scroll.scrollTo(row.entry.uid, anchor: .center)
@@ -934,7 +941,7 @@ public struct ThreadListView: View {
             editingDraft = DraftRef(emailID: emailID, accountKey: row.thread.accountKey)
         } else {
             spendBadge(for: row.thread)
-            selection = ref
+            immediately { selection = ref }
         }
     }
 
@@ -962,6 +969,42 @@ public struct ThreadListView: View {
     /// screen after its marker was retired does not raise the badge again.
     /// ``ShownThreads`` batches and de-duplicates the reporting half, so a fling
     /// through fifty rows is one request rather than fifty.
+    /// Rows that have come into view and whose bodies have not been asked for.
+    ///
+    /// Collected rather than fetched one at a time: scrolling produces a
+    /// dozen `onAppear`s in a frame, and a request per row would be a dozen
+    /// round trips against a server with one worker.
+    @State private var onScreen: [String: Set<String>] = [:]
+    @State private var warmTask: Task<Void, Never>?
+
+    /// Notes a row as visible and schedules a warm.
+    ///
+    /// **Debounced, and deliberately after the scroll rather than during it.**
+    /// A flick down a long list makes hundreds of rows appear and disappear
+    /// inside a second; fetching for each would be worse than fetching for
+    /// none. Waiting for the scroll to settle means the request is for the
+    /// rows somebody has actually stopped on — which is also the set they are
+    /// about to tap.
+    private func noteOnScreen(_ entry: StoredFeedEntry) {
+        guard entry.emailID.isEmpty == false else { return }
+
+        onScreen[entry.accountKey, default: []].insert(entry.emailID)
+
+        warmTask?.cancel()
+        warmTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(400))
+
+            guard Task.isCancelled == false else { return }
+
+            let batch = onScreen
+            onScreen = [:]
+
+            for (accountKey, emailIDs) in batch {
+                await sync.warmBodies(accountKey: accountKey, emailIDs: Array(emailIDs))
+            }
+        }
+    }
+
     private func noteDisplayed(_ thread: StoredThread) {
         guard thread.isNew else { return }
 
@@ -1227,11 +1270,35 @@ public struct ThreadListView: View {
 
     private var isSelecting: Bool { checked.isEmpty == false }
 
+    /// Performs a selection change with no animation.
+    ///
+    /// **`List` is a collection view underneath**, and anything that changes
+    /// how many rows are marked is a *batch update* over every row it holds —
+    /// not the fifteen on screen. Animated, that is UIKit interpolating three
+    /// thousand cells because somebody tapped one of them, and it is the whole
+    /// of why selecting a conversation, and ticking all of them, felt slow and
+    /// stuttery on a real mailbox.
+    ///
+    /// Nothing here is a transition worth easing either. Opening a
+    /// conversation, ticking a row and moving the keyboard cursor are direct
+    /// manipulation: the mark belongs under the finger when it lifts, not a
+    /// fifth of a second later. Arrivals and departures — a message deleted, a
+    /// page paging in — still animate, which is where an animation earns its
+    /// place, because there the reader did not cause the change.
+    private func immediately(_ change: () -> Void) {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+
+        withTransaction(transaction, change)
+    }
+
     private func toggle(_ ref: ThreadRef) {
-        if checked.contains(ref) {
-            checked.remove(ref)
-        } else {
-            checked.insert(ref)
+        immediately {
+            if checked.contains(ref) {
+                checked.remove(ref)
+            } else {
+                checked.insert(ref)
+            }
         }
     }
 
@@ -1328,7 +1395,7 @@ public struct ThreadListView: View {
     private func snoozeSelection(until: Date?) {
         let targets = checkedTargets
 
-        checked = []
+        immediately { checked = [] }
         Task { await actions.perform(.snooze(until), on: targets) }
     }
 
@@ -1361,7 +1428,7 @@ public struct ThreadListView: View {
                 // Cleared before the request, not after: leaving rows ticked
                 // while an archive is in flight invites a second tap on a
                 // selection that is already on its way out.
-                checked = []
+                immediately { checked = [] }
                 Task { await actions.perform(resolved, on: targets) }
             } else {
                 perform?()

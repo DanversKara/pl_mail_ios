@@ -715,7 +715,13 @@ public struct MailView: View {
     private var globalHeader: some View {
         HStack(spacing: 8) {
             Button {
-                columns = columns == .all ? .detailOnly : .all
+                // **Never to nothing.** This used to hide the sidebar
+                // outright, which took away every destination and left a
+                // button whose only job was to put them back. It collapses to
+                // the icon rail instead — the same rail a narrow window gets —
+                // so both states are usable and the toggle is a width choice
+                // rather than an on/off.
+                sidebarIsRailed = isRailed == false
             } label: {
                 Image(systemName: "sidebar.leading")
                     .font(.system(size: 16))
@@ -723,7 +729,11 @@ public struct MailView: View {
             }
             .buttonStyle(.plain)
             .foregroundStyle(palette.inkSoft.color)
-            .accessibilityLabel(Text(.ui("Show or hide the sidebar")))
+            .disabled(isCalendarDocked)
+            .accessibilityLabel(
+                isRailed
+                    ? Text(.ui("Show mailbox names")) : Text(.ui("Collapse the sidebar to icons"))
+            )
 
             HStack(spacing: 8) {
                 // The mark, not the word. The design puts the seven-stroke
@@ -731,17 +741,21 @@ public struct MailView: View {
                 // the app's name twice to somebody who has already opened it.
                 PLMark(size: 26)
 
-                // Green while the last check succeeded, amber once the server
-                // has failed often enough to be worth mentioning. The design
-                // draws a dot here and never says what it means; this is the one
-                // fact the header can carry that the mail below it cannot.
+                // **The change stream, which is what the web's dot means.**
+                // It used to show whether the last *poll* had succeeded, and
+                // that stays green on a server whose event stream has been
+                // refused for an hour — so the one thing the dot could tell
+                // you was the one thing it did not.
+                //
+                // Three states rather than two: something is wrong, live, or
+                // simply not live. The middle one is the only good news, and a
+                // grey dot is not a warning — the app still syncs when it
+                // checks.
                 Circle()
-                    .fill(
-                        sync.offlineState == .current
-                            ? palette.success.color : palette.warning.color
-                    )
+                    .fill(liveDot.colour)
                     .frame(width: 6, height: 6)
-                    .accessibilityHidden(true)
+                    .help(Text(liveDot.label))
+                    .accessibilityLabel(Text(liveDot.label))
             }
             .frame(width: 196, alignment: .leading)
 
@@ -794,19 +808,24 @@ public struct MailView: View {
                 .accessibilityLabel(Text(.ui("Calendar")))
             }
 
-            Button {
-                isShowingSettings = true
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 16))
-                    .frame(width: 36, height: 36)
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(palette.inkSoft.color)
-            .accessibilityLabel(Text(.ui("Settings")))
         }
         .frame(height: 52)
         .padding(.horizontal, 12)
+    }
+
+    /// What the header's dot says, and the sentence that says it.
+    ///
+    /// The colour is never the only carrier: the same three states are in the
+    /// accessibility label and in the pointer's tooltip, because a dot six
+    /// points across is not a control anybody can interrogate.
+    private var liveDot: (colour: Color, label: LocalizedStringResource) {
+        if sync.offlineState != .current {
+            return (palette.warning.color, .ui("Can't reach your server"))
+        }
+
+        return sync.isLive
+            ? (palette.success.color, .ui("Live — changes arrive as they happen"))
+            : (palette.inkFaint.color, .ui("Not live — mail arrives when the app checks"))
     }
 
     /// The header's search field.
@@ -956,12 +975,25 @@ public struct MailView: View {
     /// design draws them.
     private static let calendarWidth: CGFloat = 392
 
+    /// Whether the reader's own choice overrides the width's. Nil follows the
+    /// layout, which is what a window that has never been told otherwise does.
+    @State private var sidebarIsRailed: Bool?
+
     /// The docked calendar asks for the rail for the same reason a narrow
     /// window does: three panes and a named sidebar do not fit beside each
-    /// other, and the sidebar is the one whose words can be spared.
-    private var isRailed: Bool { isCalendarDocked || layout.usesSidebarRail }
+    /// other, and the sidebar is the one whose words can be spared. That one
+    /// is not negotiable — with a calendar docked there is genuinely no room —
+    /// so it wins over the toggle rather than being overridden by it.
+    private var isRailed: Bool {
+        isCalendarDocked || (sidebarIsRailed ?? layout.usesSidebarRail)
+    }
 
-    private var listWidth: CGFloat { layout.listWidth }
+    private var listWidth: CGFloat {
+        // The narrow width whenever the sidebar is showing names on a window
+        // that would not normally carry them — the reader has to come from
+        // somewhere, and it is the pane with the least to give.
+        isRailed && layout.mode == .triple ? layout.listWidth : min(layout.listWidth, 320)
+    }
 
     private static let sidebarWidth: CGFloat = 224
 

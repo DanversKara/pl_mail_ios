@@ -64,14 +64,17 @@ struct DockedCalendarView: View {
 
             Divider()
 
-            if let oneDay {
-                TimeGridView(
-                    window: oneDay,
-                    clusters: service.clusters,
-                    onOpen: { open($0) },
-                    onCreate: { creating = NewEventAt(start: $0) },
-                    hourScale: 2,
-                    showsDayHeader: false)
+            if let ahead {
+                if service.clusters.isEmpty {
+                    // A grid with nothing in it says "nothing" by being empty;
+                    // a list with nothing in it says nothing at all.
+                    ContentUnavailableView(
+                        .ui("Nothing in this period"), systemImage: "calendar"
+                    )
+                    .frame(maxHeight: .infinity)
+                } else {
+                    AgendaView(window: ahead, clusters: service.clusters, onOpen: { open($0) })
+                }
             }
         }
         .task(id: day) {
@@ -96,10 +99,19 @@ struct DockedCalendarView: View {
         }
     }
 
-    /// The window the grid draws: today alone, so the column is one day wide
-    /// even though three were fetched.
-    private var oneDay: CalendarWindow? {
-        CalendarWindow(from: day, to: day.adding(days: 1))
+    /// What the column lists: today and the week in front of it.
+    ///
+    /// **A list, not the hour grid the calendar screen draws.** A day grid
+    /// beside the mail spends its whole height on the hours you have nothing
+    /// in, which on a real diary is most of them — the column was twenty-four
+    /// rows of ruled paper and one event. What a column beside a half-read
+    /// message is for is *what is coming*, and that is a list: empty days are
+    /// skipped, so ten quiet days cost ten pixels rather than ten screens.
+    ///
+    /// The hour grid is one tap away behind the expand mark, where the height
+    /// to draw it exists.
+    private var ahead: CalendarWindow? {
+        CalendarWindow(from: day, to: day.adding(days: Self.lookaheadDays))
     }
 
     // MARK: - Chrome
