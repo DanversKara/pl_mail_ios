@@ -12,7 +12,7 @@ It talks to plMail directly over **JMAP** — no scraping, no bridge, no account
 
 ## What it does
 
-**One inbox, every account.** plMail already pulls your IMAP, Gmail and Outlook mailboxes into one place. The app keeps them that way — a single conversation list in time order, with a coloured dot showing which account a message came from. Narrowing to one account is something you choose, not the default.
+**One inbox, every account.** plMail already pulls your IMAP, Gmail and Outlook mailboxes into one place. The app keeps them that way — a single conversation list in time order, with each account's colour in the sidebar's Accounts legend rather than stamped on every row. Narrowing to one account is something you choose, not the default.
 
 **It works with no signal.** Everything you have already read is on the device, and so is search over it. Open the app on a train, in a lift, in a basement: your mail is there.
 
@@ -24,13 +24,17 @@ It talks to plMail directly over **JMAP** — no scraping, no bridge, no account
 
 **Reading done properly.** Messages render as the sender wrote them, on white, even when your phone is in dark mode — mail is authored for a light background, and forcing it dark gives you black text on black. Remote images stay blocked until you ask, because in email a remote image is usually a tracking pixel. Attachments open in Quick Look.
 
+**Your calendar, beside your mail.** plMail extracts events out of the mail it syncs — a flight, a delivery, a hotel booking — and the app draws them alongside the ones you typed in yourself. Day, week, month, year and agenda; create, edit and delete; share an event as `.ics`. On a tablet the calendar docks as a third column showing the week ahead, so a booking confirmation and the day it lands on are on screen at the same time. A band above it says what is about to happen and where the app got it from, because an event you did not put there should say so.
+
 **The rest of what you'd expect.** Swipe to archive or delete, with undo. Star, mark read, move between labels. Snooze a conversation until tomorrow morning or a time you pick, and it leaves the inbox and returns unread. Select a dozen messages and act on them at once. Search with the same `from:`, `in:`, `has:attachment` operators as the web UI — matched quirk for quirk, so a query means the same thing in both.
 
 **Recipients complete from your address book** as well as from mail you've already synced, with people you actually write to ranked first. Contacts are read on the device and never leave it, and you're only asked for them the first time you type a recipient — not on first launch.
 
 **Hardware keyboards work.** `c` composes, `r` replies, `e` archives, `s` stars, `⌘N` and `⌘↩` and Escape do the platform-standard things.
 
-**Dark mode, iPad and German** are not afterthoughts: three columns on a tablet, a real back stack on a phone, and the whole interface in either language.
+**The theme is yours, and it is the server's.** Light, dark, Nord, Dusk, Solar and the rest are chosen once in plMail and served to every client over `Appearance/get` — so the app you read on your phone matches the one in your browser, down to the accent, the density and the corner radius. Nothing here hardcodes a palette. The one place the theme stops is the message itself, which stays on white because mail is written for a light background.
+
+**iPad and German** are not afterthoughts: sidebar, list and reader side by side on a tablet — collapsing to an icon rail when the width runs out — a real back stack on a phone, and the whole interface in either language.
 
 **It works at large text sizes.** At the accessibility sizes the rows restack rather than truncating — a name you can read on two lines beats one you can't on one — and the reply bar drops to icons rather than hyphenating "Re-ply" inside a pill.
 
@@ -40,11 +44,15 @@ It talks to plMail directly over **JMAP** — no scraping, no bridge, no account
 
 | Conversations | Reading | Writing |
 |---|---|---|
-| <img src="docs/screenshots/01-inbox.png" alt="The unified conversation list"> | <img src="docs/screenshots/02-reader.png" alt="An open message with reply, reply all and forward"> | <img src="docs/screenshots/03-compose.png" alt="The composer, with bold and italic applied mid-sentence"> |
+| <img src="docs/screenshots/01-inbox.png" alt="The unified conversation list, with category tabs, label chips and unread marks"> | <img src="docs/screenshots/02-reader.png" alt="An open message with its labels, sender and reply bar"> | <img src="docs/screenshots/03-compose.png" alt="The composer, with bold and italic applied mid-sentence"> |
 
-| Mailboxes | Dark mode |
-|---|---|
-| <img src="docs/screenshots/04-sidebar.png" alt="The mailbox sidebar"> | <img src="docs/screenshots/05-dark.png" alt="The conversation list in dark mode"> |
+| Mailboxes | A dark theme | Themes |
+|---|---|---|
+| <img src="docs/screenshots/04-sidebar.png" alt="The mailbox sidebar, with unread counts and labels"> | <img src="docs/screenshots/05-dark.png" alt="The conversation list in the dark theme"> | <img src="docs/screenshots/08-appearance.png" alt="The appearance screen: theme, sender avatars, preview lines and accent"> |
+
+<p align="center">
+  <img src="docs/screenshots/07-calendar.png" width="90%" alt="The calendar on iPad: a day grid with the week above it and the selected event beside it">
+</p>
 
 ---
 
@@ -98,11 +106,13 @@ Open `plMail.xcodeproj`, pick a simulator, and press Run. Simulator builds need 
 
 ## What isn't there yet
 
-- **No push notifications.** New mail arrives when the app checks — on opening, and periodically in the background. The interface says "last checked N minutes ago" rather than implying it's live, because it isn't. The client side is built ([docs/PUSH.md](docs/PUSH.md)); what's missing is an APNs key, which needs a paid Apple developer account, and a sender on the plMail side.
+- **No push notifications while the app is closed.** Open, it *is* live: the app holds plMail's JMAP event stream, so a message read in a browser turns up here without anybody pressing anything, and the dot beside the mark in the header says whether that connection is up. Closed is the gap — new mail then arrives when the app next checks, on opening and periodically in the background. The client side is built ([docs/PUSH.md](docs/PUSH.md)); what's missing is an APNs key, which needs a paid Apple developer account, and a sender on the plMail side.
 - **The widget needs a paid account too.** It runs in its own process and reads the app's numbers through an App Group, which a free Apple ID cannot grant. It says so rather than showing a zero it can't justify.
 - **A few error messages are English-only** even with the app in German. The interface is translated; some failure messages from the networking layer aren't yet.
 - **The attachment picker is lightly tested** against unusual document providers, though the photo library and local files both work.
-- **This is a plMail client, not a general JMAP one.** Snooze, cross-account labels and search lean on plMail's own extensions. It won't work against Fastmail or a stock Cyrus server.
+- **No RSVP.** The calendar draws invitations but cannot answer them: `participants` and `myParticipation` are not in the JMAP vocabulary plMail exposes, so Yes / Maybe / No would be three buttons that do nothing. Answering an invitation is a trip to the web UI until the server publishes it — see [docs/parity/03-calendar.md](docs/parity/03-calendar.md) for exactly what it would take.
+
+- **This is a plMail client, not a general JMAP one.** Snooze, cross-account labels, the calendar and search all lean on plMail's own extensions. It won't work against Fastmail or a stock Cyrus server.
 
 ---
 
