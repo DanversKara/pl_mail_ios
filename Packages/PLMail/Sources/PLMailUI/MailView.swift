@@ -41,6 +41,9 @@ public struct MailView: View {
     /// BearerMail: the address book, shown the same way as notes.
     @State private var contacts: ContactsService
     @State private var isShowingContacts = false
+    /// BearerMail: Drive, shown the same way.
+    @State private var drive: DriveService
+    @State private var isShowingDrive = false
     @State private var selectedFeed: FeedID?
     /// Which slice of the inbox is showing, or nil for the whole of it.
     ///
@@ -168,6 +171,7 @@ public struct MailView: View {
         // recomputes it after a label is created or destroyed.
         _notes = State(wrappedValue: NotesService(client: sync.jmapClient))
         _contacts = State(wrappedValue: ContactsService(client: sync.jmapClient))
+        _drive = State(wrappedValue: DriveService(client: sync.jmapClient))
         _labels = State(
             wrappedValue: LabelActions(client: sync.jmapClient) { [sync] in
                 await sync.refreshStructure()
@@ -470,6 +474,8 @@ public struct MailView: View {
                 openNotes: { isShowingNotes = true },
                 contacts: contacts,
                 openContacts: { isShowingContacts = true },
+                drive: drive,
+                openDrive: { isShowingDrive = true },
                 compose: compose,
                 selection: $selectedFeed)
         }
@@ -638,6 +644,13 @@ public struct MailView: View {
                         set: { isShowingContacts = $0 })
                 ) {
                     ContactsView(service: contacts)
+                }
+                .navigationDestination(
+                    isPresented: Binding(
+                        get: { isShowingDrive && layout.isSeparated == false },
+                        set: { isShowingDrive = $0 })
+                ) {
+                    DriveView(service: drive)
                 }
                 .toolbar {
                     // The calendar is reached from its sidebar row, not from
@@ -1155,6 +1168,17 @@ public struct MailView: View {
             .task(id: sync.accounts.count) { await calendar.probeAvailability() }
             .task { await notes.load() }
             .task { await contacts.load() }
+            .task { await drive.load() }
+            .fullScreenCover(
+                isPresented: Binding(
+                    get: { isShowingDrive && layout.isSeparated },
+                    set: { isShowingDrive = $0 })
+            ) {
+                NavigationStack {
+                    DriveView(service: drive) { isShowingDrive = false }
+                }
+                .themedSheet(theme, reduceMotion: reduceMotion)
+            }
             .fullScreenCover(
                 isPresented: Binding(
                     get: { isShowingContacts && layout.isSeparated },

@@ -670,3 +670,17 @@
 "This contact is gone" = "This contact is gone";
 "This server does not have contacts" = "This server does not have contacts";
 "Work" = "Work";
+
+/* BearerMail: Drive. */
+"Copy share link" = "Copy share link";
+"Drive" = "Drive";
+"Drive could not be reached. Pull down to try again." = "Drive could not be reached. Pull down to try again.";
+"Drive needs a BearerMail server with Drive turned on." = "Drive needs a BearerMail server with Drive turned on.";
+"Link copied" = "Link copied";
+"New folder" = "New folder";
+"Tap + to upload photos or files." = "Tap + to upload photos or files.";
+"This file is too big for Drive." = "This file is too big for Drive.";
+"This folder is empty" = "This folder is empty";
+"This server does not have Drive" = "This server does not have Drive";
+"Upload files" = "Upload files";
+"Upload photos" = "Upload photos";

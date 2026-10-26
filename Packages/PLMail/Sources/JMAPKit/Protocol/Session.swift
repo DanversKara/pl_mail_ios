@@ -107,6 +107,8 @@ extension Session {
         public var notes: NotesCapabilities? = nil
         /// BearerMail: present only on a server with the address book.
         public var contacts: ContactsCapabilities? = nil
+        /// BearerMail: present only on a server with Drive.
+        public var drive: DriveCapabilities? = nil
 
         private enum CodingKeys: String, CodingKey {
             case core = "urn:ietf:params:jmap:core"
@@ -116,6 +118,18 @@ extension Session {
             case appearance = "urn:plmail:params:jmap:appearance"
             case notes = "urn:plmail:params:jmap:notes"
             case contacts = "urn:plmail:params:jmap:contacts"
+            case drive = "urn:bearermail:params:drive"
+        }
+    }
+
+    /// Where Drive lives and how big one upload may be.
+    public struct DriveCapabilities: Hashable, Sendable, Decodable {
+        public var apiURL: String?
+        public var maxSizeUpload: Int?
+
+        private enum CodingKeys: String, CodingKey {
+            case apiURL = "apiUrl"
+            case maxSizeUpload
         }
     }
 

@@ -664,3 +664,17 @@
 "This contact is gone" = "Dieser Kontakt existiert nicht mehr";
 "This server does not have contacts" = "Dieser Server hat keine Kontakte";
 "Work" = "Arbeit";
+
+/* BearerMail: Drive. */
+"Copy share link" = "Freigabelink kopieren";
+"Drive" = "Drive";
+"Drive could not be reached. Pull down to try again." = "Drive ist nicht erreichbar. Zum Neuladen nach unten ziehen.";
+"Drive needs a BearerMail server with Drive turned on." = "Drive braucht einen BearerMail-Server mit eingeschaltetem Drive.";
+"Link copied" = "Link kopiert";
+"New folder" = "Neuer Ordner";
+"Tap + to upload photos or files." = "Tippe auf +, um Fotos oder Dateien hochzuladen.";
+"This file is too big for Drive." = "Diese Datei ist zu groß für Drive.";
+"This folder is empty" = "Dieser Ordner ist leer";
+"This server does not have Drive" = "Dieser Server hat kein Drive";
+"Upload files" = "Dateien hochladen";
+"Upload photos" = "Fotos hochladen";
