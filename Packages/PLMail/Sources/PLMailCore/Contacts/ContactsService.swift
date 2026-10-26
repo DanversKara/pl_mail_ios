@@ -200,6 +200,57 @@ public final class ContactsService {
         }
     }
 
+    // MARK: - Duplicates
+
+    /// The server's suggestions of people entered twice, most certain first.
+    public func duplicates() async -> [ContactDuplicatePair] {
+        do {
+            let session = try await client.session()
+            guard let account = session.contactsAccountID else { return [] }
+            var builder = RequestBuilder(session: session)
+            let call = builder.add(ContactDuplicates(accountID: account))
+            return try await client.send(builder).result(of: call).pairs
+                .filter { $0.ids.count >= 2 }
+                .sorted { $0.confidence > $1.confidence }
+        } catch {
+            failure = .unreachable
+            return []
+        }
+    }
+
+    /// Merges `others` into `keep`. Returns the record that undoes it.
+    public func merge(keep: ContactID, others: [ContactID]) async -> String? {
+        guard others.isEmpty == false, others.contains(keep) == false else { return nil }
+        do {
+            let session = try await client.session()
+            guard let account = session.contactsAccountID else { return nil }
+            var builder = RequestBuilder(session: session)
+            let call = builder.add(ContactMerge(accountID: account, keep: keep, merge: others))
+            let record = try await client.send(builder).result(of: call).mergeRecordID
+            await refresh()
+            return record ?? ""
+        } catch {
+            failure = .unreachable
+            return nil
+        }
+    }
+
+    @discardableResult
+    public func undoMerge(_ record: String) async -> Bool {
+        do {
+            let session = try await client.session()
+            guard let account = session.contactsAccountID else { return false }
+            var builder = RequestBuilder(session: session)
+            let call = builder.add(ContactMergeUndo(accountID: account, mergeRecordID: record))
+            _ = try await client.send(builder).result(of: call)
+            await refresh()
+            return true
+        } catch {
+            failure = .unreachable
+            return false
+        }
+    }
+
     /// Every tag in use, sorted.
     public var tags: [String] {
         Array(Set(contacts.flatMap(\.tags))).sorted {

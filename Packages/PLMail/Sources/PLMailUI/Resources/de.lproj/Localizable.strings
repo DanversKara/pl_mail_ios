@@ -683,6 +683,17 @@
 "This server does not have contacts" = "Dieser Server hat keine Kontakte";
 "Work" = "Arbeit";
 
+/* BearerMail: contact duplicates. */
+"Merge into the selected one" = "In den ausgewählten zusammenführen";
+"No duplicates found" = "Keine Duplikate gefunden";
+"Nobody in your address book looks entered twice." = "Niemand in deinem Adressbuch scheint doppelt eingetragen.";
+"Merged" = "Zusammengeführt";
+"Duplicates" = "Duplikate";
+"Same email" = "Gleiche E-Mail";
+"Same phone" = "Gleiche Telefonnummer";
+"Same name" = "Gleicher Name";
+"Find duplicates" = "Duplikate finden";
+
 /* BearerMail: Drive. */
 "Copy share link" = "Freigabelink kopieren";
 "Drive" = "Drive";
