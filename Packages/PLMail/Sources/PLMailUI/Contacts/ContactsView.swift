@@ -85,6 +85,19 @@ public struct ContactsView: View {
                     Button(.ui("New contact"), systemImage: "plus") { isAdding = true }
                 }
             }
+            if service.isAvailable {
+                ToolbarItem(placement: .secondaryAction) {
+                    NavigationLink {
+                        DuplicatesView(service: service)
+                    } label: {
+                        Label {
+                            Text(.ui("Find duplicates"))
+                        } icon: {
+                            Image(systemName: "person.2")
+                        }
+                    }
+                }
+            }
         }
         .sheet(isPresented: $isAdding) {
             NavigationStack {

@@ -505,3 +505,99 @@ public struct ContactReferenceEmails: JMAPMethod {
         arguments = Arguments(accountID: accountID, contactID: contactID, limit: limit)
     }
 }
+
+// MARK: - Contact/duplicates, /merge, /mergeUndo
+
+/// Two (or more) contacts the server thinks are the same person.
+public struct ContactDuplicatePair: Hashable, Sendable, Decodable {
+    public var ids: [ContactID]
+    /// 0–100.
+    public var confidence: Int
+    /// Short machine words: `email`, `phone`, `name`.
+    public var reasons: [String]
+
+    private enum CodingKeys: String, CodingKey { case ids, confidence, reasons }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ids = try c.decodeIfPresent([ContactID].self, forKey: .ids) ?? []
+        confidence = try c.decodeIfPresent(Int.self, forKey: .confidence) ?? 0
+        reasons = try c.decodeIfPresent([String].self, forKey: .reasons) ?? []
+    }
+}
+
+public struct ContactDuplicates: JMAPMethod {
+    public static let name = "Contact/duplicates"
+    public static let capability = Capability.mail
+
+    public struct Arguments: Encodable, Sendable {
+        public var accountID: AccountID
+        private enum CodingKeys: String, CodingKey { case accountID = "accountId" }
+    }
+
+    public struct Result: Decodable, Sendable {
+        public var pairs: [ContactDuplicatePair]
+        private enum CodingKeys: String, CodingKey { case pairs }
+        public init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            pairs = try c.decodeIfPresent([ContactDuplicatePair].self, forKey: .pairs) ?? []
+        }
+    }
+
+    public var arguments: Arguments
+
+    public init(accountID: AccountID) {
+        arguments = Arguments(accountID: accountID)
+    }
+}
+
+public struct ContactMerge: JMAPMethod {
+    public static let name = "Contact/merge"
+    public static let capability = Capability.mail
+
+    public struct Arguments: Encodable, Sendable {
+        public var accountID: AccountID
+        public var keepID: ContactID
+        public var mergeIDs: [ContactID]
+
+        private enum CodingKeys: String, CodingKey {
+            case accountID = "accountId"
+            case keepID = "keepId"
+            case mergeIDs = "mergeIds"
+        }
+    }
+
+    public struct Result: Decodable, Sendable {
+        public var mergeRecordID: String?
+        private enum CodingKeys: String, CodingKey { case mergeRecordID = "mergeRecordId" }
+    }
+
+    public var arguments: Arguments
+
+    public init(accountID: AccountID, keep: ContactID, merge: [ContactID]) {
+        arguments = Arguments(accountID: accountID, keepID: keep, mergeIDs: merge)
+    }
+}
+
+public struct ContactMergeUndo: JMAPMethod {
+    public static let name = "Contact/mergeUndo"
+    public static let capability = Capability.mail
+
+    public struct Arguments: Encodable, Sendable {
+        public var accountID: AccountID
+        public var mergeRecordID: String
+
+        private enum CodingKeys: String, CodingKey {
+            case accountID = "accountId"
+            case mergeRecordID = "mergeRecordId"
+        }
+    }
+
+    public struct Result: Decodable, Sendable {}
+
+    public var arguments: Arguments
+
+    public init(accountID: AccountID, mergeRecordID: String) {
+        arguments = Arguments(accountID: accountID, mergeRecordID: mergeRecordID)
+    }
+}

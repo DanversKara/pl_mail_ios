@@ -689,6 +689,17 @@
 "This server does not have contacts" = "This server does not have contacts";
 "Work" = "Work";
 
+/* BearerMail: contact duplicates. */
+"Merge into the selected one" = "Merge into the selected one";
+"No duplicates found" = "No duplicates found";
+"Nobody in your address book looks entered twice." = "Nobody in your address book looks entered twice.";
+"Merged" = "Merged";
+"Duplicates" = "Duplicates";
+"Same email" = "Same email";
+"Same phone" = "Same phone";
+"Same name" = "Same name";
+"Find duplicates" = "Find duplicates";
+
 /* BearerMail: Drive. */
 "Copy share link" = "Copy share link";
 "Drive" = "Drive";
