@@ -42,6 +42,9 @@ public struct MailboxSidebarView: View {
     let notes: NotesService?
     /// Opens the notes wall, through the shell's own route.
     let openNotes: (() -> Void)?
+    /// BearerMail: the address book, for whether the Contacts row shows.
+    let contacts: ContactsService?
+    let openContacts: (() -> Void)?
     /// Starts a new message, when the shell wants the compose entry point to
     /// live here — the resident-sidebar layouts, where the mock pins a
     /// full-width Compose button above the mailboxes. Nil on layouts whose
@@ -71,6 +74,8 @@ public struct MailboxSidebarView: View {
         openCalendar: (() -> Void)? = nil,
         notes: NotesService? = nil,
         openNotes: (() -> Void)? = nil,
+        contacts: ContactsService? = nil,
+        openContacts: (() -> Void)? = nil,
         compose: (() -> Void)? = nil,
         selection: Binding<FeedID?>
     ) {
@@ -82,6 +87,8 @@ public struct MailboxSidebarView: View {
         self.openCalendar = openCalendar
         self.notes = notes
         self.openNotes = openNotes
+        self.contacts = contacts
+        self.openContacts = openContacts
         self.compose = compose
         _selection = selection
     }
@@ -264,6 +271,7 @@ public struct MailboxSidebarView: View {
 
             calendarRow
             notesRow
+            contactsRow
 
             // Only when there is something in it. A permanent Outbox row is
             // a permanent suggestion that mail might be stuck, and on a
@@ -431,6 +439,27 @@ public struct MailboxSidebarView: View {
                             .foregroundStyle(.primary)
                     } icon: {
                         Image(systemName: "note.text")
+                            .foregroundStyle(.themeAccent)
+                    }
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+        }
+    }
+
+    /// BearerMail: Contacts, under Notes, shown only when the server has an
+    /// address book.
+    @ViewBuilder
+    private var contactsRow: some View {
+        if let openContacts, contacts?.isAvailable == true {
+            Section {
+                Button(action: openContacts) {
+                    Label {
+                        Text(.ui("Contacts"))
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "person.crop.circle")
                             .foregroundStyle(.themeAccent)
                     }
                 }

@@ -38,6 +38,9 @@ public struct MailView: View {
     /// it has notes.
     @State private var notes: NotesService
     @State private var isShowingNotes = false
+    /// BearerMail: the address book, shown the same way as notes.
+    @State private var contacts: ContactsService
+    @State private var isShowingContacts = false
     @State private var selectedFeed: FeedID?
     /// Which slice of the inbox is showing, or nil for the whole of it.
     ///
@@ -164,6 +167,7 @@ public struct MailView: View {
         // pickers read the sync service's mailbox list, and nothing local
         // recomputes it after a label is created or destroyed.
         _notes = State(wrappedValue: NotesService(client: sync.jmapClient))
+        _contacts = State(wrappedValue: ContactsService(client: sync.jmapClient))
         _labels = State(
             wrappedValue: LabelActions(client: sync.jmapClient) { [sync] in
                 await sync.refreshStructure()
@@ -464,6 +468,8 @@ public struct MailView: View {
                 openCalendar: { isShowingCalendar = true },
                 notes: notes,
                 openNotes: { isShowingNotes = true },
+                contacts: contacts,
+                openContacts: { isShowingContacts = true },
                 compose: compose,
                 selection: $selectedFeed)
         }
@@ -625,6 +631,13 @@ public struct MailView: View {
                         set: { isShowingNotes = $0 })
                 ) {
                     NotesView(service: notes)
+                }
+                .navigationDestination(
+                    isPresented: Binding(
+                        get: { isShowingContacts && layout.isSeparated == false },
+                        set: { isShowingContacts = $0 })
+                ) {
+                    ContactsView(service: contacts)
                 }
                 .toolbar {
                     // The calendar is reached from its sidebar row, not from
@@ -1141,6 +1154,17 @@ public struct MailView: View {
             // the server on a Raspberry Pi with one PHP worker pool.
             .task(id: sync.accounts.count) { await calendar.probeAvailability() }
             .task { await notes.load() }
+            .task { await contacts.load() }
+            .fullScreenCover(
+                isPresented: Binding(
+                    get: { isShowingContacts && layout.isSeparated },
+                    set: { isShowingContacts = $0 })
+            ) {
+                NavigationStack {
+                    ContactsView(service: contacts) { isShowingContacts = false }
+                }
+                .themedSheet(theme, reduceMotion: reduceMotion)
+            }
             // BearerMail: the notes wall on a separated layout, full screen
             // like the calendar rather than squeezed into the sidebar column.
             .fullScreenCover(

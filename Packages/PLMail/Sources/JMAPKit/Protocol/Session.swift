@@ -39,6 +39,12 @@ public struct Session: Hashable, Sendable, Decodable {
         primaryAccounts[Capability.mail.rawValue]
     }
 
+    /// BearerMail: the account the address book is reached through. Contacts
+    /// belong to the user, so this is only the door, not the owner.
+    public var contactsAccountID: AccountID? {
+        primaryAccounts["urn:plmail:params:jmap:contacts"] ?? primaryMailAccountID
+    }
+
     /// The one account that answers calendar methods, or nil on an instance
     /// without the extension.
     ///
@@ -99,6 +105,8 @@ extension Session {
         /// BearerMail: present only on a server carrying notes. Absent hides
         /// the Notes entry rather than showing an error.
         public var notes: NotesCapabilities? = nil
+        /// BearerMail: present only on a server with the address book.
+        public var contacts: ContactsCapabilities? = nil
 
         private enum CodingKeys: String, CodingKey {
             case core = "urn:ietf:params:jmap:core"
@@ -107,6 +115,17 @@ extension Session {
             case calendars = "urn:plmail:params:jmap:calendars"
             case appearance = "urn:plmail:params:jmap:appearance"
             case notes = "urn:plmail:params:jmap:notes"
+            case contacts = "urn:plmail:params:jmap:contacts"
+        }
+    }
+
+    /// What the server's address-book extension publishes. Only its presence
+    /// matters to the app.
+    public struct ContactsCapabilities: Hashable, Sendable, Decodable {
+        public var apiURL: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case apiURL = "apiUrl"
         }
     }
 
