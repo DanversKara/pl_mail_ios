@@ -18,7 +18,7 @@ struct ContactTests {
         #expect(body.contains("urn:plmail:params:jmap:contacts") == false)
         #expect(body.contains(#""sort":"name""#))
         #expect(body.contains(#""limit":500"#))
-        #expect(body.contains(#""#ids":{"#))
+        #expect(body.contains(##""#ids":{"##))
     }
 
     @Test("a new contact leaves blank fields out; an update clears them")
