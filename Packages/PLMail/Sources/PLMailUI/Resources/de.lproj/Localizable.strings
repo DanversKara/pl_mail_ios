@@ -627,6 +627,13 @@
 "Unpin" = "Lösen";
 "Yellow" = "Gelb";
 
+/* BearerMail: composer inserts. */
+"Save as note" = "Als Notiz speichern";
+"Saved to Notes" = "In Notizen gespeichert";
+"Insert note" = "Notiz einfügen";
+"Insert Drive link" = "Drive-Link einfügen";
+"Notes you write in BearerMail can be inserted here." = "Notizen, die du in BearerMail schreibst, lassen sich hier einfügen.";
+
 /* BearerMail: contacts. */
 "Add address" = "Adresse hinzufügen";
 "Add email" = "E-Mail hinzufügen";

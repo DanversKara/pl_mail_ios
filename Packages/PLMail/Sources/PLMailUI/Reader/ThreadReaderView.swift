@@ -80,6 +80,9 @@ public struct ThreadReaderView: View {
     private let accountKey: String
     private let accountID: AccountID
     private let client: JMAPClient
+    /// BearerMail: for "Save as note".
+    @State private var notes: NotesService
+    @State private var savedAsNote = false
     private let store: SyncStore
     /// The label picker, which needs this account's labels, and one flag.
     ///
@@ -111,6 +114,7 @@ public struct ThreadReaderView: View {
         self.accountKey = accountKey
         self.accountID = accountID
         self.client = client
+        _notes = State(wrappedValue: NotesService(client: client))
         self.store = store
         self.sync = sync
         self.actions = actions
@@ -268,6 +272,11 @@ public struct ThreadReaderView: View {
             await loader.load()
             expandNewest()
         }
+        // BearerMail: whether "Save as note" is offered.
+        .task { await notes.load() }
+        .alert(Text(.ui("Saved to Notes")), isPresented: $savedAsNote) {
+            Button(.ui("OK")) {}
+        }
         // Published for the scene rather than for this view's focus: the menu
         // bar has to be live while the caret is in the find bar or nowhere at
         // all. See ``MailMessageCommands``.
@@ -287,6 +296,17 @@ public struct ThreadReaderView: View {
     /// unread state of every message in the conversation the moment it opened,
     /// so reading the newest reply of a forty-message thread marked
     /// thirty-nine unseen messages read everywhere the account is signed in.
+    /// BearerMail: a note titled with the subject, holding the message's
+    /// text and linked back to it — Android's "Save as note".
+    private func saveAsNote(_ message: MessageSnapshot) async {
+        let text = message.textBody?.isEmpty == false ? (message.textBody ?? "") : message.preview
+        let draft = NoteDraft(
+            title: message.subject ?? "",
+            body: String(text.prefix(20_000)),
+            links: [NoteLink(type: NoteLink.mail, id: message.emailID, title: message.subject)])
+        savedAsNote = await notes.create(draft) != nil
+    }
+
     private func markDisplayedAsRead() {
         let claimed = receipts.claim(
             messages: loader.messages, expanded: expanded, visible: visibleMessages)
@@ -326,7 +346,8 @@ public struct ThreadReaderView: View {
             find: isFinding ? find : nil,
             onCurrentMatchPositioned: { fraction in
                 settle(on: message, at: fraction, with: scroller)
-            }
+            },
+            onSaveAsNote: notes.isAvailable ? { Task { await saveAsNote(message) } } : nil
         )
         // The policy lives outside SwiftUI's observation, so trusting a sender
         // has to invalidate the message that was showing the blocked notice.
