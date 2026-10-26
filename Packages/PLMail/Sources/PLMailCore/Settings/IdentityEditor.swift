@@ -251,6 +251,88 @@ public final class IdentityEditor {
         }
     }
 
+    // MARK: - BearerMail: quick aliases
+
+    /// The domain new aliases in this group are made on: the one its
+    /// addresses already use.
+    public func aliasDomain(for group: Group) -> String? {
+        group.identities
+            .lazy
+            .compactMap { identity -> String? in
+                guard let at = identity.email.lastIndex(of: "@") else { return nil }
+                let domain = identity.email[identity.email.index(after: at)...]
+                return domain.isEmpty ? nil : String(domain)
+            }
+            .first
+    }
+
+    /// Whether a local part is one the server will take: letters, numbers,
+    /// dots, dashes and underscores, up to 64, not starting or ending with a dot.
+    public static func isValidAliasLocalPart(_ value: String) -> Bool {
+        let local = value.trimmingCharacters(in: .whitespaces).lowercased()
+        guard (1...64).contains(local.count), local.first != ".", local.last != "." else {
+            return false
+        }
+        return local.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._-".contains($0)) }
+    }
+
+    /// A random local part, optionally starting with a word from the label
+    /// ("shop" → "shop.k3f9xq"), the way Android's quick alias makes one.
+    public static func randomAliasLocalPart(label: String?) -> String {
+        let alphabet = Array("abcdefghjkmnpqrstuvwxyz23456789")
+        let suffix = String((0..<6).map { _ in alphabet.randomElement() ?? "x" })
+        let word = (label ?? "")
+            .lowercased()
+            .filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
+            .prefix(12)
+        return word.isEmpty ? suffix : "\(word).\(suffix)"
+    }
+
+    /// Makes a new alias in this group's account, then re-reads the
+    /// addresses so it is there to send from.
+    ///
+    /// - Returns: The new address, or nil with ``saveFailure`` saying why.
+    public func createAlias(localPart: String, name: String?, in group: Group) async -> String? {
+        saveFailure = nil
+
+        let local = localPart.trimmingCharacters(in: .whitespaces).lowercased()
+        guard Self.isValidAliasLocalPart(local) else {
+            saveFailure = String(
+                localized: "Use letters, numbers, dots, dashes or underscores (up to 64).",
+                bundle: .module)
+            return nil
+        }
+        guard let domain = aliasDomain(for: group) else {
+            saveFailure = String(
+                localized: "This account has no address to take a domain from.", bundle: .module)
+            return nil
+        }
+
+        let email = "\(local)@\(domain)"
+
+        do {
+            var builder = RequestBuilder(session: try await client.session())
+            let call = builder.add(
+                IdentityCreate(accountID: group.accountID, email: email, displayName: name))
+            let results = try await client.send(builder)
+            if let error = results.failure(of: call) { throw error }
+
+            if let refusal = try results.result(of: call).refusal {
+                saveFailure = refusal
+                logger.error("Alias refused: \(refusal, privacy: .public)")
+                return nil
+            }
+        } catch {
+            saveFailure = String(
+                localized: "Couldn't reach the server. Nothing was changed.", bundle: .module)
+            logger.error("Alias create failed: \(error, privacy: .public)")
+            return nil
+        }
+
+        await refresh()
+        return email
+    }
+
     public func dismissSaveFailure() {
         saveFailure = nil
     }

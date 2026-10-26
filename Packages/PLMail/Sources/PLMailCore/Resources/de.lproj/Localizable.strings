@@ -32,6 +32,8 @@
 "Can't reach %@. Check you're on the same network as the server." = "%@ ist nicht erreichbar. Prüfe, ob du im selben Netzwerk wie der Server bist.";
 "The server wouldn't change that snooze." = "Der Server hat die Zurückstellung nicht geändert.";
 "Couldn't reach the server. Nothing was changed." = "Server nicht erreichbar. Es wurde nichts geändert.";
+"Use letters, numbers, dots, dashes or underscores (up to 64)." = "Nutze Buchstaben, Ziffern, Punkte, Binde- oder Unterstriche (bis zu 64).";
+"This account has no address to take a domain from." = "Dieses Konto hat keine Adresse, deren Domain sich nutzen ließe.";
 "This account has no Spam mailbox." = "Dieses Konto hat kein Werbung-Postfach.";
 "A message has to stay in at least one label, and that was the last one." = "Eine Nachricht muss in mindestens einem Label bleiben, und das war das letzte.";
 "Your app password was revoked or is no longer valid." = "Dein App-Passwort wurde widerrufen oder ist nicht mehr gültig.";
