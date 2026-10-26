@@ -30,6 +30,8 @@
 	<string>Suggest people to write to as you type a recipient. Your contacts are read on the device and never leave it.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach photos and videos to messages you write.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>BearerMail uses Face ID to unlock when App lock is turned on.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>BearerMail uses the camera to scan the pairing code shown by your server, so you don't have to type a 71-character app password.</string>
 	<key>CFBundleURLTypes</key>
