@@ -45,6 +45,9 @@ public struct MailboxSidebarView: View {
     /// BearerMail: the address book, for whether the Contacts row shows.
     let contacts: ContactsService?
     let openContacts: (() -> Void)?
+    /// BearerMail: Drive, for whether its row shows.
+    let drive: DriveService?
+    let openDrive: (() -> Void)?
     /// Starts a new message, when the shell wants the compose entry point to
     /// live here — the resident-sidebar layouts, where the mock pins a
     /// full-width Compose button above the mailboxes. Nil on layouts whose
@@ -76,6 +79,8 @@ public struct MailboxSidebarView: View {
         openNotes: (() -> Void)? = nil,
         contacts: ContactsService? = nil,
         openContacts: (() -> Void)? = nil,
+        drive: DriveService? = nil,
+        openDrive: (() -> Void)? = nil,
         compose: (() -> Void)? = nil,
         selection: Binding<FeedID?>
     ) {
@@ -89,6 +94,8 @@ public struct MailboxSidebarView: View {
         self.openNotes = openNotes
         self.contacts = contacts
         self.openContacts = openContacts
+        self.drive = drive
+        self.openDrive = openDrive
         self.compose = compose
         _selection = selection
     }
@@ -272,6 +279,7 @@ public struct MailboxSidebarView: View {
             calendarRow
             notesRow
             contactsRow
+            driveRow
 
             // Only when there is something in it. A permanent Outbox row is
             // a permanent suggestion that mail might be stuck, and on a
@@ -460,6 +468,26 @@ public struct MailboxSidebarView: View {
                             .foregroundStyle(.primary)
                     } icon: {
                         Image(systemName: "person.crop.circle")
+                            .foregroundStyle(.themeAccent)
+                    }
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+        }
+    }
+
+    /// BearerMail: Drive, under Contacts, shown only when the server has it.
+    @ViewBuilder
+    private var driveRow: some View {
+        if let openDrive, drive?.isAvailable == true {
+            Section {
+                Button(action: openDrive) {
+                    Label {
+                        Text(.ui("Drive"))
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "externaldrive")
                             .foregroundStyle(.themeAccent)
                     }
                 }

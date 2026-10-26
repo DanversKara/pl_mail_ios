@@ -151,6 +151,35 @@ public actor JMAPClient {
     /// Before the first Session arrives there is no advertised limit to
     /// respect, and the only request in flight is the discovery one — so the
     /// permit is skipped rather than guessed at.
+    /// BearerMail: a request to one of the server's own non-JMAP endpoints
+    /// (Drive), signed with the same credential.
+    ///
+    /// **Same origin only.** The credential is the user's app password, so a
+    /// URL on any other host — even one the server itself named — is refused
+    /// rather than handed it.
+    public func authorized(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        guard let url = request.url, url.scheme == discoveryURL.scheme,
+            url.host() == discoveryURL.host(), url.port == discoveryURL.port
+        else {
+            throw JMAPError.malformedResponse("Refusing to send the credential to another server.")
+        }
+
+        var request = request
+        request.setValue(credential.authorizationHeader, forHTTPHeaderField: "Authorization")
+        let prepared = request
+
+        let (data, response) = try await withPermit {
+            try await self.transport.send(prepared)
+        }
+
+        if response.statusCode == 401 {
+            let problem = try? JSONDecoder().decode(ProblemDocument.self, from: data)
+            throw JMAPError.notAuthenticated(detail: problem?.detail)
+        }
+
+        return (data, response)
+    }
+
     public func withPermit<T: Sendable>(_ body: @Sendable () async throws -> T) async throws -> T {
         guard let gate else { return try await body() }
         return try await gate.withPermit(body)
