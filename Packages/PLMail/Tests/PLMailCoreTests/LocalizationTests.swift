@@ -45,7 +45,7 @@ struct LocalizationTests {
             ("Waiting for the server.", "Warte auf den Server."),
             ("Sign-in is no longer valid.", "Die Anmeldung ist nicht mehr gültig."),
             ("This account has no Spam mailbox.", "Dieses Konto hat kein Werbung-Postfach."),
-            ("That isn't a plMail pairing code.", "Das ist kein plMail-Kopplungscode."),
+            ("That isn't a plMail pairing code.", "Das ist kein BearerMail-Kopplungscode."),
             (
                 "Couldn't reach the server. Nothing was changed.",
                 "Server nicht erreichbar. Es wurde nichts geändert."
