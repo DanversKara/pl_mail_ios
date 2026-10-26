@@ -639,6 +639,13 @@
 "Unpin" = "Unpin";
 "Yellow" = "Yellow";
 
+/* BearerMail: composer inserts. */
+"Save as note" = "Save as note";
+"Saved to Notes" = "Saved to Notes";
+"Insert note" = "Insert note";
+"Insert Drive link" = "Insert Drive link";
+"Notes you write in BearerMail can be inserted here." = "Notes you write in BearerMail can be inserted here.";
+
 /* BearerMail: contacts. */
 "Add address" = "Add address";
 "Add email" = "Add email";

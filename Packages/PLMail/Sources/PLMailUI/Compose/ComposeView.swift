@@ -31,6 +31,9 @@ public struct ComposeView: View {
     @State private var pickedPhotos: [PhotosPickerItem] = []
     @State private var isPickingPhotos = false
     @State private var isPickingSendTime = false
+    /// BearerMail: the Insert note and Drive link pickers.
+    @State private var isInsertingNote = false
+    @State private var isInsertingDriveLink = false
     @State private var attachmentError: String?
     @State private var isConfirmingClose = false
     /// The recipient fragment the privacy question was raised over, so saying
@@ -124,6 +127,15 @@ public struct ComposeView: View {
                         }
 
                         Button(.ui("File"), systemImage: "folder") { isPickingFiles = true }
+
+                        // BearerMail: a note's text, or a link to a Drive file.
+                        Divider()
+                        Button(.ui("Insert note"), systemImage: "note.text") {
+                            isInsertingNote = true
+                        }
+                        Button(.ui("Insert Drive link"), systemImage: "externaldrive") {
+                            isInsertingDriveLink = true
+                        }
                     } label: {
                         Label(.ui("Attach"), systemImage: "paperclip")
                     }
@@ -155,6 +167,16 @@ public struct ComposeView: View {
                 guard items.isEmpty == false else { return }
 
                 Task { await attach(items) }
+            }
+            .sheet(isPresented: $isInsertingNote) {
+                NavigationStack {
+                    InsertNoteSheet(client: model.jmapClient) { model.appendToBody($0) }
+                }
+            }
+            .sheet(isPresented: $isInsertingDriveLink) {
+                NavigationStack {
+                    InsertDriveLinkSheet(client: model.jmapClient) { model.appendToBody($0) }
+                }
             }
             .sheet(isPresented: $isPickingSendTime) {
                 SendLaterSheet { model.scheduleSend(at: $0) }

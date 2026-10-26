@@ -263,6 +263,19 @@ public final class ComposeModel {
     private let accountID: AccountID
     private let client: JMAPClient
     private let store: SyncStore
+
+    /// BearerMail: the connection, for the composer's Insert note and Drive
+    /// link pickers, which read the same server.
+    public var jmapClient: JMAPClient { client }
+
+    /// BearerMail: adds plain text at the end of the body, on its own lines.
+    public func appendToBody(_ text: String) {
+        var addition = text
+        if body.characters.isEmpty == false, body.characters.last != "\n" {
+            addition = "\n\n" + addition
+        }
+        body.append(AttributedString(addition))
+    }
     private let outbox: Outbox
     private let contacts: any ContactSource
     private let preference: ServerSuggestionPreference

@@ -44,6 +44,9 @@ struct MessageView: View {
     /// Where in this message's body the current match sits, as a fraction of
     /// the body's height. Only the thread's scroll view can act on it.
     var onCurrentMatchPositioned: (CGFloat) -> Void = { _ in }
+    /// BearerMail: saves this message as a note linked back to it. Nil hides
+    /// the menu item (a server without notes).
+    var onSaveAsNote: (() -> Void)? = nil
 
     /// Follows the system, so mail matches the rest of the phone rather than
     /// being the one screen that stays white at night.
@@ -200,6 +203,10 @@ struct MessageView: View {
 
             Button(.ui("Forward"), systemImage: "arrowshape.turn.up.right") {
                 onCompose(.forward(message))
+            }
+
+            if let onSaveAsNote {
+                Button(.ui("Save as note"), systemImage: "note.text.badge.plus", action: onSaveAsNote)
             }
 
             // Hidden rather than disabled when the server has no blob for this
