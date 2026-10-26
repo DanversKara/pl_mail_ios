@@ -38,6 +38,10 @@ public struct MailboxSidebarView: View {
     /// the same `isShowingCalendar` the toolbar button and ⌘0 drive — so the
     /// three cannot disagree about what is on screen.
     let openCalendar: (() -> Void)?
+    /// BearerMail: the notes service, for whether the Notes row shows.
+    let notes: NotesService?
+    /// Opens the notes wall, through the shell's own route.
+    let openNotes: (() -> Void)?
     /// Starts a new message, when the shell wants the compose entry point to
     /// live here — the resident-sidebar layouts, where the mock pins a
     /// full-width Compose button above the mailboxes. Nil on layouts whose
@@ -65,6 +69,8 @@ public struct MailboxSidebarView: View {
         actions: MailActions? = nil,
         calendar: CalendarService? = nil,
         openCalendar: (() -> Void)? = nil,
+        notes: NotesService? = nil,
+        openNotes: (() -> Void)? = nil,
         compose: (() -> Void)? = nil,
         selection: Binding<FeedID?>
     ) {
@@ -74,6 +80,8 @@ public struct MailboxSidebarView: View {
         self.actions = actions
         self.calendar = calendar
         self.openCalendar = openCalendar
+        self.notes = notes
+        self.openNotes = openNotes
         self.compose = compose
         _selection = selection
     }
@@ -255,6 +263,7 @@ public struct MailboxSidebarView: View {
             }
 
             calendarRow
+            notesRow
 
             // Only when there is something in it. A permanent Outbox row is
             // a permanent suggestion that mail might be stuck, and on a
@@ -410,6 +419,27 @@ public struct MailboxSidebarView: View {
     /// it would be a second way to say what is open. Pressing it goes through
     /// the shell's own route, which is what keeps this row, the toolbar button
     /// and ⌘0 in agreement.
+    /// BearerMail: Notes, under Calendar, shown only when the server has
+    /// notes — the same rule as the calendar row above.
+    @ViewBuilder
+    private var notesRow: some View {
+        if let openNotes, notes?.isAvailable == true {
+            Section {
+                Button(action: openNotes) {
+                    Label {
+                        Text(.ui("Notes"))
+                            .foregroundStyle(.primary)
+                    } icon: {
+                        Image(systemName: "note.text")
+                            .foregroundStyle(.themeAccent)
+                    }
+                }
+                .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
+            }
+        }
+    }
+
     @ViewBuilder
     private var calendarRow: some View {
         if let openCalendar, calendar?.availability.isAvailable == true {

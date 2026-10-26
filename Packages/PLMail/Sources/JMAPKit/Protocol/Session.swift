@@ -96,6 +96,9 @@ extension Session {
         /// default palette and never offers the theme picker rather than
         /// reporting a failure nobody can act on.
         public var appearance: AppearanceCapabilities?
+        /// BearerMail: present only on a server carrying notes. Absent hides
+        /// the Notes entry rather than showing an error.
+        public var notes: NotesCapabilities? = nil
 
         private enum CodingKeys: String, CodingKey {
             case core = "urn:ietf:params:jmap:core"
@@ -103,6 +106,23 @@ extension Session {
             case apns = "urn:plmail:params:jmap:apns"
             case calendars = "urn:plmail:params:jmap:calendars"
             case appearance = "urn:plmail:params:jmap:appearance"
+            case notes = "urn:plmail:params:jmap:notes"
+        }
+    }
+
+    /// What the server's notes extension publishes. Every field is optional:
+    /// only the capability's presence decides whether notes are offered.
+    public struct NotesCapabilities: Hashable, Sendable, Decodable {
+        /// The colour names a note may carry, in palette order.
+        public var colors: [String]?
+        public var maxBody: Int?
+        public var maxItems: Int?
+        /// Where a note's pictures and recordings live, with `{noteId}` to fill in.
+        public var mediaURL: String?
+
+        private enum CodingKeys: String, CodingKey {
+            case colors, maxBody, maxItems
+            case mediaURL = "mediaUrl"
         }
     }
 

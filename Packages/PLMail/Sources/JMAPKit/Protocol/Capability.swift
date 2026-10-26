@@ -58,10 +58,13 @@ public enum Capability: String, Codable, CaseIterable, Sendable {
     /// server without the extension has no theme to serve and the client falls
     /// back to its local default rather than reporting an error.
     case appearance = "urn:plmail:params:jmap:appearance"
+    /// BearerMail: Keep-style notes, per user like appearance — `Note/get`
+    /// and `Note/set` take no `accountId`.
+    case notes = "urn:plmail:params:jmap:notes"
 
     /// The capabilities a request may declare. Advertised ≠ usable.
     public static let supportedInUsing: Set<Capability> = [
-        .core, .mail, .submission, .calendars, .appearance,
+        .core, .mail, .submission, .calendars, .appearance, .notes,
     ]
 
     public var isSupportedInUsing: Bool {

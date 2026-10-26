@@ -33,6 +33,11 @@ public struct MailView: View {
     /// `availability` emits `false` first so the entry point cannot flicker in
     /// on launch and out again.
     @State private var calendar: CalendarService
+    /// BearerMail: the user's notes. Per user rather than per account, so one
+    /// for the connection; the sidebar row appears only once the server says
+    /// it has notes.
+    @State private var notes: NotesService
+    @State private var isShowingNotes = false
     @State private var selectedFeed: FeedID?
     /// Which slice of the inbox is showing, or nil for the whole of it.
     ///
@@ -158,6 +163,7 @@ public struct MailView: View {
         // Re-reads structure once the server agrees: the sidebar and both
         // pickers read the sync service's mailbox list, and nothing local
         // recomputes it after a label is created or destroyed.
+        _notes = State(wrappedValue: NotesService(client: sync.jmapClient))
         _labels = State(
             wrappedValue: LabelActions(client: sync.jmapClient) { [sync] in
                 await sync.refreshStructure()
@@ -456,6 +462,8 @@ public struct MailView: View {
                 sync: sync, outbox: outbox, labelActions: labels, actions: actions,
                 calendar: calendar,
                 openCalendar: { isShowingCalendar = true },
+                notes: notes,
+                openNotes: { isShowingNotes = true },
                 compose: compose,
                 selection: $selectedFeed)
         }
@@ -610,6 +618,13 @@ public struct MailView: View {
                         set: { isShowingCalendar = $0 })
                 ) {
                     CalendarView(service: calendar)
+                }
+                .navigationDestination(
+                    isPresented: Binding(
+                        get: { isShowingNotes && layout.isSeparated == false },
+                        set: { isShowingNotes = $0 })
+                ) {
+                    NotesView(service: notes)
                 }
                 .toolbar {
                     // The calendar is reached from its sidebar row, not from
@@ -1125,6 +1140,19 @@ public struct MailView: View {
             // push — `state` is the literal string "fixed" — and this audience runs
             // the server on a Raspberry Pi with one PHP worker pool.
             .task(id: sync.accounts.count) { await calendar.probeAvailability() }
+            .task { await notes.load() }
+            // BearerMail: the notes wall on a separated layout, full screen
+            // like the calendar rather than squeezed into the sidebar column.
+            .fullScreenCover(
+                isPresented: Binding(
+                    get: { isShowingNotes && layout.isSeparated },
+                    set: { isShowingNotes = $0 })
+            ) {
+                NavigationStack {
+                    NotesView(service: notes) { isShowingNotes = false }
+                }
+                .themedSheet(theme, reduceMotion: reduceMotion)
+            }
             // Shortcuts and Siri. The router holds the request because an intent
             // is built by the system and cannot be handed a reference to any of
             // this; here is where it gets picked up.
