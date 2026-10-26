@@ -634,6 +634,11 @@
 "Yellow" = "Gelb";
 
 /* BearerMail: composer inserts. */
+"Add picture" = "Bild hinzufügen";
+"Picture" = "Bild";
+"Voice note" = "Sprachnotiz";
+"Too big to attach, so it's in my Drive:" = "Zu groß für einen Anhang, deshalb liegt es in meinem Drive:";
+"Too big to attach — putting it in Drive…" = "Zu groß für einen Anhang — wird in Drive gelegt …";
 "Save as note" = "Als Notiz speichern";
 "Saved to Notes" = "In Notizen gespeichert";
 "Insert note" = "Notiz einfügen";

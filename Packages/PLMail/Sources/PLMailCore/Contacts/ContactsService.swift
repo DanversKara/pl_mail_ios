@@ -27,6 +27,7 @@ public final class ContactsService {
     }
 
     private let client: JMAPClient
+    private var photos: [ContactID: Data] = [:]
     private let logger = Logger(subsystem: "de.plmail", category: "contacts")
 
     public init(client: JMAPClient) {
@@ -175,6 +176,26 @@ public final class ContactsService {
         } catch {
             failure = .unreachable
             logger.warning("Contact/set failed")
+            return nil
+        }
+    }
+
+    /// A contact's photo, from the server's same-origin photo URL, cached
+    /// for the session. Nil when there is none.
+    public func photo(for contact: Contact) async -> Data? {
+        if let cached = photos[contact.id] { return cached }
+        guard let raw = contact.photoURL, let url = URL(string: raw) else { return nil }
+
+        do {
+            var request = URLRequest(url: url)
+            request.setValue("image/*", forHTTPHeaderField: "Accept")
+            let (data, response) = try await client.authorized(request)
+            guard (200..<300).contains(response.statusCode), data.isEmpty == false else {
+                return nil
+            }
+            photos[contact.id] = data
+            return data
+        } catch {
             return nil
         }
     }

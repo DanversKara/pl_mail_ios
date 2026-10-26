@@ -39,6 +39,9 @@ public final class NotesService {
     ]
 
     private var state: StateToken?
+    /// Where a note's pictures and recordings live, with `{noteId}` to fill.
+    private var mediaURLTemplate: String?
+    private var mediaCache: [String: Data] = [:]
     private var nextCreationID = 0
     private let client: JMAPClient
     private let logger = Logger(subsystem: "de.plmail", category: "notes")
@@ -58,6 +61,7 @@ public final class NotesService {
             if let colors = capabilities?.colors, colors.isEmpty == false {
                 self.colors = colors
             }
+            mediaURLTemplate = capabilities?.mediaURL
         } catch {
             logger.warning("Session unavailable, notes stay as they were")
             return
@@ -206,6 +210,85 @@ public final class NotesService {
     public func emptyBin() async {
         for note in notes where note.trashed {
             await destroy(note.id)
+        }
+    }
+
+    // MARK: - Pictures, drawings and voice notes
+
+    /// Whether this server keeps media on notes.
+    public var supportsMedia: Bool { mediaURLTemplate != nil }
+
+    private func mediaURL(noteID: String, mediaID: String? = nil) -> URL? {
+        guard let template = mediaURLTemplate else { return nil }
+        var raw = template.replacingOccurrences(of: "{noteId}", with: noteID)
+        if let mediaID { raw += "/\(mediaID)" }
+        return URL(string: raw)
+    }
+
+    /// The bytes of one picture or recording, cached for the session.
+    public func mediaData(noteID: String, media: NoteMedia) async -> Data? {
+        if let cached = mediaCache[media.id] { return cached }
+        guard let url = mediaURL(noteID: noteID, mediaID: media.id) else { return nil }
+
+        do {
+            var request = URLRequest(url: url)
+            request.setValue("*/*", forHTTPHeaderField: "Accept")
+            let (data, response) = try await client.authorized(request)
+            guard (200..<300).contains(response.statusCode) else { return nil }
+            mediaCache[media.id] = data
+            return data
+        } catch {
+            return nil
+        }
+    }
+
+    /// Adds a picture (or recording) to a note, then re-reads the notes so it
+    /// shows. Returns whether the server took it.
+    @discardableResult
+    public func addMedia(
+        noteID: String, data: Data, type: String, name: String, kind: String = NoteMedia.image
+    ) async -> Bool {
+        guard let base = mediaURL(noteID: noteID),
+            var components = URLComponents(url: base, resolvingAgainstBaseURL: false)
+        else { return false }
+        components.queryItems = [
+            URLQueryItem(name: "kind", value: kind), URLQueryItem(name: "name", value: name),
+        ]
+        guard let url = components.url else { return false }
+
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpBody = data
+            request.setValue(type, forHTTPHeaderField: "Content-Type")
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            let (_, response) = try await client.authorized(request)
+            guard (200..<300).contains(response.statusCode) else {
+                failure = .refused
+                return false
+            }
+            await refresh()
+            return true
+        } catch {
+            failure = .unreachable
+            return false
+        }
+    }
+
+    @discardableResult
+    public func deleteMedia(noteID: String, mediaID: String) async -> Bool {
+        guard let url = mediaURL(noteID: noteID, mediaID: mediaID) else { return false }
+
+        do {
+            var request = URLRequest(url: url)
+            request.httpMethod = "DELETE"
+            let (_, response) = try await client.authorized(request)
+            guard (200..<300).contains(response.statusCode) else { return false }
+            mediaCache[mediaID] = nil
+            await refresh()
+            return true
+        } catch {
+            return false
         }
     }
 

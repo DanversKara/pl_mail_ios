@@ -640,6 +640,11 @@
 "Yellow" = "Yellow";
 
 /* BearerMail: composer inserts. */
+"Add picture" = "Add picture";
+"Picture" = "Picture";
+"Voice note" = "Voice note";
+"Too big to attach, so it's in my Drive:" = "Too big to attach, so it's in my Drive:";
+"Too big to attach — putting it in Drive…" = "Too big to attach — putting it in Drive…";
 "Save as note" = "Save as note";
 "Saved to Notes" = "Saved to Notes";
 "Insert note" = "Insert note";
