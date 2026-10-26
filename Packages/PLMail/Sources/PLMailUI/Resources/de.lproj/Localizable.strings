@@ -584,6 +584,12 @@
 "Collapse the sidebar to icons" = "Seitenleiste auf Symbole verkleinern";
 "Show mailbox names" = "Postfachnamen anzeigen";
 
+/* BearerMail: aliases. */
+"New alias" = "Neuer Alias";
+"Make a random one" = "Zufällig erzeugen";
+"A random address is handy for sign-ups: if it starts getting spam, you know who shared it." = "Eine zufällige Adresse ist praktisch für Anmeldungen: Bekommt sie Spam, weißt du, wer sie weitergegeben hat.";
+"Name recipients see (optional)" = "Name für Empfänger (optional)";
+
 /* BearerMail: notes. */
 "Add item" = "Eintrag hinzufügen";
 "Add label" = "Label hinzufügen";

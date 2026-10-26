@@ -20,6 +20,8 @@ import SwiftUI
 /// Save the user pressed only to change a name is the worst version of it.
 public struct IdentitiesView: View {
     @State private var editor: IdentityEditor
+    /// BearerMail: the account a new alias is being made on.
+    @State private var aliasGroup: IdentityEditor.Group?
 
     public init(sync: MailSyncService, store: SyncStore) {
         _editor = State(
@@ -51,6 +53,19 @@ public struct IdentitiesView: View {
                             row(for: identity)
                         }
                     }
+
+                    // BearerMail: a new alias on this account's domain.
+                    if editor.aliasDomain(for: group) != nil {
+                        Button {
+                            aliasGroup = group
+                        } label: {
+                            Label {
+                                Text(.ui("New alias"))
+                            } icon: {
+                                Image(systemName: "plus.circle")
+                            }
+                        }
+                    }
                 } header: {
                     // Only worth a header when there is more than one account
                     // to tell apart. A single-account user does not need to be
@@ -79,6 +94,11 @@ public struct IdentitiesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task { await editor.load() }
         .refreshable { await editor.refresh() }
+        .sheet(item: $aliasGroup) { group in
+            NavigationStack {
+                NewAliasView(editor: editor, group: group)
+            }
+        }
     }
 
     private func row(for identity: IdentitySnapshot) -> some View {
@@ -285,6 +305,88 @@ private struct IdentityDetailView: View {
             isSaving = false
 
             if cleared { dismiss() }
+        }
+    }
+}
+
+/// BearerMail: make a new alias — the iOS twin of Android's quick alias.
+///
+/// A local part (typed, or a random one, optionally starting with a word
+/// from the label) on the account's own domain, and a display name. The new
+/// address is ready to send from as soon as it is saved.
+struct NewAliasView: View {
+    let editor: IdentityEditor
+    let group: IdentityEditor.Group
+
+    @State private var localPart = ""
+    @State private var name = ""
+    @State private var isSaving = false
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        let domain = editor.aliasDomain(for: group) ?? ""
+
+        Form {
+            Section {
+                HStack(spacing: 2) {
+                    TextField(text: $localPart) { Text(.ui("Address")) }
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.emailAddress)
+                    Text(verbatim: "@\(domain)")
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                Button {
+                    localPart = IdentityEditor.randomAliasLocalPart(label: name)
+                } label: {
+                    Label {
+                        Text(.ui("Make a random one"))
+                    } icon: {
+                        Image(systemName: "dice")
+                    }
+                }
+            } footer: {
+                Text(.ui("A random address is handy for sign-ups: if it starts getting spam, you know who shared it."))
+            }
+
+            Section {
+                TextField(text: $name) { Text(.ui("Name recipients see (optional)")) }
+            }
+
+            if let failure = editor.saveFailure {
+                Text(verbatim: failure)
+                    .foregroundStyle(.red)
+                    .font(.footnote)
+            }
+        }
+        .navigationTitle(Text(.ui("New alias")))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+                Button(.ui("Cancel")) {
+                    editor.dismissSaveFailure()
+                    dismiss()
+                }
+            }
+            ToolbarItem(placement: .confirmationAction) {
+                Button(.ui("Create")) {
+                    Task {
+                        isSaving = true
+                        defer { isSaving = false }
+                        let trimmed = name.trimmingCharacters(in: .whitespaces)
+                        if await editor.createAlias(
+                            localPart: localPart, name: trimmed.isEmpty ? nil : trimmed,
+                            in: group) != nil
+                        {
+                            dismiss()
+                        }
+                    }
+                }
+                .disabled(
+                    isSaving || IdentityEditor.isValidAliasLocalPart(localPart) == false)
+            }
         }
     }
 }

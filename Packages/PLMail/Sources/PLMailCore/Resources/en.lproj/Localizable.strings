@@ -31,6 +31,8 @@
 "Can't reach %@. Check you're on the same network as the server." = "Can't reach %@. Check you're on the same network as the server.";
 "The server wouldn't change that snooze." = "The server wouldn't change that snooze.";
 "Couldn't reach the server. Nothing was changed." = "Couldn't reach the server. Nothing was changed.";
+"Use letters, numbers, dots, dashes or underscores (up to 64)." = "Use letters, numbers, dots, dashes or underscores (up to 64).";
+"This account has no address to take a domain from." = "This account has no address to take a domain from.";
 "This account has no Spam mailbox." = "This account has no Spam mailbox.";
 "A message has to stay in at least one label, and that was the last one." = "A message has to stay in at least one label, and that was the last one.";
 "Your app password was revoked or is no longer valid." = "Your app password was revoked or is no longer valid.";

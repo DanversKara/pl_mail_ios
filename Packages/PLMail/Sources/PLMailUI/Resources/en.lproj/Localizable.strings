@@ -590,6 +590,12 @@
 "Collapse the sidebar to icons" = "Collapse the sidebar to icons";
 "Show mailbox names" = "Show mailbox names";
 
+/* BearerMail: aliases. */
+"New alias" = "New alias";
+"Make a random one" = "Make a random one";
+"A random address is handy for sign-ups: if it starts getting spam, you know who shared it." = "A random address is handy for sign-ups: if it starts getting spam, you know who shared it.";
+"Name recipients see (optional)" = "Name recipients see (optional)";
+
 /* BearerMail: notes. */
 "Add item" = "Add item";
 "Add label" = "Add label";
