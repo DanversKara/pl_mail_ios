@@ -17,13 +17,17 @@ on:
         paths-ignore:
             - "**/*.md"
             - "docs/**"
+    # A pull request builds and tests the same way but publishes nothing, so a
+    # change is known to compile before it can reach main.
+    pull_request:
+        branches: [main]
     workflow_dispatch:
 
 permissions:
     contents: write
 
 concurrency:
-    group: ios-release
+    group: ios-release-${{ github.event_name == 'pull_request' && github.ref || 'main' }}
     cancel-in-progress: false
 
 jobs:
@@ -59,9 +63,17 @@ jobs:
                       2>&1 | tee "$RUNNER_TEMP/build.log" | grep -E "error:|\*\* ARCHIVE" || true
                   test -d "$RUNNER_TEMP/plMail.xcarchive/Products/Applications"
 
+            - name: Package tests
+              if: github.event_name == 'pull_request'
+              working-directory: Packages/PLMail
+              run: |
+                  set -o pipefail
+                  swift test 2>&1 | tee "$RUNNER_TEMP/test.log" | grep -E "error:|✘|failed|passed after|Executed" || true
+                  ! grep -qE "error:|✘ Test .* failed|with [1-9][0-9]* failures?" "$RUNNER_TEMP/test.log"
+
             - name: Errors, as annotations
               if: failure()
-              run: grep -E "error:" "$RUNNER_TEMP/build.log" | sort -u | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+              run: cat "$RUNNER_TEMP"/*.log | grep -E "error:|✘" | sort -u | head -40 | while IFS= read -r l; do echo "::error::$l"; done
 
             - name: Package the .ipa
               run: |
@@ -73,6 +85,7 @@ jobs:
                   ls -l "$RUNNER_TEMP/out"
 
             - name: Publish the GitHub Release
+              if: github.event_name != 'pull_request'
               uses: softprops/action-gh-release@v2
               with:
                   tag_name: v${{ steps.version.outputs.version }}

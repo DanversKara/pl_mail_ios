@@ -593,7 +593,7 @@ public struct MailView: View {
                 // binding resolves against the nearest enclosing `searchable`,
                 // and one declared a column away simply never binds.
                 .searchFocused($isSearchFocused)
-                .navigationTitle(Text(verbatim: "plMail"))
+                .navigationTitle(Text(verbatim: "BearerMail"))
                 // Compact only. Here the sidebar *is* the screen, so pushing
                 // `CalendarView` into its stack gives the calendar the whole
                 // width — and `CalendarView` deliberately carries no

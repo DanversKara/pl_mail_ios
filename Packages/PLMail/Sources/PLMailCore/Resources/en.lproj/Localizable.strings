@@ -25,7 +25,7 @@
 "This message has no recipients." = "This message has no recipients.";
 "This account isn't allowed to send." = "This account isn't allowed to send.";
 "The server wouldn't send this message." = "The server wouldn't send this message.";
-"That isn't a plMail pairing code." = "That isn't a plMail pairing code.";
+"That isn't a plMail pairing code." = "That isn't a BearerMail pairing code.";
 "That code points at an address this app can't reach." = "That code points at an address this app can't reach.";
 "That code didn't work. They last two minutes and work once — show a new one." = "That code didn't work. They last two minutes and work once — show a new one.";
 "Can't reach %@. Check you're on the same network as the server." = "Can't reach %@. Check you're on the same network as the server.";
@@ -179,7 +179,7 @@
    string it cannot reach is a string that ships in English. */
 
 "Needs a paid developer account" = "Needs a paid developer account";
-"Open plMail to sign in" = "Open plMail to sign in";
+"Open plMail to sign in" = "Open BearerMail to sign in";
 "unread message" = "unread message";
 "unread messages" = "unread messages";
 "No unread mail" = "No unread mail";

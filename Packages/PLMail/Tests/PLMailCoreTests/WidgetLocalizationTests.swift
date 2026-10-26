@@ -117,6 +117,6 @@ struct WidgetLocalizationTests {
 
         #expect(german["Nothing left today"] == "Heute nichts mehr")
         #expect(german["unread messages"] == "ungelesene Nachrichten")
-        #expect(german["Open plMail to sign in"] == "plMail öffnen und anmelden")
+        #expect(german["Open plMail to sign in"] == "BearerMail öffnen und anmelden")
     }
 }

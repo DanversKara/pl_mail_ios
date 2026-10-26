@@ -105,7 +105,7 @@ struct MailWidgetView: View {
 
     private var summary: Text {
         // The product name, and therefore never translated.
-        guard SharedMailStore.isShared, entry.state != nil else { return Text(verbatim: "plMail") }
+        guard SharedMailStore.isShared, entry.state != nil else { return Text(verbatim: "BearerMail") }
 
         return count == 0 ? Text(.core("No unread mail")) : Text(.core("\(count) unread"))
     }
@@ -285,7 +285,7 @@ struct CalendarWidgetView: View {
     }
 
     private var inlineSummary: Text {
-        guard entry.state != nil else { return Text(verbatim: "plMail") }
+        guard entry.state != nil else { return Text(verbatim: "BearerMail") }
 
         guard let next else { return Text(.core("Nothing left today")) }
 

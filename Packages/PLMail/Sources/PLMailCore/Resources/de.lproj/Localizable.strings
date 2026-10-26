@@ -26,7 +26,7 @@
 "This message has no recipients." = "Diese Nachricht hat keine Empfänger.";
 "This account isn't allowed to send." = "Dieses Konto darf nicht senden.";
 "The server wouldn't send this message." = "Der Server hat den Versand abgelehnt.";
-"That isn't a plMail pairing code." = "Das ist kein plMail-Kopplungscode.";
+"That isn't a plMail pairing code." = "Das ist kein BearerMail-Kopplungscode.";
 "That code points at an address this app can't reach." = "Dieser Code zeigt auf eine Adresse, die die App nicht erreicht.";
 "That code didn't work. They last two minutes and work once — show a new one." = "Dieser Code hat nicht funktioniert. Codes gelten zwei Minuten und nur einmal — zeig einen neuen an.";
 "Can't reach %@. Check you're on the same network as the server." = "%@ ist nicht erreichbar. Prüfe, ob du im selben Netzwerk wie der Server bist.";
@@ -182,7 +182,7 @@
    verwehrt ist — und eine unerreichbare Zeichenkette bleibt englisch. */
 
 "Needs a paid developer account" = "Erfordert einen kostenpflichtigen Entwickleraccount";
-"Open plMail to sign in" = "plMail öffnen und anmelden";
+"Open plMail to sign in" = "BearerMail öffnen und anmelden";
 "unread message" = "ungelesene Nachricht";
 "unread messages" = "ungelesene Nachrichten";
 "No unread mail" = "Keine ungelesene Post";
