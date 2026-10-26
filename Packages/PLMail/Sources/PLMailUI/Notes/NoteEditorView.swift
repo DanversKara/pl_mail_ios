@@ -191,6 +191,18 @@ struct NoteEditorView: View {
         focusedItem = position
     }
 
+    /// The note as plain text: title, then the text or a ☐/☑ checklist.
+    private var shareText: String {
+        var lines: [String] = []
+        if title.isEmpty == false { lines.append(title) }
+        if isChecklist {
+            lines += items.filter { $0.text.isEmpty == false }.map { ($0.done ? "☑ " : "☐ ") + $0.text }
+        } else if text.isEmpty == false {
+            lines.append(text)
+        }
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Pictures and recordings
 
     @ViewBuilder
@@ -352,6 +364,18 @@ struct NoteEditorView: View {
                 }
             }
         } else {
+            // BearerMail: the note as text, through the share sheet — to
+            // Messages, another app, or Save to Files — like Android's Share.
+            ToolbarItem(placement: .primaryAction) {
+                ShareLink(item: shareText, subject: Text(verbatim: title)) {
+                    Label {
+                        Text(.ui("Share note"))
+                    } icon: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                }
+                .disabled(shareText.isEmpty)
+            }
             ToolbarItem(placement: .primaryAction) {
                 Button(
                     pinned ? LocalizedStringResource.ui("Unpin") : .ui("Pin"),
