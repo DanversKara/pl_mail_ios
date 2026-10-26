@@ -678,3 +678,20 @@
 "This server does not have Drive" = "Dieser Server hat kein Drive";
 "Upload files" = "Dateien hochladen";
 "Upload photos" = "Fotos hochladen";
+
+/* BearerMail: app lock. */
+"After 1 minute" = "Nach 1 Minute";
+"After 5 minutes" = "Nach 5 Minuten";
+"App lock" = "App-Sperre";
+"Asks for Face ID, Touch ID or your passcode when BearerMail opens, and hides your mail in the app switcher." = "Fragt beim Öffnen von BearerMail nach Face ID, Touch ID oder deinem Code und verbirgt deine E-Mails im App-Umschalter.";
+"Face ID" = "Face ID";
+"How long BearerMail can be in the background before it asks again." = "Wie lange BearerMail im Hintergrund sein darf, bevor erneut gefragt wird.";
+"Immediately" = "Sofort";
+"Lock BearerMail" = "BearerMail sperren";
+"Lock again" = "Erneut sperren";
+"Optic ID" = "Optic ID";
+"Passcode" = "Code";
+"Set a passcode for this device in the Settings app first." = "Lege zuerst in der Einstellungen-App einen Code für dieses Gerät fest.";
+"Touch ID" = "Touch ID";
+"Unlock" = "Entsperren";
+"Unlock BearerMail" = "BearerMail entsperren";

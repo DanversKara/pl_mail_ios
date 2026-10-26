@@ -68,6 +68,8 @@ struct RootView: View {
                     actions: actions,
                     onSignOut: model.signOut
                 )
+                // BearerMail: Face ID / passcode lock, when turned on in Settings.
+                .appLockGate()
                 // The moment the notification prompt is justified: a sync has
                 // finished and there is mail on the screen behind the dialog.
                 // Keyed on `lastCheckedAt` so it runs when the first sync

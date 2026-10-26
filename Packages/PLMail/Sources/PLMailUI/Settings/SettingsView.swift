@@ -121,6 +121,12 @@ public struct SettingsView: View {
                         } label: {
                             Label(.ui("Remote images"), systemImage: "photo")
                         }
+
+                        NavigationLink {
+                            AppLockView()
+                        } label: {
+                            Label(.ui("App lock"), systemImage: "lock")
+                        }
                     } header: {
                         Text(.ui("This device"))
                     }
