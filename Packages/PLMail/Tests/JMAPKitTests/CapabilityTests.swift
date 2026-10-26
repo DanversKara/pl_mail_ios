@@ -28,7 +28,9 @@ struct CapabilityTests {
     @Test("only the capabilities the server accepts are declarable in `using`")
     func declarableSet() {
         #expect(
-            Capability.supportedInUsing == [.core, .mail, .submission, .calendars, .appearance])
+            Capability.supportedInUsing == [
+                .core, .mail, .submission, .calendars, .appearance, .notes,
+            ])
 
         for capability in Capability.allCases {
             #expect(
