@@ -24,7 +24,7 @@
 "Collapses this message" = "Klappt diese Nachricht zu";
 "Compare it against the server before trusting it. This app will refuse to connect if it ever changes." = "Vergleiche ihn mit dem Server, bevor du ihm vertraust. Diese App verweigert die Verbindung, falls er sich jemals ändert.";
 "Connect" = "Verbinden";
-"Connect to plMail" = "Mit plMail verbinden";
+"Connect to plMail" = "Mit BearerMail verbinden";
 "Connected" = "Verbunden";
 "Couldn't attach that" = "Anhang nicht möglich";
 "Couldn't connect" = "Verbindung fehlgeschlagen";
@@ -41,7 +41,7 @@
 "Key fingerprint" = "Schlüssel-Fingerabdruck";
 "Label %lld selected" = "%lld Ausgewählte beschriften";
 "Labels" = "Labels";
-"Labels you create in plMail's web UI appear here." = "Labels, die du in der plMail-Weboberfläche anlegst, erscheinen hier.";
+"Labels you create in plMail's web UI appear here." = "Labels, die du in der BearerMail-Weboberfläche anlegst, erscheinen hier.";
 "Load" = "Laden";
 "Mark as unread" = "Als ungelesen markieren";
 "Message source" = "Nachrichtenquelltext";
@@ -54,7 +54,7 @@
 "OK" = "OK";
 "Only the first part is shown. Share to get the whole message." = "Es wird nur der erste Teil angezeigt. Teile die Nachricht, um sie vollständig zu erhalten.";
 "Open" = "Öffnen";
-"Open plMail in a browser" = "plMail im Browser öffnen";
+"Open plMail in a browser" = "BearerMail im Browser öffnen";
 "Pick a date and time…" = "Datum und Uhrzeit wählen…";
 "Pick a mailbox" = "Postfach wählen";
 "Pick a message to read it here." = "Wähle eine Nachricht, um sie hier zu lesen.";
@@ -75,9 +75,9 @@
 "Snooze" = "Zurückstellen";
 "Snooze until" = "Zurückstellen bis";
 "Some accounts didn't sync" = "Einige Konten wurden nicht synchronisiert";
-"The address you use to open plMail in a browser. https is assumed unless you type otherwise." = "Die Adresse, unter der du plMail im Browser öffnest. Ohne Angabe wird https angenommen.";
+"The address you use to open plMail in a browser. https is assumed unless you type otherwise." = "Die Adresse, unter der du BearerMail im Browser öffnest. Ohne Angabe wird https angenommen.";
 "The server didn't return this message." = "Der Server hat diese Nachricht nicht geliefert.";
-"This list covers mail plMail has synced. Older mail arrives as the sync window widens." = "Diese Liste zeigt E-Mails, die plMail synchronisiert hat. Ältere kommen dazu, sobald sich der Synchronisierungszeitraum erweitert.";
+"This list covers mail plMail has synced. Older mail arrives as the sync window widens." = "Diese Liste zeigt E-Mails, die BearerMail synchronisiert hat. Ältere kommen dazu, sobald sich der Synchronisierungszeitraum erweitert.";
 "This mailbox is no longer connected" = "Dieses Postfach ist nicht mehr verbunden";
 "This message has no content." = "Diese Nachricht hat keinen Inhalt.";
 "This message has no stored source." = "Für diese Nachricht ist kein Quelltext gespeichert.";
@@ -99,11 +99,11 @@
 "Report spam" = "Als Spam melden";
 "Not spam" = "Kein Spam";
 "Scan a pairing code" = "Kopplungscode scannen";
-"In plMail: Settings → App passwords → Pair a device" = "In plMail: Einstellungen → App-Passwörter → Gerät koppeln";
+"In plMail: Settings → App passwords → Pair a device" = "In BearerMail: Einstellungen → App-Passwörter → Gerät koppeln";
 "Or enter the address and an app password by hand." = "Oder Adresse und App-Passwort von Hand eingeben.";
 "Scan pairing code" = "Code scannen";
 "Camera unavailable" = "Kamera nicht verfügbar";
-"In plMail, open Settings → App passwords and choose Pair a device." = "Öffne in plMail Einstellungen → App-Passwörter und wähle „Gerät koppeln“.";
+"In plMail, open Settings → App passwords and choose Pair a device." = "Öffne in BearerMail Einstellungen → App-Passwörter und wähle „Gerät koppeln“.";
 "Outbox" = "Postausgang";
 "Nothing waiting" = "Nichts wartet";
 "Everything you've written has been sent." = "Alles Geschriebene wurde gesendet.";
@@ -323,7 +323,7 @@
 "Pink" = "Pink";
 "No colour" = "Keine Farbe";
 "Colour" = "Farbe";
-"Without a colour, plMail picks one from the name." = "Ohne Farbe wählt plMail eine aus dem Namen.";
+"Without a colour, plMail picks one from the name." = "Ohne Farbe wählt BearerMail eine aus dem Namen.";
 
 /* Labels: Verschachtelung. Der Pfad wird mit Schrägstrich gezeichnet, aber als
    Satz vorgelesen — VoiceOver liest „Arbeit / Q1“ als „Arbeit Schrägstrich
@@ -348,7 +348,7 @@
 "Agenda" = "Agenda";
 "All day" = "Ganztägig";
 "Calendar" = "Kalender";
-"Calendars are set up in plMail on the web." = "Kalender werden in plMail im Web eingerichtet.";
+"Calendars are set up in plMail on the web." = "Kalender werden in BearerMail im Web eingerichtet.";
 "Can't reach %@" = "%@ ist nicht erreichbar";
 "Cancelled" = "Abgesagt";
 "Chosen on your server, so every device you read plMail on matches." = "Auf deinem Server gewählt, damit alle Geräte übereinstimmen.";
@@ -382,7 +382,7 @@
 "Theme" = "Farbschema";
 "There may be more beyond this range" = "Außerhalb dieses Zeitraums kann es weitere Termine geben";
 "This app can't draw that theme yet, so it uses the system appearance. Your choice is left alone — it won't be overwritten." = "Diese App kann dieses Farbschema noch nicht darstellen und nutzt deshalb das Systemaussehen. Deine Auswahl bleibt unverändert und wird nicht überschrieben.";
-"This meeting reached plMail more than once." = "Dieser Termin ist mehrfach in plMail angekommen.";
+"This meeting reached plMail more than once." = "Dieser Termin ist mehrfach in BearerMail angekommen.";
 "This message hasn't been sent" = "Diese Nachricht wurde nicht gesendet";
 "This range is outside what the server keeps" = "Dieser Zeitraum liegt außerhalb dessen, was der Server vorhält";
 "This server does not have a calendar" = "Dieser Server hat keinen Kalender";
@@ -485,7 +485,7 @@
 "No answer" = "Keine Antwort";
 "No push subscription" = "Kein Push-Abonnement";
 "Nothing has arrived yet." = "Bisher ist nichts angekommen.";
-"Notifications are turned off for plMail" = "Mitteilungen sind für plMail ausgeschaltet";
+"Notifications are turned off for plMail" = "Mitteilungen sind für BearerMail ausgeschaltet";
 "Notifications off" = "Mitteilungen aus";
 "Off" = "Aus";
 "Off, by default" = "Aus, standardmäßig";
@@ -507,7 +507,7 @@
 "Sounds, banners and the lock screen are iOS's settings, not this app's. Everything below decides only which mail is worth telling you about." = "Töne, Banner und der Sperrbildschirm sind Einstellungen von iOS, nicht dieser App. Alles darunter entscheidet nur, welche Mail eine Meldung wert ist.";
 "Still synced, never announced" = "Wird weiter synchronisiert, aber nie gemeldet";
 "The formatting, links and images in it are removed. What you write here replaces it everywhere, including in the web interface." = "Formatierung, Links und Bilder darin gehen verloren. Was du hier schreibst, ersetzt sie überall, auch in der Weboberfläche.";
-"These are the mailboxes plMail collects for you. Connecting or disconnecting one is done on the server, not here. The first one is where a new message and a new label start." = "Das sind die Postfächer, die plMail für dich abruft. Verbinden und Trennen geschieht auf dem Server, nicht hier. Das erste ist der Ausgangspunkt für eine neue Nachricht und ein neues Label.";
+"These are the mailboxes plMail collects for you. Connecting or disconnecting one is done on the server, not here. The first one is where a new message and a new label start." = "Das sind die Postfächer, die BearerMail für dich abruft. Verbinden und Trennen geschieht auf dem Server, nicht hier. Das erste ist der Ausgangspunkt für eine neue Nachricht und ein neues Label.";
 "This signature was written with formatting, so it can't be edited here without losing it. Change it in the web interface, or replace it with plain text." = "Diese Signatur wurde mit Formatierung geschrieben und lässt sich hier nicht ändern, ohne sie zu verlieren. Ändere sie in der Weboberfläche oder ersetze sie durch reinen Text.";
 "Use the default" = "Standard verwenden";
 "While app is open" = "Solange die App offen ist";

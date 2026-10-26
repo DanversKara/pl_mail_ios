@@ -31,7 +31,7 @@
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Attach photos and videos to messages you write.</string>
 	<key>NSCameraUsageDescription</key>
-	<string>plMail uses the camera to scan the pairing code shown by your server, so you don't have to type a 71-character app password.</string>
+	<string>BearerMail uses the camera to scan the pairing code shown by your server, so you don't have to type a 71-character app password.</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
@@ -131,7 +131,7 @@
 			<key>UTTypeIdentifier</key>
 			<string>de.plmail.threads</string>
 			<key>UTTypeDescription</key>
-			<string>plMail conversations</string>
+			<string>BearerMail conversations</string>
 			<key>UTTypeConformsTo</key>
 			<array>
 				<string>public.data</string>
@@ -143,6 +143,6 @@
 	</array>
 
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>plMail needs to reach your mail server, which may be on your local network.</string>
+	<string>BearerMail needs to reach your mail server, which may be on your local network.</string>
 </dict>
 </plist>

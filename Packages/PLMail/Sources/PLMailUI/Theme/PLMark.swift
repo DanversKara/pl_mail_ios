@@ -96,7 +96,7 @@ struct PLMark: View {
         // One image to a reader, named once. Seven strokes announced one at a
         // time is seven pieces of nothing.
         .accessibilityElement()
-        .accessibilityLabel(Text(verbatim: "plMail"))
+        .accessibilityLabel(Text(verbatim: "BearerMail"))
         .accessibilityAddTraits(.isImage)
     }
 }

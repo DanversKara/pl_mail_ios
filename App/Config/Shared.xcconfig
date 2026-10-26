@@ -25,6 +25,10 @@ ALWAYS_SEARCH_USER_PATHS = NO
 // INFOPLIST_KEY_ settings below into it.
 INFOPLIST_FILE = App/Info.plist
 
+// BearerMail: the name under the icon. PRODUCT_NAME stays plMail so module,
+// binary and bundle identifiers keep matching upstream.
+INFOPLIST_KEY_CFBundleDisplayName = BearerMail
+
 INFOPLIST_KEY_UILaunchScreen_Generation = YES
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
 INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight
