@@ -58,7 +58,7 @@ public struct ContactsView: View {
                             NavigationLink {
                                 ContactDetailView(service: service, contactID: contact.id)
                             } label: {
-                                ContactRow(contact: contact)
+                                ContactRow(contact: contact, service: service)
                             }
                             .listRowBackground(palette.raised.color)
                         }
@@ -159,10 +159,11 @@ public struct ContactsView: View {
 /// One person in the list: avatar, name, and their first address or company.
 struct ContactRow: View {
     let contact: Contact
+    let service: ContactsService
 
     var body: some View {
         HStack(spacing: 12) {
-            ContactAvatar(contact: contact, size: 36)
+            ContactAvatar(contact: contact, size: 36, service: service)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: contact.displayName.isEmpty ? (contact.primaryEmail?.email ?? "") : contact.displayName)
                     .font(.body)
@@ -183,16 +184,37 @@ struct ContactRow: View {
 struct ContactAvatar: View {
     let contact: Contact
     let size: CGFloat
+    /// For the photo, when the contact has one.
+    var service: ContactsService? = nil
+
+    @State private var photo: UIImage?
 
     var body: some View {
         let hue = Double(abs(contact.displayName.unicodeScalars.reduce(0) { ($0 &* 31) &+ Int($1.value) }) % 360) / 360
 
-        Text(verbatim: contact.initials)
-            .font(.system(size: size * 0.4, weight: .semibold))
-            .foregroundStyle(.white)
-            .frame(width: size, height: size)
-            .background(Circle().fill(Color(hue: hue, saturation: 0.45, brightness: 0.7)))
-            .accessibilityHidden(true)
+        Group {
+            if let photo {
+                Image(uiImage: photo)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: size, height: size)
+                    .clipShape(Circle())
+            } else {
+                Text(verbatim: contact.initials)
+                    .font(.system(size: size * 0.4, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(Circle().fill(Color(hue: hue, saturation: 0.45, brightness: 0.7)))
+            }
+        }
+        .accessibilityHidden(true)
+        .task(id: contact.photoURL) {
+            guard let service, contact.photoURL != nil,
+                let data = await service.photo(for: contact)
+            else { return }
+            photo = UIImage(data: data)?.preparingThumbnail(
+                of: CGSize(width: size * 3, height: size * 3))
+        }
     }
 }
 

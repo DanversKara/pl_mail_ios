@@ -2,6 +2,8 @@
 
 public import PLMailCore
 import JMAPKit
+import PhotosUI
+import QuickLook
 import SwiftUI
 
 /// BearerMail: one note, open for writing — the iOS twin of the Android
@@ -28,6 +30,11 @@ struct NoteEditorView: View {
     @State private var newLabel = ""
     @State private var isEditingReminder = false
     @State private var isAddingLabel = false
+    /// BearerMail: pictures on the note.
+    @State private var isPickingPhotos = false
+    @State private var pickedPhotos: [PhotosPickerItem] = []
+    @State private var isAddingMedia = false
+    @State private var previewURL: URL?
     @State private var hasLoaded = false
     /// What was last sent, so an unchanged editor sends nothing.
     @State private var saved: Snapshot?
@@ -88,6 +95,8 @@ struct NoteEditorView: View {
                 if labels.isEmpty == false || reminder != nil {
                     chips(ink: ink)
                 }
+
+                mediaSection(ink: ink)
             }
             .padding(16)
             .foregroundStyle(ink)
@@ -97,6 +106,14 @@ struct NoteEditorView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar { toolbar }
         .sheet(isPresented: $isEditingReminder) { reminderSheet }
+        .photosPicker(
+            isPresented: $isPickingPhotos, selection: $pickedPhotos, maxSelectionCount: 6,
+            matching: .images)
+        .onChange(of: pickedPhotos) { _, items in
+            guard items.isEmpty == false else { return }
+            Task { await addPhotos(items) }
+        }
+        .quickLookPreview($previewURL)
         .alert(Text(.ui("New label")), isPresented: $isAddingLabel) {
             TextField(text: $newLabel) {
                 Text(.ui("Label"))
@@ -172,6 +189,65 @@ struct NoteEditorView: View {
         let position = min(max(index + 1, 0), items.count)
         items.insert(NoteItem(), at: position)
         focusedItem = position
+    }
+
+    // MARK: - Pictures and recordings
+
+    @ViewBuilder
+    private func mediaSection(ink: Color) -> some View {
+        if let noteID, let note = service.note(id: noteID), note.media.isEmpty == false || isAddingMedia {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                ForEach(note.media) { media in
+                    NoteMediaTile(service: service, noteID: noteID, media: media, ink: ink)
+                        .onTapGesture { Task { await open(media, noteID: noteID) } }
+                        .contextMenu {
+                            if trashed == false {
+                                Button(role: .destructive) {
+                                    Task { await service.deleteMedia(noteID: noteID, mediaID: media.id) }
+                                } label: {
+                                    Label {
+                                        Text(.ui("Remove"))
+                                    } icon: {
+                                        Image(systemName: "trash")
+                                    }
+                                }
+                            }
+                        }
+                }
+                if isAddingMedia {
+                    ProgressView()
+                        .frame(height: 96)
+                }
+            }
+        }
+    }
+
+    private func addPhotos(_ items: [PhotosPickerItem]) async {
+        pickedPhotos = []
+        guard let noteID else { return }
+        isAddingMedia = true
+        defer { isAddingMedia = false }
+
+        for item in items {
+            guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
+            let type = item.supportedContentTypes.first
+            let ext = type?.preferredFilenameExtension ?? "jpg"
+            await service.addMedia(
+                noteID: noteID, data: data, type: type?.preferredMIMEType ?? "image/jpeg",
+                name: "picture.\(ext)")
+        }
+    }
+
+    /// Opens a picture or a recording in Quick Look, which plays audio too.
+    private func open(_ media: NoteMedia, noteID: String) async {
+        guard let data = await service.mediaData(noteID: noteID, media: media) else { return }
+        let directory = FileManager.default.temporaryDirectory
+            .appending(path: "note-\(media.id)", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let name = media.name.isEmpty ? (media.isAudio ? "recording.m4a" : "picture.jpg") : media.name
+        let url = directory.appending(path: name.replacingOccurrences(of: "/", with: "-"))
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return }
+        previewURL = url
     }
 
     // MARK: - Labels and reminder
@@ -291,6 +367,19 @@ struct NoteEditorView: View {
                     isEditingReminder = true
                 }
                 labelMenu
+                if service.supportsMedia {
+                    Button(.ui("Add picture"), systemImage: "photo") {
+                        Task {
+                            // A picture needs a note to hang on: one is made
+                            // first when this is a new, unsaved note.
+                            if noteID == nil {
+                                if title.isEmpty && text.isEmpty { title = String(localized: .ui("Picture")) }
+                                await save()
+                            }
+                            if noteID != nil { isPickingPhotos = true }
+                        }
+                    }
+                }
                 Button(
                     isChecklist ? LocalizedStringResource.ui("Plain text") : .ui("Checklist"),
                     systemImage: isChecklist ? "text.alignleft" : "checklist"
@@ -506,6 +595,41 @@ struct NoteEditorView: View {
         case "brown": .ui("Brown")
         case "gray": .ui("Grey")
         default: .ui("Colour")
+        }
+    }
+}
+
+/// One picture, drawing or recording on a note.
+struct NoteMediaTile: View {
+    let service: NotesService
+    let noteID: String
+    let media: NoteMedia
+    let ink: Color
+
+    @State private var image: UIImage?
+
+    var body: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(ink.opacity(0.08))
+            if let image {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+            } else {
+                Image(systemName: media.isAudio ? "waveform" : "photo")
+                    .font(.title2)
+                    .foregroundStyle(ink.opacity(0.6))
+            }
+        }
+        .frame(height: 96)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityLabel(Text(media.isAudio ? LocalizedStringResource.ui("Voice note") : .ui("Picture")))
+        .task(id: media.id) {
+            guard media.isAudio == false,
+                let data = await service.mediaData(noteID: noteID, media: media)
+            else { return }
+            image = UIImage(data: data)?.preparingThumbnail(of: CGSize(width: 300, height: 300))
         }
     }
 }

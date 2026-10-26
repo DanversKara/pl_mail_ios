@@ -166,7 +166,7 @@ struct ContactDetailView: View {
 
     private func header(_ contact: Contact) -> some View {
         VStack(spacing: 8) {
-            ContactAvatar(contact: contact, size: 84)
+            ContactAvatar(contact: contact, size: 84, service: service)
             Text(verbatim: contact.displayName)
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)

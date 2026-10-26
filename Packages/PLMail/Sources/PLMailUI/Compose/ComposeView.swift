@@ -34,6 +34,8 @@ public struct ComposeView: View {
     /// BearerMail: the Insert note and Drive link pickers.
     @State private var isInsertingNote = false
     @State private var isInsertingDriveLink = false
+    /// BearerMail: a too-big file on its way to Drive instead.
+    @State private var isUploadingToDrive = false
     @State private var attachmentError: String?
     @State private var isConfirmingClose = false
     /// The recipient fragment the privacy question was raised over, so saying
@@ -144,6 +146,17 @@ public struct ComposeView: View {
 
             }
             .safeAreaInset(edge: .bottom) { sendingBar }
+            .overlay {
+                if isUploadingToDrive {
+                    VStack(spacing: 10) {
+                        ProgressView()
+                        Text(.ui("Too big to attach — putting it in Drive…"))
+                            .font(.footnote)
+                    }
+                    .padding(20)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(.regularMaterial))
+                }
+            }
             // Copied into memory on pick rather than held as a URL: the
             // picker's security scope is released when it closes, and a send
             // minutes later would find nothing at the other end.
@@ -479,7 +492,40 @@ public struct ComposeView: View {
                 (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)?
                 .preferredMIMEType ?? "application/octet-stream"
 
-            model.attach(name: url.lastPathComponent, type: type, data: data)
+            attachOrSendViaDrive(name: url.lastPathComponent, type: type, data: data)
+        }
+    }
+
+    /// BearerMail: attaches the file, or — when it is over the mail size
+    /// limit and the server has Drive — uploads it to Drive and puts a link
+    /// and a short note in the message instead, like the web and Android.
+    /// Without Drive the refusal stands and says why.
+    private func attachOrSendViaDrive(name: String, type: String, data: Data) {
+        guard model.attach(name: name, type: type, data: data) == false else { return }
+
+        // Held back while Drive is tried, so the refusal does not flash up
+        // for a file that is about to go through as a link after all.
+        let refusal = model.attachmentRefusal
+        model.clearAttachmentRefusal()
+
+        let client = DriveClient(client: model.jmapClient)
+        isUploadingToDrive = true
+
+        Task {
+            defer { isUploadingToDrive = false }
+
+            do {
+                guard await client.isAvailable() else { throw DriveError.unavailable }
+                let file = try await client.upload(name: name, type: type, data: data, folderID: nil)
+                let share = try await client.createShare(fileID: file.id, password: nil, expires: nil)
+                model.appendToBody(
+                    String(localized: .ui("Too big to attach, so it's in my Drive:"))
+                        + "\n\(name): \(share.url)")
+            } catch {
+                // It did not attach, and Drive could not take it either: the
+                // original refusal is the truth, so it is shown after all.
+                attachmentError = refusal
+            }
         }
     }
 
@@ -502,7 +548,7 @@ public struct ComposeView: View {
                 }
                 ?? "attachment"
 
-            model.attach(
+            attachOrSendViaDrive(
                 name: name,
                 type: type?.preferredMIMEType ?? "application/octet-stream",
                 data: data)
